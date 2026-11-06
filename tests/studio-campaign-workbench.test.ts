@@ -329,3 +329,144 @@ test("Campaign text generation honors the explicit output allowance instead of t
     globalThis.fetch = old;
   }
 });
+
+test("Unified detailed targeting preserves Meta field types, OR grouping and proof-bound identities", () => {
+  process.env.AI_MASTER_KEY =
+    process.env.AI_MASTER_KEY || Buffer.alloc(32, 8).toString("base64");
+  const actor = { id: "actor" } as any,
+    account = { id: "123", connectionId: "conn", connection: { revision: 2 } };
+  const selected = [
+    { id: "10", name: "Parents", field: "family_statuses" },
+    { id: "20", name: "Water treatment", field: "interests" },
+    { id: "30", name: "Engaged shoppers", field: "behaviors" },
+  ];
+  const proof = encryptKey(
+    JSON.stringify({
+      v: 1,
+      actorId: "actor",
+      accountId: "123",
+      connectionId: "conn",
+      revision: 2,
+      country: "CO",
+      kind: "detailed",
+      expiresAt: Date.now() + 60000,
+      items: selected,
+    }),
+    "studio:audience-selection:v1",
+  );
+  const c = config({
+    audiences: [
+      { name: "A", detailedTargeting: selected, selectionProofs: [proof] },
+    ],
+  });
+  const verified = verifyManualAudienceSelections(actor, account, c);
+  assert.deepEqual(verified[0].detailedTargeting, selected);
+  const target = audienceTargeting({ ...c, audiences: verified }, 0) as any;
+  assert.deepEqual(target.flexible_spec, [
+    {
+      family_statuses: [{ id: "10", name: "Parents" }],
+      interests: [{ id: "20", name: "Water treatment" }],
+      behaviors: [{ id: "30", name: "Engaged shoppers" }],
+    },
+  ]);
+  assert.throws(
+    () =>
+      verifyManualAudienceSelections(actor, account, {
+        ...c,
+        audiences: [
+          {
+            ...c.audiences[0],
+            detailedTargeting: [
+              { id: "10", name: "Parents", field: "interests" },
+            ],
+          },
+        ],
+      }),
+    /confirmada por Meta/,
+  );
+  assert.throws(
+    () => validateCampaignDestination({ ...c, specialCategory: "EMPLOYMENT" }),
+    /categorías especiales/,
+  );
+  assert(
+    !campaignConfigSchema.safeParse({
+      ...c,
+      audiences: [
+        {
+          ...c.audiences[0],
+          detailedTargeting: [{ id: "10", name: "Fake", field: "politics" }],
+        },
+      ],
+    }).success,
+  );
+});
+test("Unified search and category browse use documented read-only Meta endpoints with bounded results", async () => {
+  const { MetaReader } = await import("../lib/meta-ads/provider");
+  const old = globalThis.fetch;
+  const calls: URL[] = [];
+  globalThis.fetch = async (input, init) => {
+    const u = new URL(String(input));
+    calls.push(u);
+    assert.equal(init?.method, "GET");
+    assert(!u.searchParams.has("access_token"));
+    assert.equal(u.searchParams.get("limit"), "20");
+    return Response.json({ data: [] });
+  };
+  try {
+    const reader = new MetaReader("synthetic-only", "API", "v26.0");
+    await reader.campaignDirectory("123", "detailed", {
+      query: "tratamiento de aguas",
+      country: "CO",
+    });
+    assert.equal(calls[0].pathname, "/v26.0/act_123/targetingsearch");
+    assert(
+      JSON.parse(calls[0].searchParams.get("whitelisted_types")!).includes(
+        "family_statuses",
+      ),
+    );
+    assert.deepEqual(JSON.parse(calls[0].searchParams.get("countries")!), [
+      "CO",
+    ]);
+    assert(!calls[0].searchParams.has("type"));
+    await reader.campaignDirectory("123", "detailed", {
+      browse: "demographics",
+      after: "cursor",
+    });
+    assert.equal(calls[1].pathname, "/v26.0/search");
+    assert.equal(calls[1].searchParams.get("type"), "adTargetingCategory");
+    assert.equal(calls[1].searchParams.get("class"), "demographics");
+    assert.equal(calls[1].searchParams.get("after"), "cursor");
+    assert(!calls[1].searchParams.has("q"));
+    await assert.rejects(() =>
+      reader.campaignDirectory("123", "detailed", { query: "a" }),
+    );
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = old;
+  }
+});
+
+test("Category dictionaries use explicit Meta field keys and never infer demographics from names", async () => {
+  const { detailedMetaRows } =
+    await import("../lib/creative-studio/detailed-targeting");
+  assert.deepEqual(
+    detailedMetaRows({
+      family_statuses: [{ id: "1", name: "Padres" }],
+      unknown: [{ id: "2", name: "Padres (revista)" }],
+    }),
+    [
+      { id: "1", name: "Padres", type: "family_statuses" },
+      { id: "2", name: "Padres (revista)" },
+    ],
+  );
+  assert.equal(
+    detailedMetaRows(
+      Array.from({ length: 100 }, (_, i) => ({
+        id: String(i),
+        name: "N",
+        type: "interests",
+      })),
+    ).length,
+    50,
+  );
+});

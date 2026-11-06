@@ -1,10 +1,24 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { studioRequest } from "./inventory-meta-picker";
+import {
+  browseCategories,
+  detailedFieldNames,
+  audienceSearchDelay,
+  audienceSearchCacheMs,
+  type BrowseCategory,
+} from "../../lib/creative-studio/detailed-targeting";
 import type { CampaignConfig } from "../../lib/creative-studio/campaign-policy";
 type Audience = CampaignConfig["audiences"][number];
-type Kind = "interests" | "custom_audiences" | "cities" | "regions" | "locales";
+type Kind =
+  | "detailed"
+  | "interests"
+  | "custom_audiences"
+  | "cities"
+  | "regions"
+  | "locales";
 const labels: Record<Kind, string> = {
+  detailed: "Intereses, comportamientos y datos demográficos",
   interests: "Intereses",
   custom_audiences: "Públicos personalizados y similares",
   cities: "Ciudades",
@@ -28,10 +42,15 @@ export function StudioCampaignAudience({
   config: CampaignConfig;
   existing?: boolean;
 }) {
-  const [kind, setKind] = useState<Kind>("interests"),
+  const [kind, setKind] = useState<Kind>("detailed"),
     [query, setQuery] = useState(""),
     [results, setResults] = useState<any[]>([]),
-    [proof, setProof] = useState(""),
+    [after, setAfter] = useState<string | null>(null),
+    [searchOpen, setSearchOpen] = useState(false),
+    [explore, setExplore] = useState(false),
+    [browseCategory, setBrowseCategory] = useState<
+      BrowseCategory | undefined
+    >(),
     [saved, setSaved] = useState<any[]>([]),
     [localSaved, setLocalSaved] = useState<any[]>([]),
     [saving, setSaving] = useState(false),
@@ -41,26 +60,117 @@ export function StudioCampaignAudience({
     [savedName, setSavedName] = useState("");
   const controller = useRef<AbortController | null>(null),
     request = useRef<{ key: string; id: string } | null>(null),
-    generation = useRef(0);
+    generation = useRef(0),
+    timer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    activeKey = useRef(""),
+    cache = useRef(
+      new Map<string, { at: number; items: any[]; after: string | null }>(),
+    ),
+    runSearch = useRef<() => void>(() => {});
   const special = config.specialCategory !== "NONE";
   useEffect(() => {
     generation.current++;
     controller.current?.abort();
+    cache.current.clear();
+    setAfter(null);
     setResults([]);
     setSaved([]);
     setLocalSaved([]);
     setError("");
     setLoading(false);
   }, [accountId, config.country, categoryId]);
-  useEffect(() => () => controller.current?.abort(), []);
-  async function search(savedOnly = false) {
-    if (loading || !accountId) return;
-    setLoading(true);
+  function invalidateSearch() {
+    generation.current++;
+    controller.current?.abort();
+    activeKey.current = "";
+    if (timer.current) clearTimeout(timer.current);
+    setResults([]);
+    setAfter(null);
     setError("");
+    setLoading(false);
+  }
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (
+      !searchOpen ||
+      !accountId ||
+      special ||
+      !["detailed", "interests"].includes(kind) ||
+      query.trim().length < 2
+    )
+      return;
+    timer.current = setTimeout(() => runSearch.current(), audienceSearchDelay);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [query, kind, searchOpen, accountId, config.country, special]);
+  useEffect(() => {
+    if (special && ["detailed", "interests", "custom_audiences"].includes(kind))
+      invalidateSearch();
+  }, [special, kind]);
+  async function search(
+    savedOnly = false,
+    more = false,
+    category?: BrowseCategory,
+  ) {
+    if (!accountId) return;
+    if (timer.current) clearTimeout(timer.current);
+    const browse = category ?? browseCategory;
+    if (
+      !savedOnly &&
+      special &&
+      ["interests", "detailed", "custom_audiences"].includes(kind)
+    )
+      return;
+    if (
+      !savedOnly &&
+      kind !== "custom_audiences" &&
+      !(kind === "detailed" && browse) &&
+      query.trim().length < 2
+    )
+      return;
+    const key = JSON.stringify([
+      accountId,
+      config.country,
+      categoryId,
+      savedOnly,
+      kind,
+      browse ?? "",
+      browse ? "" : query.trim(),
+      more ? after : "",
+    ]);
+    if (activeKey.current === key) return;
+    if (!savedOnly) {
+      const known = cache.current.get(key);
+      if (known && Date.now() - known.at < audienceSearchCacheMs) {
+        setResults((old) =>
+          more
+            ? [
+                ...old,
+                ...known.items.filter(
+                  (n) => !old.some((o) => o.id === n.id && o.field === n.field),
+                ),
+              ]
+            : known.items,
+        );
+        setAfter(known.after);
+        setError("");
+        return;
+      }
+    }
     controller.current?.abort();
     const c = new AbortController();
     controller.current = c;
     const turn = ++generation.current;
+    activeKey.current = key;
+    setLoading(true);
+    setError("");
     try {
       if (savedOnly) {
         const responses = await Promise.allSettled([
@@ -98,7 +208,12 @@ export function StudioCampaignAudience({
         const params = new URLSearchParams({
           kind,
           country: config.country,
-          ...(query.trim() ? { q: query.trim() } : {}),
+          ...(browse && kind === "detailed"
+            ? { browse }
+            : query.trim()
+              ? { q: query.trim() }
+              : {}),
+          ...(more && after ? { after } : {}),
         });
         const r = await studioRequest(
           "/audience-options/" + accountId + "?" + params,
@@ -107,29 +222,61 @@ export function StudioCampaignAudience({
           c.signal,
         );
         if (turn === generation.current) {
-          setResults(r.items);
-          setProof(r.proof);
-          if (!r.items.length)
-            setError("Meta no devolvió resultados para esta búsqueda.");
+          const items = r.items.map((row: any) => ({ ...row, proof: r.proof }));
+          cache.current.set(key, { at: Date.now(), items, after: r.after });
+          while (cache.current.size > 20)
+            cache.current.delete(cache.current.keys().next().value!);
+          setResults((old) =>
+            more
+              ? [
+                  ...old,
+                  ...items.filter(
+                    (n: any) =>
+                      !old.some((o) => o.id === n.id && o.field === n.field),
+                  ),
+                ]
+              : items,
+          );
+          setAfter(r.after);
+          if (!items.length)
+            setError(
+              "Meta no devolvió opciones disponibles para esta búsqueda.",
+            );
         }
       }
     } catch (e) {
-      if (!c.signal.aborted)
+      if (turn === generation.current && !c.signal.aborted)
         setError(e instanceof Error ? e.message : "No se pudo consultar Meta.");
     } finally {
-      if (turn === generation.current) setLoading(false);
+      if (turn === generation.current) {
+        activeKey.current = "";
+        setLoading(false);
+      }
     }
   }
+  runSearch.current = () => {
+    void search();
+  };
   function add(row: any) {
     const base = {
       ...value,
       selectionProofs: [
-        ...new Set([...(value.selectionProofs ?? []), proof]),
-      ].slice(-10),
+        ...new Set([...(value.selectionProofs ?? []), row.proof]),
+      ].slice(-30),
       savedAudienceId: undefined,
       platformPresetId: undefined,
     };
-    if (kind === "interests")
+    if (kind === "detailed")
+      onChange({
+        ...base,
+        detailedTargeting: [
+          ...(value.detailedTargeting ?? []).filter(
+            (v) => v.id !== row.id || v.field !== row.field,
+          ),
+          { id: row.id, name: row.name, field: row.field },
+        ],
+      });
+    else if (kind === "interests")
       onChange({
         ...base,
         interestSource: "MANUAL",
@@ -366,6 +513,23 @@ export function StudioCampaignAudience({
                 Público Advantage+
               </label>
               <div className="studio-audience-tags">
+                {(value.detailedTargeting ?? []).map((v) => (
+                  <button
+                    type="button"
+                    key={v.field + v.id}
+                    title={detailedFieldNames[v.field] + " · Quitar"}
+                    onClick={() =>
+                      onChange({
+                        ...value,
+                        detailedTargeting: value.detailedTargeting?.filter(
+                          (i) => i.id !== v.id || i.field !== v.field,
+                        ),
+                      })
+                    }
+                  >
+                    {v.name} ×
+                  </button>
+                ))}
                 {(value.interests ?? []).map((v) => (
                   <button
                     type="button"
@@ -449,15 +613,23 @@ export function StudioCampaignAudience({
                   </button>
                 ))}
               </div>
-              <details className="studio-targeting-search">
+              <details
+                className="studio-targeting-search"
+                onToggle={(e) => {
+                  const open = e.currentTarget.open;
+                  setSearchOpen(open);
+                  if (!open) invalidateSearch();
+                }}
+              >
                 <summary>Buscar segmentación en Meta</summary>
                 <select
                   aria-label={`Tipo de segmentación ${index + 1}`}
                   value={kind}
-                  disabled={loading}
                   onChange={(e) => {
+                    invalidateSearch();
+                    setBrowseCategory(undefined);
+                    setExplore(false);
                     setKind(e.target.value as Kind);
-                    setResults([]);
                     setQuery("");
                   }}
                 >
@@ -467,7 +639,9 @@ export function StudioCampaignAudience({
                       value={v}
                       disabled={
                         special &&
-                        (v === "interests" || v === "custom_audiences")
+                        (v === "interests" ||
+                          v === "detailed" ||
+                          v === "custom_audiences")
                       }
                     >
                       {label}
@@ -492,10 +666,13 @@ export function StudioCampaignAudience({
                     placeholder={
                       kind === "cities" || kind === "regions"
                         ? "Nombre dentro del país elegido…"
-                        : "Nombre en Meta…"
+                        : "Ej. medio ambiente, tratamiento de aguas…"
                     }
-                    disabled={loading}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      invalidateSearch();
+                      setBrowseCategory(undefined);
+                      setQuery(e.target.value);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -509,23 +686,122 @@ export function StudioCampaignAudience({
                       loading ||
                       !accountId ||
                       (kind !== "custom_audiences" &&
+                        !browseCategory &&
                         query.trim().length < 2) ||
                       (special &&
-                        (kind === "interests" || kind === "custom_audiences"))
+                        (kind === "interests" ||
+                          kind === "detailed" ||
+                          kind === "custom_audiences"))
                     }
                     onClick={() => void search()}
                   >
                     {loading ? "Buscando…" : "Buscar"}
                   </button>
                 </div>
-                <div className="studio-targeting-results">
-                  {results.map((row) => (
-                    <button type="button" key={row.id} onClick={() => add(row)}>
-                      <span>{row.name}</span>
-                      <span>＋</span>
-                    </button>
-                  ))}
+                {kind === "detailed" && (
+                  <>
+                    <div className="studio-targeting-explore">
+                      <small>
+                        Resultados al terminar de escribir · solo opciones que
+                        Meta devuelve.
+                      </small>
+                      <button
+                        type="button"
+                        aria-expanded={explore}
+                        disabled={special || !accountId}
+                        onClick={() => setExplore((v) => !v)}
+                      >
+                        Explorar
+                      </button>
+                    </div>
+                    {explore && (
+                      <div
+                        className="studio-targeting-categories"
+                        aria-label="Categorías de segmentación"
+                      >
+                        {Object.entries(browseCategories).map(([id, label]) => (
+                          <button
+                            type="button"
+                            key={id}
+                            aria-pressed={browseCategory === id}
+                            disabled={loading || special || !accountId}
+                            onClick={() => {
+                              invalidateSearch();
+                              setQuery("");
+                              setBrowseCategory(id as BrowseCategory);
+                              void search(false, false, id as BrowseCategory);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {loading && (
+                  <small role="status">Buscando opciones en Meta…</small>
+                )}
+                <div
+                  className="studio-targeting-results"
+                  aria-label={`Resultados de segmentación ${index + 1}`}
+                  aria-busy={loading}
+                >
+                  {results.map((row) => {
+                    const selected =
+                      kind === "detailed"
+                        ? (value.detailedTargeting ?? []).some(
+                            (v) => v.id === row.id && v.field === row.field,
+                          )
+                        : kind === "interests"
+                          ? (value.interests ?? []).some((v) => v.id === row.id)
+                          : false;
+                    return (
+                      <button
+                        type="button"
+                        key={(row.field ?? kind) + row.id}
+                        disabled={
+                          selected ||
+                          special ||
+                          (kind === "detailed" &&
+                            (value.detailedTargeting?.length ?? 0) >= 20)
+                        }
+                        onClick={() => add(row)}
+                      >
+                        <span className="studio-targeting-result-copy">
+                          {row.path?.length > 0 && (
+                            <small className="studio-targeting-path">
+                              {row.path.join(" › ")}
+                            </small>
+                          )}
+                          <strong>{row.name}</strong>
+                          <small>
+                            {row.field
+                              ? detailedFieldNames[
+                                  row.field as keyof typeof detailedFieldNames
+                                ]
+                              : labels[kind]}
+                            {row.audienceLower !== undefined &&
+                            row.audienceUpper !== undefined
+                              ? ` · Tamaño global: ${Number(row.audienceLower).toLocaleString("es")}–${Number(row.audienceUpper).toLocaleString("es")}`
+                              : ""}
+                          </small>
+                        </span>
+                        <span aria-hidden="true">{selected ? "✓" : "＋"}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+                {after && (
+                  <button
+                    type="button"
+                    className="studio-targeting-more"
+                    disabled={loading}
+                    onClick={() => void search(false, true)}
+                  >
+                    Ver más opciones
+                  </button>
+                )}
               </details>
             </>
           )}

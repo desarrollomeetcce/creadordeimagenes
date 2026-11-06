@@ -406,3 +406,202 @@ test("Selective AI description leaves manual copy, headline and audiences unchan
     await db.$disconnect();
   }
 });
+
+test("Explicit AI checks generate audiences, body, headline, description and a NEW compatible welcome message without publishing", async () => {
+  const { suggestCampaign } =
+    await import("../lib/creative-studio/campaign-suggestion");
+  const { adapter } = await import("../lib/providers");
+  const q = JSON.parse(
+      await readFile("/workspace/work/studio-columns-fixture.json", "utf8"),
+    ),
+    owner = await db.user.findUniqueOrThrow({ where: { id: q.users[0].id } }),
+    a = adapter("openai"),
+    old = a.direct,
+    oldInterests = MetaReader.prototype.targetingInterests,
+    oldLaunch = MetaReader.prototype.launchRequest;
+  const id = randomUUID();
+  let calls = 0,
+    draftId = "";
+  MetaReader.prototype.targetingInterests = async () => [
+    { id: "700001", name: "Medio ambiente" },
+    { id: "700002", name: "Tratamiento de aguas" },
+  ];
+  MetaReader.prototype.launchRequest = async (_account, edge, body) => {
+    assert.equal(edge, "promote_pages");
+    assert.equal(body, undefined);
+    return { data: [{ id: q.pageId, name: "QA" }] };
+  };
+  a.direct = async (_key, _model, prompt) => {
+    calls++;
+    return {
+      text: JSON.stringify(
+        prompt.includes("consultas breves")
+          ? { queries: ["medio ambiente", "tratamiento de aguas"] }
+          : {
+              body: "Consulta por [diplomado]",
+              description: "Nueva descripción",
+              headline: "Diplomado [diplomado] ★★★★★",
+              conversation: {
+                name: "Bienvenida nueva",
+                greeting: "Hola, conoce [diplomado]",
+                autofill: "Quiero información",
+              },
+              audiences: [
+                {
+                  name: "Ambiente",
+                  ageMin: 18,
+                  ageMax: 65,
+                  gender: "ALL",
+                  strictAge: false,
+                  interests: [{ id: "700001", name: "Medio ambiente" }],
+                },
+                {
+                  name: "Agua",
+                  ageMin: 25,
+                  ageMax: 65,
+                  gender: "ALL",
+                  strictAge: false,
+                  interests: [{ id: "700002", name: "Tratamiento de aguas" }],
+                },
+              ],
+            },
+      ),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    };
+  };
+  try {
+    const config = campaignConfigSchema.parse({
+      accountId: q.accountId,
+      pageId: q.pageId,
+      country: "UY",
+      dailyBudget: 7,
+      headline: "Manual anterior",
+      body: "Manual anterior",
+      audiences: [{ name: "A" }, { name: "B" }],
+      planVersion: 2,
+    });
+    const r = await suggestCampaign(owner, {
+      requestId: id,
+      categoryId: q.productId,
+      confirmAi: true,
+      fields: {
+        audiences: true,
+        body: true,
+        description: true,
+        headline: true,
+        conversation: true,
+      },
+      prompt: "Públicos y anuncios para [diplomado]",
+      config,
+      subproductIds: [q.subIds[0]],
+    });
+    assert.equal(calls, 2);
+    assert.equal(r.proposal!.headline, "Diplomado [diplomado] ★★★★★");
+    assert.equal(r.proposal!.conversation!.name, "Bienvenida nueva");
+    const d = await createLaunch(owner, {
+      requestId: randomUUID(),
+      categoryId: q.productId,
+      config: { ...config, ...r.proposal, aiSuggestionJobId: r.jobId },
+      items: [
+        {
+          subproductId: q.subIds[0],
+          variationIds: q.images
+            .filter((v: any) => v.subId === q.subIds[0])
+            .map((v: any) => v.id),
+        },
+      ],
+    });
+    draftId = d.id;
+    assert.equal(d.status, "DRAFT");
+    assert(d.config.conversation);
+    assert.equal(d.config.conversation.autofill, "Quiero información");
+    assert.equal(d.config.headline, r.proposal!.headline);
+    assert.equal(d.summary.ads, 3);
+    console.log(
+      "PASS all five AI checks generate required values; new welcome and shared headline reach validated draft, no writes to Meta or template library",
+    );
+  } finally {
+    a.direct = old;
+    MetaReader.prototype.targetingInterests = oldInterests;
+    MetaReader.prototype.launchRequest = oldLaunch;
+    if (draftId) await db.creativeMetaLaunch.delete({ where: { id: draftId } });
+    const job = await db.generationJob.findUnique({
+      where: { idempotencyKey: "campaign-suggestion:" + owner.id + ":" + id },
+    });
+    if (job) {
+      await db.usageLedger.deleteMany({ where: { jobId: job.id } });
+      await db.generationJob.delete({ where: { id: job.id } });
+    }
+    await db.$disconnect();
+  }
+});
+test("Detailed options expose only supported Meta-returned fields and preserve paths and identity proofs", async () => {
+  const { verifyManualAudienceSelections } =
+    await import("../lib/creative-studio/campaign-audience-selection");
+  const q = JSON.parse(
+      await readFile("/workspace/work/studio-columns-fixture.json", "utf8"),
+    ),
+    owner = await db.user.findUniqueOrThrow({ where: { id: q.users[0].id } }),
+    old = MetaReader.prototype.campaignDirectory;
+  MetaReader.prototype.campaignDirectory = async () => ({
+    data: [
+      {
+        id: "800001",
+        name: "Padres",
+        type: "family_statuses",
+        path: ["Datos demográficos", "Padres"],
+        audience_size_lower_bound: 100,
+        audience_size_upper_bound: 200,
+      },
+      {
+        id: "800002",
+        name: "Agua",
+        type: "interests",
+        path: ["Intereses", "Ambiente"],
+      },
+      { id: "800003", name: "No compatible", type: "politics" },
+    ],
+    after: "next",
+  });
+  try {
+    const r = await campaignAudienceOptions(owner, q.accountId, {
+      kind: "detailed",
+      q: "medio ambiente",
+      country: "UY",
+    });
+    assert.equal(r.items.length, 2);
+    assert.equal(r.items[0].field, "family_statuses");
+    assert.deepEqual(r.items[0].path, ["Datos demográficos", "Padres"]);
+    assert.equal(r.items[0].audienceLower, 100);
+    const account = await db.metaAdAccount.findUniqueOrThrow({
+        where: { id: q.accountId },
+        include: { connection: true },
+      }),
+      config = campaignConfigSchema.parse({
+        accountId: q.accountId,
+        pageId: q.pageId,
+        country: "UY",
+        dailyBudget: 7,
+        body: "Información",
+        headline: "Diplomado",
+        audiences: [
+          {
+            name: "A",
+            detailedTargeting: [
+              { id: "800001", name: "Nombre falso", field: "family_statuses" },
+            ],
+            selectionProofs: [r.proof],
+          },
+        ],
+      });
+    assert.equal(
+      verifyManualAudienceSelections(owner, account, config)[0]
+        .detailedTargeting?.[0].name,
+      "Padres",
+    );
+    assert.equal(r.after, "next");
+  } finally {
+    MetaReader.prototype.campaignDirectory = old;
+    await db.$disconnect();
+  }
+});

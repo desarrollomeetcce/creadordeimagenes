@@ -268,6 +268,9 @@ export function StudioConversationEditor({
               )?.id ?? "custom")
             : ""
         }
+        onFocus={() => {
+          void store.load().catch(() => {});
+        }}
         onChange={(e) => {
           if (!e.target.value) onChange(undefined);
           else if (e.target.value === "custom")
@@ -289,13 +292,15 @@ export function StudioConversationEditor({
           }
         }}
       >
-        <option value="">Usar mensaje predeterminado de Meta</option>
+        <option value="">Sin plantilla personalizada</option>
         <option value="custom">＋ Crear o editar plantilla</option>
-        {store.data.conversations.map((p: any) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
+        <optgroup label="Guardadas en esta plataforma">
+          {store.data.conversations.map((p: any) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
       </select>
       {value && (
         <div className="studio-conversation-fields">
@@ -351,10 +356,7 @@ export function StudioConversationEditor({
           </div>
         </div>
       )}
-      <small>
-        El mensaje se aplica a los nuevos anuncios de WhatsApp. La IA no lo
-        modifica.
-      </small>
+      <small>Bienvenida para tus anuncios de WhatsApp.</small>
       {(notice || store.error) && (
         <small role="status">{notice || store.error}</small>
       )}

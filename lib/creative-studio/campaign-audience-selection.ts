@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { detailedFieldSchema } from "./detailed-targeting";
 import { encryptKey, decryptKey } from "../crypto";
 import { demand } from "../errors";
 import { rateLimit } from "../auth";
@@ -9,6 +10,7 @@ import type { CampaignConfig } from "./campaign-policy";
 
 const kinds = z.enum([
   "interests",
+  "detailed",
   "custom_audiences",
   "cities",
   "regions",
@@ -29,6 +31,7 @@ const proofSchema = z.object({
         id: z.string(),
         name: z.string(),
         country: z.string().optional(),
+        field: detailedFieldSchema.optional(),
       }),
     )
     .max(50),
@@ -44,6 +47,7 @@ export async function campaignAudienceOptions(
       q: z.string().trim().max(80).optional(),
       country: z.string().refine(isCountryCode),
       after: z.string().max(1000).optional(),
+      browse: z.enum(["interests", "behaviors", "demographics"]).optional(),
     })
     .strict()
     .parse(input);
@@ -55,20 +59,49 @@ export async function campaignAudienceOptions(
     query: b.q,
     country: b.country,
     after: b.after,
+    browse: b.browse,
   });
   const items = result.data.flatMap((v: any) => {
     const id = String(v.id ?? v.key ?? "");
-    if (!/^\d{1,40}$/.test(id) || typeof v.name !== "string") return [];
+    if (
+      !/^\d{1,40}$/.test(id) ||
+      typeof v.name !== "string" ||
+      !v.name.trim() ||
+      v.valid === false
+    )
+      return [];
     if (
       (b.kind === "cities" || b.kind === "regions") &&
       v.country_code !== b.country &&
       v.country !== b.country
     )
       return [];
+    const field = detailedFieldSchema.safeParse(v.type);
+    if (b.kind === "detailed" && !field.success) return [];
+    const path = Array.isArray(v.path)
+      ? v.path
+          .filter((p: unknown) => typeof p === "string")
+          .slice(0, 6)
+          .map((p: string) => p.slice(0, 150))
+      : [];
     return [
       {
         id,
         name: v.name.slice(0, 250),
+        ...(b.kind === "detailed" && field.success
+          ? {
+              field: field.data,
+              path,
+              ...(Number.isSafeInteger(v.audience_size_lower_bound) &&
+              v.audience_size_lower_bound >= 0
+                ? { audienceLower: v.audience_size_lower_bound }
+                : {}),
+              ...(Number.isSafeInteger(v.audience_size_upper_bound) &&
+              v.audience_size_upper_bound >= 0
+                ? { audienceUpper: v.audience_size_upper_bound }
+                : {}),
+            }
+          : {}),
         ...(b.kind === "cities" || b.kind === "regions"
           ? { country: b.country, kind: b.kind }
           : {}),
@@ -86,10 +119,11 @@ export async function campaignAudienceOptions(
       country: b.country,
       kind: b.kind,
       expiresAt: Date.now() + 3600000,
-      items: items.map(({ id, name, country }: any) => ({
+      items: items.map(({ id, name, country, field }: any) => ({
         id,
         name,
         ...(country ? { country } : {}),
+        ...(field ? { field } : {}),
       })),
     }),
     "studio:audience-selection:v1",
@@ -135,10 +169,10 @@ export function verifyManualAudienceSelections(
       );
       return proof;
     });
-    const known = (kind: z.infer<typeof kinds>, id: string) =>
+    const known = (kind: z.infer<typeof kinds>, id: string, field?: string) =>
       proofs
         .flatMap((p) => (p.kind === kind ? p.items : []))
-        .find((p) => p.id === id);
+        .find((p) => p.id === id && (!field || p.field === field));
     const verified = (
       kind: z.infer<typeof kinds>,
       values: { id: string; name: string }[] | undefined,
@@ -152,6 +186,15 @@ export function verifyManualAudienceSelections(
         );
         return { id: hit.id, name: hit.name };
       });
+    const detailedTargeting = (a.detailedTargeting ?? []).map((value) => {
+      const hit = known("detailed", value.id, value.field);
+      demand(
+        hit?.field,
+        "Selecciona una segmentación detallada confirmada por Meta.",
+        409,
+      );
+      return { id: hit.id, name: hit.name, field: hit.field };
+    });
     const interests =
       a.interestSource === "MANUAL" || !config.aiSuggestionJobId
         ? verified("interests", a.interests)
@@ -181,6 +224,7 @@ export function verifyManualAudienceSelections(
     return {
       ...a,
       interests,
+      detailedTargeting,
       customAudiences,
       excludedCustomAudiences,
       locales,

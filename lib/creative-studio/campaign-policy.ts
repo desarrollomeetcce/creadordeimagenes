@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { detailedSelectionSchema, detailedGroups } from "./detailed-targeting";
 import { metaInterestSchema } from "./audience-interests";
 import { demand } from "../errors";
 import { countryName, isCountryCode } from "../meta-ads/countries";
@@ -15,13 +16,14 @@ export const audienceSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     interests: z.array(metaInterestSchema).max(10).optional(),
+    detailedTargeting: z.array(detailedSelectionSchema).max(20).optional(),
     interestSource: z.enum(["MANUAL", "AI"]).optional(),
     platformPresetId: z.string().uuid().optional(),
     customAudiences: z.array(metaInterestSchema).max(10).optional(),
     excludedCustomAudiences: z.array(metaInterestSchema).max(10).optional(),
     locales: z.array(z.number().int().positive()).max(10).optional(),
     locations: z.array(locationSchema).max(20).optional(),
-    selectionProofs: z.array(z.string().max(24000)).max(10).optional(),
+    selectionProofs: z.array(z.string().max(24000)).max(30).optional(),
     advantageAudience: z.boolean().optional(),
     ageMin: z.number().int().min(18).max(65).default(18),
     ageMax: z.number().int().min(18).max(65).default(65),
@@ -232,7 +234,7 @@ export function audienceTargeting(
       ].includes(key)
     )
       delete safeSaved[key];
-  if (a.interests?.length) {
+  if (a.interests?.length || a.detailedTargeting?.length) {
     delete safeSaved.interests;
     delete safeSaved.flexible_spec;
   }
@@ -288,9 +290,7 @@ export function audienceTargeting(
               ? saved.age_max
               : a.ageMax,
         }),
-    ...(a.interests?.length
-      ? { flexible_spec: [{ interests: a.interests }] }
-      : {}),
+    ...detailedGroups(a.interests, a.detailedTargeting),
     ...(savedSelected && !special
       ? genders
         ? { genders }
@@ -531,6 +531,7 @@ export function validateCampaignDestination(c: CampaignConfig) {
           a.gender === "ALL" &&
           !a.savedAudienceId &&
           !a.interests?.length &&
+          !a.detailedTargeting?.length &&
           !a.customAudiences?.length &&
           !a.excludedCustomAudiences?.length,
       ),
@@ -599,6 +600,21 @@ export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
       known.has(match[1] ?? match[2]),
       `Falta definir la variable {${match[1] ?? match[2]}}.`,
     );
+  if (c.conversation) {
+    for (const value of [c.conversation.greeting, c.conversation.autofill])
+      for (const match of value.matchAll(
+        /\{([a-z][a-z0-9_]{0,39})\}|\[([a-z][a-z0-9_]{0,39})\]/g,
+      ))
+        demand(
+          known.has(match[1] ?? match[2]),
+          `Falta definir la variable {${match[1] ?? match[2]}}.`,
+        );
+    conversationSchema.parse({
+      ...c.conversation,
+      greeting: campaignText(c.conversation.greeting, item, c),
+      autofill: campaignText(c.conversation.autofill, item, c),
+    });
+  }
 }
 
 export function campaignDisplayName(item: CampaignItem, c: CampaignConfig) {

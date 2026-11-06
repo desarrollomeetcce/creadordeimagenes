@@ -1,3 +1,8 @@
+import {
+  detailedTargetingFields,
+  detailedMetaRows,
+  type BrowseCategory,
+} from "../creative-studio/detailed-targeting";
 import { randomUUID, createHmac } from "node:crypto";
 import { AppError, demand } from "../errors";
 import {
@@ -464,6 +469,7 @@ export class MetaReader {
       | "adsets"
       | "custom_audiences"
       | "interests"
+      | "detailed"
       | "cities"
       | "regions"
       | "locales",
@@ -472,6 +478,7 @@ export class MetaReader {
       country?: string;
       campaignId?: string;
       after?: string;
+      browse?: BrowseCategory;
     } = {},
   ) {
     demand(
@@ -518,11 +525,30 @@ export class MetaReader {
     } else if (kind === "custom_audiences") fields = "id,name,subtype";
     else {
       demand(
-        (input.query?.trim().length ?? 0) >= 2,
+        (input.query?.trim().length ?? 0) >= 2 ||
+          (kind === "detailed" && !!input.browse),
         "Escribe al menos dos caracteres para buscar.",
       );
-      params.set("q", input.query!.trim());
-      if (kind === "interests") {
+      if (input.query?.trim()) params.set("q", input.query.trim());
+      if (kind === "detailed") {
+        if (input.browse) {
+          demand(
+            ["interests", "behaviors", "demographics"].includes(input.browse),
+            "Elige una categoría de Meta.",
+          );
+          path = "search";
+          params.set("type", "adTargetingCategory");
+          params.set("class", input.browse);
+        } else {
+          path = `act_${accountId}/targetingsearch`;
+          params.set(
+            "whitelisted_types",
+            JSON.stringify(detailedTargetingFields),
+          );
+          if (input.country)
+            params.set("countries", JSON.stringify([input.country]));
+        }
+      } else if (kind === "interests") {
         path = `act_${accountId}/targetingsearch`;
         params.set("type", "adinterest");
       } else if (kind === "locales") {
@@ -543,7 +569,9 @@ export class MetaReader {
       }
     }
     params.set("fields", fields);
-    if (["cities", "regions", "locales", "interests"].includes(kind))
+    if (
+      ["cities", "regions", "locales", "interests", "detailed"].includes(kind)
+    )
       params.delete("fields");
     if (input.after) params.set("after", input.after);
     if (this.appSecret)
@@ -578,7 +606,11 @@ export class MetaReader {
       );
       throw error;
     }
-    return page(result);
+    return page(
+      kind === "detailed"
+        ? { ...result, data: detailedMetaRows(result.data) }
+        : result,
+    );
   }
   async setStatus(objectId: string, status: "ACTIVE" | "PAUSED") {
     demand(

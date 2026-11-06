@@ -4,7 +4,7 @@ import { CurrentUserId } from "./role-guide";
 import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
 import { StudioCampaignHistory } from "./studio-campaign-history";
 import { StudioPagePicker } from "./studio-page-picker";
-import { StudioMaximize } from "./studio-columns";
+import { StudioMaximize, StudioRestore } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   campaignText,
@@ -139,16 +139,21 @@ export function StudioCampaign({
   const [selectedAdsets, setSelectedAdsets] = useState<CampaignParentOption[]>(
     workspaceState?.selectedAdsets ?? [],
   );
-  const [aiFields, setAiFields] = useState(
-    workspaceState?.aiFields ?? {
+  const [aiFields, setAiFields] = useState({
+    headline: false,
+    conversation: false,
+    ...(workspaceState?.aiFields ?? {
       audiences: true,
       body: false,
       description: !String(
         workspaceState?.form?.description ?? template?.description ?? "",
       ).trim(),
-    },
-  );
+    }),
+  });
   const [aiNotice, setAiNotice] = useState("");
+  const [aiCompletion, setAiCompletion] = useState(
+    workspaceState?.aiCompletion ?? "",
+  );
   const stages = useRef<Record<string, HTMLDetailsElement | null>>({});
   const [leadForms, setLeadForms] = useState<{ id: string; name: string }[]>(
       [],
@@ -231,6 +236,7 @@ export function StudioCampaign({
       selectedCampaign,
       selectedAdsets,
       aiFields,
+      aiCompletion,
     });
   }, [
     form,
@@ -243,6 +249,7 @@ export function StudioCampaign({
     selectedCampaign,
     selectedAdsets,
     aiFields,
+    aiCompletion,
   ]);
   useEffect(() => {
     if (!pageRetryAt) return;
@@ -331,6 +338,27 @@ export function StudioCampaign({
       });
     return () => controller.abort();
   }, [form.objective, form.pageId, form.accountId]);
+  const effectiveAiFields = {
+    ...aiFields,
+    audiences:
+      !!aiFields.audiences &&
+      !form.existingAdsetId &&
+      !form.existingAdsetIds?.length,
+    conversation:
+      !!aiFields.conversation &&
+      ["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective),
+  };
+  const aiSelectionKey = JSON.stringify({
+    fields: effectiveAiFields,
+    prompt: aiPrompt.trim(),
+    items: items.map((i) => ({ id: i.subproductId, images: i.variationIds })),
+    country,
+    account: form.accountId,
+    page: form.pageId,
+    objective: form.objective,
+    special: form.specialCategory,
+    count: form.audiences.length,
+  });
   const aiContext = useRef("");
   aiContext.current = JSON.stringify({
     categoryId,
@@ -623,6 +651,7 @@ export function StudioCampaign({
               savedAudienceId: undefined,
               platformPresetId: undefined,
               interests: undefined,
+              detailedTargeting: undefined,
               customAudiences: undefined,
               excludedCustomAudiences: undefined,
               selectionProofs: undefined,
@@ -645,10 +674,18 @@ export function StudioCampaign({
     const requestId = aiRequest ?? crypto.randomUUID();
     setAiRequest(requestId);
     try {
+      const fields = {
+        ...aiFields,
+        conversation:
+          !!aiFields.conversation &&
+          ["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective),
+      };
       const config = campaignConfigSchema.parse({
         ...form,
-        body: aiFields.body ? "Texto generado por IA" : form.body,
+        body: fields.body ? "Texto generado por IA" : form.body,
         description: form.description,
+        headline: fields.headline ? "{diplomado}" : form.headline,
+        conversation: fields.conversation ? undefined : form.conversation,
         planVersion: 2,
       });
       validateCampaignDestination(config);
@@ -657,7 +694,13 @@ export function StudioCampaign({
           "Selecciona los afiches de este diplomado antes de generar con IA.",
         );
       items.forEach((i) => imageDistribution(i, config));
-      if (!aiFields.audiences && !aiFields.body && !aiFields.description)
+      if (
+        !fields.audiences &&
+        !fields.body &&
+        !fields.description &&
+        !fields.headline &&
+        !fields.conversation
+      )
         throw Error("Selecciona al menos un campo para generar con IA.");
       const result = await studioRequest("/campaign-suggestion", "POST", {
         requestId,
@@ -669,9 +712,9 @@ export function StudioCampaign({
         config,
         subproductIds: items.map((i) => i.subproductId),
         fields: {
-          ...aiFields,
+          ...fields,
           audiences:
-            !!aiFields.audiences &&
+            !!fields.audiences &&
             !form.existingAdsetId &&
             !form.existingAdsetIds?.length,
         },
@@ -681,9 +724,10 @@ export function StudioCampaign({
           "Cambió el diplomado o la configuración. La propuesta quedó guardada sin aplicarse.",
         );
       setAiProposal(result.proposal);
+      setAiCompletion(aiSelectionKey);
       setForm((f) => ({
         ...f,
-        ...(aiFields.audiences &&
+        ...(fields.audiences &&
         !f.existingAdsetId &&
         !f.existingAdsetIds?.length
           ? {
@@ -694,8 +738,12 @@ export function StudioCampaign({
               aiSuggestionJobId: result.jobId,
             }
           : {}),
-        ...(aiFields.body ? { body: result.proposal.body } : {}),
-        ...(aiFields.description
+        ...(fields.body ? { body: result.proposal.body } : {}),
+        ...(fields.headline ? { headline: result.proposal.headline } : {}),
+        ...(fields.conversation
+          ? { conversation: result.proposal.conversation }
+          : {}),
+        ...(fields.description
           ? { description: result.proposal.description }
           : {}),
       }));
@@ -703,7 +751,12 @@ export function StudioCampaign({
         "Listo. Revisa los campos completados y publica cuando quieras.",
       );
       setAiRequest(null);
-      if (aiFields.body || aiFields.description)
+      if (
+        fields.body ||
+        fields.description ||
+        fields.headline ||
+        fields.conversation
+      )
         stages.current.ads?.setAttribute("open", "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo crear la campaña.");
@@ -831,6 +884,7 @@ export function StudioCampaign({
     setAiProposal(null);
     setAiConsent(false);
     setAiPrompt("");
+    setAiCompletion("");
     restore.current([]);
     setForm((f) => {
       const next = saved ? onlyConfig(saved) : f;
@@ -850,6 +904,7 @@ export function StudioCampaign({
           ...a,
           name: "Público " + (i + 1),
           interests: undefined,
+          detailedTargeting: undefined,
           savedAudienceId: undefined,
           platformPresetId: undefined,
           customAudiences: undefined,
@@ -895,6 +950,12 @@ export function StudioCampaign({
     setBusy(true);
     setError("");
     try {
+      if (
+        mode === "AI" &&
+        Object.values(effectiveAiFields).some(Boolean) &&
+        aiCompletion !== aiSelectionKey
+      )
+        throw Error("Completa los campos marcados con IA antes de revisar.");
       const checked = campaignConfigSchema.safeParse({
         ...form,
         planVersion: 2,
@@ -1544,6 +1605,219 @@ export function StudioCampaign({
             )}
           </div>
         </details>
+        <section
+          className="studio-campaign-method"
+          aria-label="Método de preparación"
+        >
+          <div
+            className="studio-campaign-modes"
+            role="group"
+            aria-label="Preparación de campaña"
+          >
+            <button
+              type="button"
+              aria-pressed={mode === "TRADITIONAL"}
+              onClick={() => setMode("TRADITIONAL")}
+            >
+              Tradicional
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "AI"}
+              onClick={() => setMode("AI")}
+            >
+              Con IA
+            </button>
+          </div>
+          {mode === "AI" && (
+            <section className="studio-campaign-ai">
+              <div className="studio-ai-fields">
+                <strong>¿Qué completará la IA?</strong>
+                <label className="studio-check">
+                  <input
+                    aria-label="IA para públicos"
+                    type="checkbox"
+                    checked={
+                      !!aiFields.audiences &&
+                      !form.existingAdsetId &&
+                      !form.existingAdsetIds?.length
+                    }
+                    disabled={
+                      !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                    }
+                    onChange={(e) => {
+                      setAiRequest(null);
+                      setAiNotice("");
+                      setAiFields((f: any) => ({
+                        ...f,
+                        audiences: e.target.checked,
+                      }));
+                    }}
+                  />
+                  Públicos
+                </label>
+                <label className="studio-check">
+                  <input
+                    type="checkbox"
+                    checked={aiFields.description}
+                    onChange={(e) => {
+                      setAiRequest(null);
+                      setAiNotice("");
+                      setAiFields((f: any) => ({
+                        ...f,
+                        description: e.target.checked,
+                      }));
+                    }}
+                  />
+                  Descripción
+                </label>
+                <label className="studio-check">
+                  <input
+                    type="checkbox"
+                    checked={aiFields.body}
+                    onChange={(e) => {
+                      setAiRequest(null);
+                      setAiNotice("");
+                      setAiFields((f: any) => ({
+                        ...f,
+                        body: e.target.checked,
+                      }));
+                    }}
+                  />
+                  Texto principal
+                </label>
+                <label className="studio-check">
+                  <input
+                    aria-label="IA para headline"
+                    type="checkbox"
+                    checked={!!aiFields.headline}
+                    onChange={(e) => {
+                      setAiRequest(null);
+                      setAiNotice("");
+                      setAiFields((f: any) => ({
+                        ...f,
+                        headline: e.target.checked,
+                      }));
+                    }}
+                  />
+                  Headline
+                </label>
+                <label className="studio-check">
+                  <input
+                    aria-label="IA para plantilla de mensaje"
+                    type="checkbox"
+                    checked={
+                      !!aiFields.conversation &&
+                      ["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective)
+                    }
+                    disabled={
+                      !["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective)
+                    }
+                    onChange={(e) => {
+                      setAiRequest(null);
+                      setAiNotice("");
+                      setAiFields((f: any) => ({
+                        ...f,
+                        conversation: e.target.checked,
+                      }));
+                    }}
+                  />
+                  Plantilla de mensaje <small>(se creará nueva)</small>
+                </label>
+              </div>
+              <label>
+                Instrucciones para la IA
+                <textarea
+                  aria-label="Prompt de campaña IA"
+                  value={aiPrompt}
+                  rows={3}
+                  maxLength={12000}
+                  placeholder="Enfoque del público, profesión o beneficios comprobables…"
+                  onChange={(e) => {
+                    setAiPrompt(e.target.value);
+                    setAiRequest(null);
+                    setAiProposal(null);
+                  }}
+                />
+              </label>
+              <small>La IA completará solo los campos marcados.</small>
+              <label className="studio-check">
+                <input
+                  type="checkbox"
+                  checked={aiConsent}
+                  onChange={(e) => setAiConsent(e.target.checked)}
+                />
+                Autorizo esta consulta de IA y su posible cargo.
+              </label>
+              <button
+                type="button"
+                className="studio-ai-generate"
+                disabled={locked || !aiConsent || !items.length}
+                onClick={() => void suggest()}
+              >
+                {aiBusy ? "Completando con IA…" : "✦ Completar campos con IA"}
+              </button>
+              {aiNotice && <small role="status">{aiNotice}</small>}
+            </section>
+          )}
+        </section>
+        {mode === "TRADITIONAL" && (
+          <>
+            {" "}
+            <details
+              className="studio-campaign-stage stage-audiences"
+              ref={(el) => {
+                stages.current.audiences = el;
+              }}
+            >
+              <summary>
+                <span className="studio-stage-number">03</span>
+                <span>
+                  <strong>Públicos</strong>
+                  <small>
+                    {form.audiences.length}{" "}
+                    {form.existingAdsetId || form.existingAdsetIds?.length
+                      ? "existentes, sin cambios"
+                      : "por configurar · manual o IA"}
+                  </small>
+                </span>
+                <span className="studio-stage-caret">⌄</span>
+              </summary>
+              <div className="studio-stage-body">
+                {mode === "TRADITIONAL" && (
+                  <div className="studio-audience-grid">
+                    {form.audiences.map((a, i) => (
+                      <StudioCampaignAudience
+                        key={
+                          (form.existingAdsetIds?.[i] ??
+                            form.existingAdsetId ??
+                            "new") +
+                          ":" +
+                          i
+                        }
+                        index={i}
+                        value={a}
+                        config={form}
+                        categoryId={categoryId}
+                        accountId={form.accountId}
+                        existing={
+                          !!form.existingAdsetId ||
+                          !!form.existingAdsetIds?.length
+                        }
+                        onChange={(value) =>
+                          update(
+                            "audiences",
+                            form.audiences.map((a, j) => (i === j ? value : a)),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+          </>
+        )}
         <details
           className="studio-campaign-stage stage-ads"
           ref={(el) => {
@@ -1551,7 +1825,7 @@ export function StudioCampaign({
           }}
         >
           <summary>
-            <span className="studio-stage-number">03</span>
+            <span className="studio-stage-number">04</span>
             <span>
               <strong>Anuncios y conversación</strong>
               <small>
@@ -1566,215 +1840,64 @@ export function StudioCampaign({
               <input type="checkbox" checked={false} disabled />
               Multianunciante desactivado
             </label>
-            <label>
-              Texto principal
-              <textarea
-                aria-label="Texto principal"
-                value={form.body}
-                maxLength={5000}
-                rows={4}
-                onChange={(e) => update("body", e.target.value)}
-              />
-            </label>
-            <div className="studio-field-pair">
-              <label>
-                Headline
-                <input
-                  aria-label="Headline del anuncio"
-                  value={form.headline}
-                  onChange={(e) => update("headline", e.target.value)}
-                />
-              </label>
-            </div>
-            <small className="studio-template-help">
-              {"{diplomado} · {pais}"}
-            </small>
-
-            <label>
-              Descripción
-              <textarea
-                aria-label="Descripción del anuncio"
-                value={form.description}
-                rows={2}
-                maxLength={500}
-                onChange={(e) => update("description", e.target.value)}
-              />
-            </label>
-            {["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective) && (
-              <StudioConversationEditor
-                categoryId={categoryId}
-                value={form.conversation}
-                onChange={(value) => update("conversation", value)}
-                store={presets}
-                disabled={locked}
-              />
+            {!(mode === "AI" && aiFields.body) && (
+              <>
+                {" "}
+                <label>
+                  Texto principal
+                  <textarea
+                    aria-label="Texto principal"
+                    value={form.body}
+                    maxLength={5000}
+                    rows={4}
+                    onChange={(e) => update("body", e.target.value)}
+                  />
+                </label>
+              </>
             )}
-          </div>
-        </details>
-        <details
-          className="studio-campaign-stage stage-audiences"
-          ref={(el) => {
-            stages.current.audiences = el;
-          }}
-        >
-          <summary>
-            <span className="studio-stage-number">04</span>
-            <span>
-              <strong>Públicos</strong>
-              <small>
-                {form.audiences.length}{" "}
-                {form.existingAdsetId || form.existingAdsetIds?.length
-                  ? "existentes, sin cambios"
-                  : "por configurar · manual o IA"}
-              </small>
-            </span>
-            <span className="studio-stage-caret">⌄</span>
-          </summary>
-          <div className="studio-stage-body">
-            <div
-              className="studio-campaign-modes"
-              role="group"
-              aria-label="Preparación de campaña"
-            >
-              <button
-                type="button"
-                aria-pressed={mode === "TRADITIONAL"}
-                onClick={() => setMode("TRADITIONAL")}
-              >
-                Tradicional
-              </button>
-              <button
-                type="button"
-                aria-pressed={mode === "AI"}
-                onClick={() => setMode("AI")}
-              >
-                Con IA
-              </button>
-            </div>
-            {mode === "AI" && (
-              <section className="studio-campaign-ai">
-                <div className="studio-ai-fields">
-                  <strong>¿Qué completará la IA?</strong>
-                  <label className="studio-check">
+            {!(mode === "AI" && aiFields.headline) && (
+              <>
+                {" "}
+                <div className="studio-field-pair">
+                  <label>
+                    Headline
                     <input
-                      aria-label="IA para públicos"
-                      type="checkbox"
-                      checked={
-                        !!aiFields.audiences &&
-                        !form.existingAdsetId &&
-                        !form.existingAdsetIds?.length
-                      }
-                      disabled={
-                        !!form.existingAdsetId ||
-                        !!form.existingAdsetIds?.length
-                      }
-                      onChange={(e) => {
-                        setAiRequest(null);
-                        setAiNotice("");
-                        setAiFields((f: any) => ({
-                          ...f,
-                          audiences: e.target.checked,
-                        }));
-                      }}
+                      aria-label="Headline del anuncio"
+                      value={form.headline}
+                      onChange={(e) => update("headline", e.target.value)}
                     />
-                    Públicos
-                  </label>
-                  <label className="studio-check">
-                    <input
-                      type="checkbox"
-                      checked={aiFields.description}
-                      onChange={(e) => {
-                        setAiRequest(null);
-                        setAiNotice("");
-                        setAiFields((f: any) => ({
-                          ...f,
-                          description: e.target.checked,
-                        }));
-                      }}
-                    />
-                    Descripción
-                  </label>
-                  <label className="studio-check">
-                    <input
-                      type="checkbox"
-                      checked={aiFields.body}
-                      onChange={(e) => {
-                        setAiRequest(null);
-                        setAiNotice("");
-                        setAiFields((f: any) => ({
-                          ...f,
-                          body: e.target.checked,
-                        }));
-                      }}
-                    />
-                    Texto principal
                   </label>
                 </div>
-                <label>
-                  Instrucciones para la IA
-                  <textarea
-                    aria-label="Prompt de campaña IA"
-                    value={aiPrompt}
-                    rows={3}
-                    maxLength={12000}
-                    placeholder="Enfoque del público, profesión o beneficios comprobables…"
-                    onChange={(e) => {
-                      setAiPrompt(e.target.value);
-                      setAiRequest(null);
-                      setAiProposal(null);
-                    }}
-                  />
-                </label>
-                <small>
-                  Conserva el headline, presupuesto, país, ubicaciones y
-                  plantilla.
+                <small className="studio-template-help">
+                  {"{diplomado} · {pais}"}
                 </small>
-                <label className="studio-check">
-                  <input
-                    type="checkbox"
-                    checked={aiConsent}
-                    onChange={(e) => setAiConsent(e.target.checked)}
-                  />
-                  Autorizo esta consulta de IA y su posible cargo.
-                </label>
-                <button
-                  type="button"
-                  className="studio-ai-generate"
-                  disabled={locked || !aiConsent || !items.length}
-                  onClick={() => void suggest()}
-                >
-                  {aiBusy ? "Completando con IA…" : "✦ Completar campos con IA"}
-                </button>
-                {aiNotice && <small role="status">{aiNotice}</small>}
-              </section>
+              </>
             )}
-            <div className="studio-audience-grid">
-              {form.audiences.map((a, i) => (
-                <StudioCampaignAudience
-                  key={
-                    (form.existingAdsetIds?.[i] ??
-                      form.existingAdsetId ??
-                      "new") +
-                    ":" +
-                    i
-                  }
-                  index={i}
-                  value={a}
-                  config={form}
+            {!(mode === "AI" && aiFields.description) && (
+              <>
+                {" "}
+                <label>
+                  Descripción
+                  <textarea
+                    aria-label="Descripción del anuncio"
+                    value={form.description}
+                    rows={2}
+                    maxLength={500}
+                    onChange={(e) => update("description", e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            {["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective) &&
+              !(mode === "AI" && aiFields.conversation) && (
+                <StudioConversationEditor
                   categoryId={categoryId}
-                  accountId={form.accountId}
-                  existing={
-                    !!form.existingAdsetId || !!form.existingAdsetIds?.length
-                  }
-                  onChange={(value) =>
-                    update(
-                      "audiences",
-                      form.audiences.map((a, j) => (i === j ? value : a)),
-                    )
-                  }
+                  value={form.conversation}
+                  onChange={(value) => update("conversation", value)}
+                  store={presets}
+                  disabled={locked}
                 />
-              ))}
-            </div>
+              )}
           </div>
         </details>
         <details className="studio-legal-options">
@@ -1981,6 +2104,7 @@ export function StudioCampaign({
           {summary.adsets} conjuntos · {summary.ads} anuncios
         </small>
       </footer>
+      <StudioRestore pane="campaign" />
       {review && draft && (
         <dialog
           ref={dialog}
@@ -2037,6 +2161,21 @@ export function StudioCampaign({
             Ubicaciones:{" "}
             {(draft.config.platforms ?? ["facebook", "instagram"]).join(" · ")}
           </p>
+          <details className="studio-review-audiences">
+            <summary>Públicos · {draft.config.audiences.length}</summary>
+            {draft.config.audiences.map((a: any, index: number) => (
+              <p key={index}>
+                <strong>{a.name}</strong>
+                {draft.config.existingAdsetId ||
+                draft.config.existingAdsetIds?.length
+                  ? " · Se conserva la segmentación existente"
+                  : ` · ${a.ageMin}–${a.ageMax} · ` +
+                    [...(a.interests ?? []), ...(a.detailedTargeting ?? [])]
+                      .map((v: any) => v.name)
+                      .join(" · ")}
+              </p>
+            ))}
+          </details>
           {draft.items.map((i: CampaignItem) => (
             <section key={i.subproductId} className="studio-ad-preview">
               <div className="studio-preview-thumbs">
@@ -2054,6 +2193,27 @@ export function StudioCampaign({
               <strong>
                 {campaignText(draft.config.headline, i, draft.config)}
               </strong>
+              {draft.config.description && (
+                <p>{campaignText(draft.config.description, i, draft.config)}</p>
+              )}
+              {draft.config.conversation && (
+                <div className="studio-conversation-preview">
+                  <span>
+                    {campaignText(
+                      draft.config.conversation.greeting,
+                      i,
+                      draft.config,
+                    )}
+                  </span>
+                  <span>
+                    {campaignText(
+                      draft.config.conversation.autofill,
+                      i,
+                      draft.config,
+                    )}
+                  </span>
+                </div>
+              )}
               {(!draft.config.objective ||
                 ["WHATSAPP", "LEADS_WHATSAPP"].includes(
                   draft.config.objective,
