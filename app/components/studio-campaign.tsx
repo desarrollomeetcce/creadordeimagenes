@@ -1,5 +1,6 @@
 "use client";
 import { useContext, useEffect, useRef, useState } from "react";
+import { createAiPausedCampaigns } from "../../lib/creative-studio/ai-campaign-flow";
 import { CurrentUserId } from "./role-guide";
 import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
 import { StudioPagePicker } from "./studio-page-picker";
@@ -16,6 +17,7 @@ import { SheetSearchSelect } from "./sheet-search-select";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 const initial: CampaignConfig = {
   planVersion: 2,
+  campaignName: "{pais} · {diplomado}",
   objective: "WHATSAPP",
   website: "",
   leadFormId: "",
@@ -28,7 +30,7 @@ const initial: CampaignConfig = {
   whatsapp: "",
   dailyBudget: 0,
   body: "Solicita información sobre el diplomado en {diplomado}.",
-  headline: "{diplomado} · {codigo}",
+  headline: "{diplomado}",
   description: "",
   code: "",
   targetStatus: "PAUSED",
@@ -239,8 +241,8 @@ export function StudioCampaign({
   aiContext.current = JSON.stringify({
     categoryId,
     country,
-    items: items.map((i) => i.subproductId),
-    form,
+    items: items.map((i) => ({ id: i.subproductId, images: i.variationIds })),
+    form: { ...form, whatsapp: "" },
   });
   const lastCountry = useRef(country);
   const pending = useRef(false),
@@ -449,7 +451,7 @@ export function StudioCampaign({
     setError("");
   }
   async function suggest() {
-    if (aiPending.current || !aiConsent) return;
+    if (aiPending.current || pending.current || !aiConsent) return;
     aiPending.current = true;
     const context = aiContext.current;
     setAiBusy(true);
@@ -457,23 +459,24 @@ export function StudioCampaign({
     const requestId = aiRequest ?? crypto.randomUUID();
     setAiRequest(requestId);
     try {
-      const result = await studioRequest("/campaign-suggestion", "POST", {
+      const result = await createAiPausedCampaigns({
         requestId,
         categoryId,
-        confirmAi: true,
-        prompt: aiPrompt,
         config: form,
-        subproductIds: items.map((i) => i.subproductId),
+        items,
+        prompt: aiPrompt,
+        request: studioRequest,
+        isCurrent: () => aiContext.current === context,
+        proposal: aiProposal,
+        onProposal: setAiProposal,
+        onPrepared: (d) => setDraft(d),
       });
-      if (aiContext.current === context) setAiProposal(result.proposal);
-      else
-        setError(
-          "La selección o el país cambió durante la consulta. Revisa la configuración antes de pedir otra propuesta.",
-        );
+      setDraft(result);
+      setForm(onlyConfig(result.config));
+      setHalted(false);
+      setReview(false);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "No se confirmó la propuesta de IA.",
-      );
+      setError(e instanceof Error ? e.message : "No se pudo crear la campaña.");
     } finally {
       aiPending.current = false;
       setAiBusy(false);
@@ -798,6 +801,16 @@ export function StudioCampaign({
             <strong>{money(summary.dailyTotal)} / día en total</strong>
           )}
         </div>
+        <label>
+          Nombre de campaña
+          <input
+            aria-label="Nombre de campaña"
+            value={form.campaignName ?? "{pais} · {diplomado}"}
+            maxLength={250}
+            onChange={(e) => update("campaignName", e.target.value)}
+          />
+          <small>Los conjuntos tomarán este nombre más 1, 2…</small>
+        </label>
         <section className="studio-adset-distribution">
           <label>
             Cantidad de conjuntos de anuncios
@@ -906,15 +919,6 @@ export function StudioCampaign({
         </section>
         <div className="studio-field-pair">
           <label>
-            Código del país
-            <input
-              aria-label="Código de campaña"
-              placeholder="Ej. ACERO UR"
-              value={form.code}
-              onChange={(e) => update("code", e.target.value)}
-            />
-          </label>
-          <label>
             Headline
             <input
               aria-label="Headline del anuncio"
@@ -923,9 +927,7 @@ export function StudioCampaign({
             />
           </label>
         </div>
-        <small className="studio-template-help">
-          {"{diplomado} · {pais} · {codigo}"}
-        </small>
+        <small className="studio-template-help">{"{diplomado} · {pais}"}</small>
         <details className="studio-custom-variables">
           <summary>Variables del anuncio</summary>
           <small>
@@ -1050,7 +1052,7 @@ export function StudioCampaign({
         {mode === "AI" && (
           <section className="studio-campaign-ai">
             <label>
-              Instrucciones para la propuesta
+              Instrucciones para la IA · opcional
               <textarea
                 aria-label="Prompt de campaña IA"
                 rows={4}
@@ -1060,222 +1062,212 @@ export function StudioCampaign({
                   setAiRequest(null);
                   setAiProposal(null);
                 }}
-                placeholder="Propón textos y públicos para {diplomado} en {pais}…"
+                placeholder="Indica el enfoque del anuncio y del público…"
               />
             </label>
             <small>
-              La IA propone textos, edades y género. No cambia headline, país,
-              presupuesto ni ubicaciones; no publica.
+              La IA completa texto, descripción y públicos. Conserva tu
+              headline, país, presupuesto y ubicaciones. Las campañas se crean
+              pausadas.
             </small>
+            <label>
+              Descripción opcional
+              <textarea
+                aria-label="Descripción opcional para IA"
+                rows={2}
+                maxLength={500}
+                value={form.description}
+                placeholder="Déjala vacía para que la redacte la IA"
+                onChange={(e) => update("description", e.target.value)}
+              />
+            </label>
             <label className="studio-check">
               <input
                 type="checkbox"
                 checked={aiConsent}
                 onChange={(e) => setAiConsent(e.target.checked)}
               />
-              Autorizo esta consulta de IA y su posible cargo.
+              Autorizo la IA y su posible cargo, y crear estas campañas pausadas
+              en Meta.
             </label>
-            <button
-              type="button"
-              disabled={
-                !aiConsent ||
-                !aiPrompt.trim() ||
-                !items.length ||
-                aiBusy ||
-                locked
-              }
-              onClick={() => void suggest()}
-            >
-              {aiBusy ? "Preparando propuesta…" : "Preparar propuesta con IA"}
-            </button>
-            {aiProposal && (
-              <div className="studio-ai-proposal">
-                <p>{aiProposal.body}</p>
-                <small>{aiProposal.description}</small>
-                {aiProposal.audiences.map((a: any, i: number) => (
-                  <small key={i}>
-                    {a.name} · {a.ageMin}–{a.ageMax} · {a.gender}
-                  </small>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    update("body", aiProposal.body);
-                    update("description", aiProposal.description);
-                    update("audiences", aiProposal.audiences);
-                    setAdvanced(true);
-                    setAiProposal(null);
-                  }}
-                >
-                  Usar propuesta y revisar
-                </button>
-              </div>
-            )}
           </section>
         )}
-        <label>
-          Texto del anuncio
-          <textarea
-            aria-label="Texto del anuncio"
-            rows={4}
-            value={form.body}
-            onChange={(e) => update("body", e.target.value)}
-          />
-        </label>
-        <label>
-          Descripción
-          <textarea
-            aria-label="Descripción del anuncio"
-            rows={2}
-            value={form.description}
-            onChange={(e) => update("description", e.target.value)}
-          />
-        </label>
+        {mode === "TRADITIONAL" && (
+          <>
+            <label>
+              Texto del anuncio
+              <textarea
+                aria-label="Texto del anuncio"
+                rows={4}
+                value={form.body}
+                onChange={(e) => update("body", e.target.value)}
+              />
+            </label>
+            <label>
+              Descripción
+              <textarea
+                aria-label="Descripción del anuncio"
+                rows={2}
+                value={form.description}
+                onChange={(e) => update("description", e.target.value)}
+              />
+            </label>
+          </>
+        )}
         <button
           className="studio-advanced-trigger"
           type="button"
           aria-expanded={advanced}
           onClick={() => setAdvanced(!advanced)}
         >
-          ◈ Públicos y configuración {advanced ? "−" : "+"}
+          ◈ {mode === "AI" ? "Configuración legal" : "Públicos y configuración"}{" "}
+          {advanced ? "−" : "+"}
         </button>
         {advanced && (
           <div className="studio-advanced">
-            <div className="studio-audience-tabs">
-              {form.audiences.map((a, i) => (
-                <section key={i}>
-                  <h3>
-                    {i + 1}. {a.name}
-                  </h3>
-                  <label>
-                    Nombre
-                    <input
-                      value={a.name}
-                      onChange={(e) =>
-                        update(
-                          "audiences",
-                          form.audiences.map((x, j) =>
-                            j === i ? { ...x, name: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                  <label>
-                    Público guardado {audienceLoading ? "· consultando…" : ""}
-                    {resources.audienceWarning && (
-                      <small>{resources.audienceWarning}</small>
-                    )}
-                    <select
-                      value={a.savedAudienceId ?? ""}
-                      onChange={(e) =>
-                        update(
-                          "audiences",
-                          form.audiences.map((x, j) =>
-                            j === i
-                              ? {
-                                  ...x,
-                                  savedAudienceId: e.target.value || undefined,
-                                }
-                              : x,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="">Público amplio</option>
-                      {resources.audiences.map((x: any) => (
-                        <option key={x.id} value={x.id}>
-                          {x.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="studio-field-pair">
-                    <label>
-                      Edad desde
-                      <input
-                        type="number"
-                        min="18"
-                        max="65"
-                        value={a.ageMin}
-                        onChange={(e) =>
-                          update(
-                            "audiences",
-                            form.audiences.map((x, j) =>
-                              j === i
-                                ? { ...x, ageMin: Number(e.target.value) }
-                                : x,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Hasta
-                      <input
-                        type="number"
-                        min="18"
-                        max="65"
-                        value={a.ageMax}
-                        onChange={(e) =>
-                          update(
-                            "audiences",
-                            form.audiences.map((x, j) =>
-                              j === i
-                                ? { ...x, ageMax: Number(e.target.value) }
-                                : x,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Género
-                    <select
-                      value={a.gender}
-                      onChange={(e) =>
-                        update(
-                          "audiences",
-                          form.audiences.map((x, j) =>
-                            j === i ? { ...x, gender: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="ALL">Todos</option>
-                      <option value="WOMEN">Mujeres</option>
-                      <option value="MEN">Hombres</option>
-                    </select>
-                  </label>
-                  <label className="studio-check">
-                    <input
-                      type="checkbox"
-                      checked={a.strictAge}
-                      onChange={(e) =>
-                        update(
-                          "audiences",
-                          form.audiences.map((x, j) =>
-                            j === i ? { ...x, strictAge: e.target.checked } : x,
-                          ),
-                        )
-                      }
-                    />
-                    Aplicar edades estrictas
-                  </label>
-                  {!a.strictAge && (
-                    <small>Edades sugeridas · Advantage+ Audience</small>
-                  )}
-                </section>
-              ))}
-            </div>
-            <label>
-              Descripción adicional
-              <input
-                value={form.description}
-                onChange={(e) => update("description", e.target.value)}
-              />
-            </label>
+            {mode === "TRADITIONAL" && (
+              <>
+                <div className="studio-audience-tabs">
+                  {form.audiences.map((a, i) => (
+                    <section key={i}>
+                      <h3>
+                        {i + 1}. {a.name}
+                      </h3>
+                      <label>
+                        Nombre
+                        <input
+                          value={a.name}
+                          onChange={(e) =>
+                            update(
+                              "audiences",
+                              form.audiences.map((x, j) =>
+                                j === i ? { ...x, name: e.target.value } : x,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        Público guardado{" "}
+                        {audienceLoading ? "· consultando…" : ""}
+                        {resources.audienceWarning && (
+                          <small>{resources.audienceWarning}</small>
+                        )}
+                        <select
+                          value={a.savedAudienceId ?? ""}
+                          onChange={(e) =>
+                            update(
+                              "audiences",
+                              form.audiences.map((x, j) =>
+                                j === i
+                                  ? {
+                                      ...x,
+                                      savedAudienceId:
+                                        e.target.value || undefined,
+                                    }
+                                  : x,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="">Público amplio</option>
+                          {resources.audiences.map((x: any) => (
+                            <option key={x.id} value={x.id}>
+                              {x.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="studio-field-pair">
+                        <label>
+                          Edad desde
+                          <input
+                            type="number"
+                            min="18"
+                            max="65"
+                            value={a.ageMin}
+                            onChange={(e) =>
+                              update(
+                                "audiences",
+                                form.audiences.map((x, j) =>
+                                  j === i
+                                    ? { ...x, ageMin: Number(e.target.value) }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          Hasta
+                          <input
+                            type="number"
+                            min="18"
+                            max="65"
+                            value={a.ageMax}
+                            onChange={(e) =>
+                              update(
+                                "audiences",
+                                form.audiences.map((x, j) =>
+                                  j === i
+                                    ? { ...x, ageMax: Number(e.target.value) }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                      <label>
+                        Género
+                        <select
+                          value={a.gender}
+                          onChange={(e) =>
+                            update(
+                              "audiences",
+                              form.audiences.map((x, j) =>
+                                j === i ? { ...x, gender: e.target.value } : x,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="ALL">Todos</option>
+                          <option value="WOMEN">Mujeres</option>
+                          <option value="MEN">Hombres</option>
+                        </select>
+                      </label>
+                      <label className="studio-check">
+                        <input
+                          type="checkbox"
+                          checked={a.strictAge}
+                          onChange={(e) =>
+                            update(
+                              "audiences",
+                              form.audiences.map((x, j) =>
+                                j === i
+                                  ? { ...x, strictAge: e.target.checked }
+                                  : x,
+                              ),
+                            )
+                          }
+                        />
+                        Aplicar edades estrictas
+                      </label>
+                      {!a.strictAge && (
+                        <small>Edades sugeridas · Advantage+ Audience</small>
+                      )}
+                    </section>
+                  ))}
+                </div>
+                <label>
+                  Descripción adicional
+                  <input
+                    value={form.description}
+                    onChange={(e) => update("description", e.target.value)}
+                  />
+                </label>
+              </>
+            )}
             <label>
               Categoría publicitaria
               <select
@@ -1306,17 +1298,23 @@ export function StudioCampaign({
             </label>
           </div>
         )}
-        <label>
-          Al publicar
-          <select
-            aria-label="Estado de publicación"
-            value={form.targetStatus}
-            onChange={(e) => update("targetStatus", e.target.value)}
-          >
-            <option value="PAUSED">Crear pausadas para revisar</option>
-            <option value="ACTIVE">Activar y enviar a revisión de Meta</option>
-          </select>
-        </label>
+        {mode === "AI" ? (
+          <p className="hint">Se crearán pausadas, sin activar la entrega.</p>
+        ) : (
+          <label>
+            Al publicar
+            <select
+              aria-label="Estado de publicación"
+              value={form.targetStatus}
+              onChange={(e) => update("targetStatus", e.target.value)}
+            >
+              <option value="PAUSED">Crear pausadas para revisar</option>
+              <option value="ACTIVE">
+                Activar y enviar a revisión de Meta
+              </option>
+            </select>
+          </label>
+        )}
       </fieldset>
       {error && (
         <p className="notice error" role="alert">
@@ -1381,21 +1379,36 @@ export function StudioCampaign({
         </div>
       )}
       <footer className="studio-campaign-footer">
-        <button
-          type="button"
-          disabled={locked || !items.length || !form.accountId || !country}
-          onClick={() => void prepare(false)}
-        >
-          Guardar borrador
-        </button>
-        <button
-          type="button"
-          className="studio-publish-button"
-          disabled={locked || !items.length || !form.accountId || !country}
-          onClick={() => void prepare(true)}
-        >
-          ↗ Revisar y publicar
-        </button>
+        {mode === "AI" ? (
+          <button
+            type="button"
+            className="studio-publish-button"
+            disabled={locked || !aiConsent || !items.length}
+            onClick={() => void suggest()}
+          >
+            {aiBusy
+              ? "Preparando campañas con IA…"
+              : "Crear campañas pausadas con IA"}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={locked || !items.length || !form.accountId || !country}
+              onClick={() => void prepare(false)}
+            >
+              Guardar borrador
+            </button>
+            <button
+              type="button"
+              className="studio-publish-button"
+              disabled={locked || !items.length || !form.accountId || !country}
+              onClick={() => void prepare(true)}
+            >
+              ↗ Revisar y publicar
+            </button>
+          </>
+        )}
         <small>
           {summary.adsets} conjuntos · {summary.ads} anuncios
         </small>

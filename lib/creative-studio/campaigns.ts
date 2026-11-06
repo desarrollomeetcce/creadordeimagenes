@@ -29,6 +29,7 @@ import {
   validateCampaignDestination,
   validateCampaignText,
   campaignText,
+  campaignDisplayName,
   minorBudget,
   audienceTargeting,
   whatsappPromotedObject,
@@ -460,7 +461,10 @@ function publicLaunch(d: any) {
       .filter((s) => s.kind === "CAMPAIGN" && s.receipt?.id)
       .map((s) => ({
         id: s.receipt!.id,
-        name: (d.campaigns as CampaignItem[])[s.campaign].name,
+        name: campaignDisplayName(
+          (d.campaigns as CampaignItem[])[s.campaign],
+          config,
+        ),
       })),
     receipts: steps
       .filter((s) => s.receipt?.id)
@@ -653,9 +657,9 @@ async function receiptStep(
           level,
           name:
             level === "campaign"
-              ? `${config.country} · ${item.name}`
+              ? campaignDisplayName(item, config)
               : level === "adset"
-                ? config.audiences[source.audience!].name
+                ? `${campaignDisplayName(item, config)} · ${(source.audience ?? 0) + 1}`
                 : `${item.name} · Afiche ${source.image! + 1}`,
           status: o.status,
           effectiveStatus: o.effectiveStatus,
@@ -821,7 +825,7 @@ export async function tickLaunch(actor: Actor, id: string) {
     } else if (step.kind === "CAMPAIGN") {
       edge = "campaigns";
       body = {
-        name: `${config.country} · ${item.name}`,
+        name: campaignDisplayName(item, config),
         objective: campaignObjective(config),
         buying_type: "AUCTION",
         status: "PAUSED",
@@ -833,7 +837,7 @@ export async function tickLaunch(actor: Actor, id: string) {
     } else if (step.kind === "ADSET") {
       edge = "adsets";
       body = {
-        name: config.audiences[step.audience!].name,
+        name: `${campaignDisplayName(item, config)} · ${(step.audience ?? 0) + 1}`,
         campaign_id: resolve(`campaign:${step.campaign}`).id,
         billing_event: "IMPRESSIONS",
         optimization_goal: campaignOptimization(config),
@@ -859,7 +863,7 @@ export async function tickLaunch(actor: Actor, id: string) {
     } else if (step.kind === "CREATIVE") {
       edge = "adcreatives";
       body = {
-        name: `${item.name} · Afiche ${step.image! + 1}`,
+        name: `${campaignDisplayName(item, config)} · Afiche ${step.image! + 1}`,
         object_story_spec: {
           page_id: config.pageId,
           link_data: {

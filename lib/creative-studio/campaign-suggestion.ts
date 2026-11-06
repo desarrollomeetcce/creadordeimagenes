@@ -47,7 +47,14 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
       categoryId: z.string().min(1).max(100),
       confirmAi: z.literal(true),
       prompt: z.string().trim().min(1).max(12000),
-      config: campaignConfigSchema,
+      config: campaignConfigSchema.extend({
+        body: z
+          .string()
+          .trim()
+          .max(5000)
+          .optional()
+          .transform((v) => v || "Texto generado por IA"),
+      }),
       subproductIds: z.array(z.string().min(1).max(100)).min(1).max(10),
     })
     .strict()

@@ -1,3 +1,7 @@
+### 2026-11-06 · Creación pausada directa con IA
+
+Modo IA completa texto, descripción y públicos desde una única acción autorizada; crea campañas pausadas con presupuesto y headline conservados. Descripción manual opcional prevalece sobre IA. Nombre editable después del presupuesto; conjuntos usan nombre de campaña + número. Retirado Código del país visual conservando compatibilidad histórica. Prevalidación nombra campos faltantes y comprueba reparto/destino/variables antes de consulta IA. Copia generada se reutiliza al reintentar una publicación interrumpida; UUID compartido y verificación de selección evitan duplicados y no se permite ACTIVE en este flujo.
+
 ### 2026-11-06 · Configuración de campañas e IA revisable
 
 Tercera columna incorpora fijadas personales de cuentas/páginas con alias corto, objetivos WhatsApp/clientes potenciales/visitas, país compartido, conjuntos configurables, reparto equilibrado sin duplicar imágenes y distribución manual validada. Headline común usa nombre guardado y variables propias; plataformas seleccionadas sustituyen posiciones heredadas. Formularios se consultan bajo demanda y se valida pertenencia/estado; destino web HTTPS. Nuevos planes versionados conservan ejecución histórica. Recibo de creativo verifica página, CTA y headline exacto antes de activar.

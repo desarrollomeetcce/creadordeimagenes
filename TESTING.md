@@ -1,3 +1,7 @@
+### 2026-11-06 · IA directa y descripción opcional
+
+319 pruebas generales y 15 de política/flujo aprobadas; TypeScript y build correctos. Transporte simulado verifica texto manual vacío permitido, campos faltantes identificados antes de IA, publicación exclusivamente PAUSED, headline/ubicaciones/descrición manual respetados, nombre de campaña, reutilización de copia sin nueva consulta, selección modificada sin publicar y borrador ACTIVE bloqueado. Sin Meta ni IA reales; no se afirma verificación de entrega o aprobación real ni del despliegue Hostinger.
+
 ### 2026-11-06 · Configurador Meta e IA
 
 319 pruebas generales, 14 pruebas de políticas/selector, 5 integraciones en base exclusiva (3 de regresión y 2 nuevas), TypeScript y build correctos. Tres objetivos completan el flujo de objetos pausados con transporte simulado, presupuesto de campaña, headline idéntico y una sola asignación por imagen; formularios/CTA/destino consistentes. IA verifica consentimiento, reserva/consumo, esquema restringido, idempotencia y resultado incierto sin repetición. 17 flujos de navegador: 7 configurador/IA/país/móvil, 6 selector y 4 WhatsApp. Cero anuncios reales o IA con cargo en QA. Main publicado con CAS y blobs verificados; Hostinger no comprobado desde este entorno.

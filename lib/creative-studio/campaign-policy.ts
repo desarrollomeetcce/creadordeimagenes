@@ -18,6 +18,7 @@ export const audienceSchema = z
 export const campaignConfigSchema = z
   .object({
     planVersion: z.literal(2).optional(),
+    campaignName: z.string().trim().max(250).optional(),
     objective: z.enum(["WHATSAPP", "LEADS", "TRAFFIC"]).default("WHATSAPP"),
     website: z.string().max(2000).default(""),
     leadFormId: z
@@ -351,4 +352,21 @@ export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
       `El ${key === "headline" ? "headline" : key === "body" ? "texto" : "detalle"} de ${item.name} excede el límite o está vacío después de reemplazar variables.`,
     );
   }
+  const name = campaignDisplayName(item, c);
+  demand(
+    name.length > 0 && name.length <= 250,
+    "El nombre de campaña supera 250 caracteres.",
+  );
+  for (const match of (c.campaignName ?? "").matchAll(
+    /\{([a-z][a-z0-9_]{0,39})\}/g,
+  ))
+    demand(known.has(match[1]), `Falta definir la variable {${match[1]}}.`);
+}
+
+export function campaignDisplayName(item: CampaignItem, c: CampaignConfig) {
+  return campaignText(
+    c.campaignName?.trim() || "{pais} · {diplomado}",
+    item,
+    c,
+  );
 }
