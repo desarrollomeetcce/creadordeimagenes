@@ -818,7 +818,9 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       }
     />
   );
-  const [replacementBatch,setReplacementBatch]=useState<{listId:string;tableId:string;country:string;name:string;names:string[]}|null>(null);
+  const [replacementBatch,setReplacementBatch]=useState<{listId:string;tableId:string;country:string;name:string;names:string[];since?:string;until?:string;sheetName?:string}|null>(null);
+  const replacementSection=useRef<HTMLElement>(null);
+  useEffect(()=>{if(!replacementBatch)return;const frame=requestAnimationFrame(()=>{replacementSection.current?.scrollIntoView({block:"start",behavior:"auto"});replacementSection.current?.focus({preventScroll:true})});return()=>cancelAnimationFrame(frame)},[replacementBatch]);
   const selectedIds = new Set(selectedObjects.map((o) => o.id));
   const summarySelectionKey = selectedObjects
     .filter(
@@ -3798,7 +3800,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                     </div>
                   </div>
                 </div>
-                {replacementBatch&&<MetaInventoryReplacement key={JSON.stringify(replacementBatch)} {...replacementBatch} source="meta" sheetName="Selección de campañas" since={calendar ? since : ""} until={calendar ? until : ""} onClose={()=>setReplacementBatch(null)} onChanged={async()=>{setReportRevision(n=>n+1);}}/>}
+                {replacementBatch&&<section ref={replacementSection} tabIndex={-1} aria-label="Reemplazar diplomados en Meta Ads"><MetaInventoryReplacement key={JSON.stringify(replacementBatch)} {...replacementBatch} source="meta" sheetName={replacementBatch.sheetName??"Selección de campañas"} since={replacementBatch.since??(calendar ? since : "")} until={replacementBatch.until??(calendar ? until : "")} onClose={()=>setReplacementBatch(null)} onChanged={async()=>{setReportRevision(n=>n+1);}}/></section>}
                 {view === "cards" && (
                   <div className="meta-result-controls">
                     {levelControls()}
@@ -4012,7 +4014,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
           item={selected}
           dataRevision={reportRevision}
           canReplace={owner && !viewOnly}
-          onInventoryChanged={()=>setReportRevision(n=>n+1)}
+          onReplace={request=>{setSelectedObjects(current=>[...current.filter(o=>o.level!=="campaign"),{id:selected.id,accountId:selected.accountId,level:"campaign"}]);setSelected(null);setDetailPeriod(null);setReplacementBatch(request)}}
           period={detailPeriod ?? (calendar ? "custom" : analysisPeriod)}
           onClose={() => {
             setSelected(null);
@@ -4031,17 +4033,16 @@ function MetaDetail({
   dataRevision,
   period,
   canReplace,
-  onInventoryChanged,
+  onReplace,
   onClose,
 }: {
   item: Item;
   dataRevision: number;
   period: string;
   canReplace: boolean;
-  onInventoryChanged: () => void;
+  onReplace:(request:{listId:string;tableId:string;country:string;name:string;names:string[];since:string;until:string;sheetName:string})=>void;
   onClose: () => void;
 }) {
-  const [replacementOpen,setReplacementOpen] = useState(false);
   const replacement = o.level === "campaign" && o.alias?.tableId && o.alias?.inventorySheetId && o.aliasCountry && !o.alias.detached ? {listId:o.alias.inventorySheetId,tableId:o.alias.tableId,country:o.aliasCountry,name:o.alias.name} : null;
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -4079,9 +4080,9 @@ function MetaDetail({
       <p className="meta-detail-alias">
         Inventario: <strong>{o.alias?.name ?? "Sin inventario"}</strong> · País:{" "}
         <strong>{countryName(o.aliasCountry)}</strong>
-        {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>setReplacementOpen(true)} title="Preparar reemplazo en la hoja: anterior por desactivar campaña y nuevo por hacer campaña. No modifica anuncios de Meta.">↔ Reemplazar en la hoja</button>}
+        {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>onReplace({...replacement,names:[replacement.name],since:o.periods[period]?.since??"",until:o.periods[period]?.until??"",sheetName:o.alias?.table?.name??"Hoja sincronizada"})} title="Abrir reemplazo en la pantalla principal. Preparar reemplazo en la hoja: anterior por desactivar campaña y nuevo por hacer campaña. No modifica anuncios de Meta.">↔ Reemplazar en la hoja</button>}
       </p>
-      {replacementOpen && replacement && <MetaInventoryReplacement {...replacement} source="meta" sheetName={o.alias?.table?.name ?? "Hoja sincronizada"} since={o.periods[period]?.since ?? ""} until={o.periods[period]?.until ?? ""} onClose={()=>setReplacementOpen(false)} onChanged={async()=>onInventoryChanged()}/>}
+
 
       {o.level === "campaign" && <CampaignTiming meta={campaignMetaTiming([{id:o.id,scheduledStart:o.scheduledStart,createdTime:o.createdTime,firstReport:o.firstDelivery}],new Date().toISOString(),o.timezone)}/>}
       {o.level === "campaign" && (
