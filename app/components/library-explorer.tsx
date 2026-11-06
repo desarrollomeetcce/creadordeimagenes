@@ -192,6 +192,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     ...hierarchy,
     folder,
     q: query,
+    resultsOnly: "true",
     page: String(page),
     limit,
     review,

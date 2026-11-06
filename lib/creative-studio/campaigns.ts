@@ -1,4 +1,5 @@
-import {campaignPageIssue} from "./page-errors";
+import { campaignPageDirectory } from "./page-directory";
+import { campaignPageIssue } from "./page-errors";
 import { z } from "zod";
 import { MetaGraphError } from "../meta-ads/graph-error";
 import { discoverCampaignPages } from "./pages";
@@ -21,7 +22,6 @@ import {
   type LaunchStep,
   type CampaignConfig,
 } from "./campaign-policy";
-function safePagePicture(value: unknown) { try { const u = new URL(String(value)); return u.protocol === "https:" && !u.username && !u.password && (!u.port || u.port === "443") && !u.searchParams.has("access_token") && (u.hostname.endsWith(".fbcdn.net") || u.hostname.endsWith(".fbsbx.com") || u.hostname === "graph.facebook.com") ? u.href : ""; } catch { return ""; } }
 const id = z.string().min(1).max(100);
 async function primaryAccount(actor: Actor, accountId: string) {
   await metaEditorOnly(actor);
@@ -41,35 +41,96 @@ async function primaryAccount(actor: Actor, accountId: string) {
   );
   return a;
 }
-export async function launchResources(actor: Actor, accountId: string) {
+export async function launchResources(
+  actor: Actor,
+  accountId: string,
+  part: "pages" | "audiences" | "all" = "all",
+  refresh = false,
+) {
   studioAccess(actor);
   const a = await primaryAccount(actor, accountId);
-  const { reader: r } = await reader(a.connectionId, false, true);
-  const settled = await Promise.allSettled([
-    discoverCampaignPages(async (edge, after) => { try { return await r.launchRequest(a.id, edge, undefined, undefined, "id,name,picture.type(square){url}", after); } catch(error) { if(error instanceof MetaGraphError && [100,200].includes(error.diagnostic.code ?? 0)) return r.launchRequest(a.id, edge, undefined, undefined, undefined, after); throw error; } }),
-    r.launchRequest(a.id, "saved_audiences"),
+  const loadPages = () =>
+    campaignPageDirectory(
+      a,
+      async () => {
+        const { reader: r } = await reader(a.connectionId, false, true);
+        return discoverCampaignPages(async (edge, after) => {
+          try {
+            return await r.launchRequest(
+              a.id,
+              edge,
+              undefined,
+              undefined,
+              "id,name,picture.type(square){url}",
+              after,
+            );
+          } catch (error) {
+            if (
+              error instanceof MetaGraphError &&
+              [100, 200].includes(error.diagnostic.code ?? 0)
+            )
+              return r.launchRequest(
+                a.id,
+                edge,
+                undefined,
+                undefined,
+                undefined,
+                after,
+              );
+            throw error;
+          }
+        });
+      },
+      refresh,
+    );
+  const loadAudiences = async () => {
+    try {
+      const { reader: r } = await reader(a.connectionId, false, true);
+      const saved = await r.launchRequest(a.id, "saved_audiences");
+      return {
+        audiences: (saved.data ?? []).map((s: any) => ({
+          id: String(s.id),
+          name: String(s.name),
+        })),
+        audiencesPartial: !!saved.paging?.next,
+        audienceWarning: "",
+      };
+    } catch {
+      return {
+        audiences: [],
+        audiencesPartial: false,
+        audienceWarning:
+          "No se pudieron consultar los públicos guardados. Puedes configurar tus públicos manualmente.",
+      };
+    }
+  };
+  const [pages, audiences] = await Promise.all([
+    part === "audiences"
+      ? Promise.resolve({
+          pages: [],
+          partial: false,
+          pageIssue: null,
+          pageCached: false,
+          pageSavedAt: null,
+        })
+      : loadPages(),
+    part === "pages"
+      ? Promise.resolve({
+          audiences: [],
+          audiencesPartial: false,
+          audienceWarning: "",
+        })
+      : loadAudiences(),
   ]);
-  const pages = settled[0].status === "fulfilled" ? settled[0].value : { data: [] };
-  const saved =
-    settled[1].status === "fulfilled" ? settled[1].value : { data: [] };
-  const pageIssue=settled[0].status === "rejected"?campaignPageIssue(settled[0].reason):null;
   return {
-    pageIssue,
-    pageWarning: pageIssue?.message ?? "",
-    pages: (pages.data ?? []).map((p: any) => ({
-      id: String(p.id),
-      name: String(p.name),
-      picture: safePagePicture(p.picture?.data?.url),
-      whatsapp: typeof p.whatsapp_number === "string" ? p.whatsapp_number : "",
-    })),
-    audiences: (saved.data ?? []).map((s: any) => ({
-      id: String(s.id),
-      name: String(s.name),
-    })),
-    partial: !!pages.paging?.next || !!saved.paging?.next,
+    ...pages,
+    ...audiences,
+    partial: pages.partial || audiences.audiencesPartial,
+    pageWarning: pages.pageIssue?.message ?? "",
     currency: a.currency,
     connectionId: a.connectionId,
-    canAuthorizePages: !!a.connection.appId && !!a.connection.encryptedAppSecret,
+    canAuthorizePages:
+      !!a.connection.appId && !!a.connection.encryptedAppSecret,
     usesLoginConfiguration: !!a.connection.loginConfigId,
   };
 }
@@ -165,7 +226,9 @@ export async function createLaunch(actor: Actor, input: unknown) {
     };
   });
   const { reader: r } = await reader(a.connectionId, false, true);
-  const pages = await discoverCampaignPages((edge, after) => r.launchRequest(a.id, edge, undefined, undefined, undefined, after));
+  const pages = await discoverCampaignPages((edge, after) =>
+    r.launchRequest(a.id, edge, undefined, undefined, undefined, after),
+  );
   demand(
     (pages.data ?? []).some((p: any) => String(p.id) === b.config.pageId),
     "La página no está autorizada para anunciar desde esta cuenta. Comprueba la vinculación.",
@@ -370,19 +433,26 @@ async function receiptStep(
       const config = d.config as CampaignConfig,
         item = (d.campaigns as CampaignItem[])[step.campaign];
       const canonical = item.source?.itemId
-        ? await tx.metaInventoryItem.findUnique({ where: { id: item.source.itemId }, select: { sheetId: true, name: true } })
-        : null;
-      const aliases = canonical && canonical.sheetId === item.source?.listId && canonical.name.normalize("NFKC").trim().toLocaleLowerCase() === item.name.normalize("NFKC").trim().toLocaleLowerCase()
-        ? await tx.metaAlias.findMany({
-            where: {
-              inventorySheetId: item.source.listId,
-              name: { equals: item.name, mode: "insensitive" },
-              table: { defaultCountry: { in: [config.country, ""] } },
-            },
-            select: { id: true, table: { select: { defaultCountry: true } } },
-            take: 3,
+        ? await tx.metaInventoryItem.findUnique({
+            where: { id: item.source.itemId },
+            select: { sheetId: true, name: true },
           })
-        : [];
+        : null;
+      const aliases =
+        canonical &&
+        canonical.sheetId === item.source?.listId &&
+        canonical.name.normalize("NFKC").trim().toLocaleLowerCase() ===
+          item.name.normalize("NFKC").trim().toLocaleLowerCase()
+          ? await tx.metaAlias.findMany({
+              where: {
+                inventorySheetId: item.source.listId,
+                name: { equals: item.name, mode: "insensitive" },
+                table: { defaultCountry: { in: [config.country, ""] } },
+              },
+              select: { id: true, table: { select: { defaultCountry: true } } },
+              take: 3,
+            })
+          : [];
       const exact = aliases.filter(
           (a) => a.table.defaultCountry === config.country,
         ),

@@ -117,6 +117,33 @@ test("Library search is paginated, scoped and authorized across images, copies a
       review: "approved",
     });
     assert.equal(approved.total, 1);
+    const unsettled = await db.generationJob.create({
+      data: {
+        actorId: owner.id,
+        projectId: p.id,
+        subproductId: s.id,
+        idempotencyKey: randomUUID(),
+        status: "UNCERTAIN",
+        snapshot: { orderId: "qa-unsettled-order" },
+        reservedMicros: 0,
+      },
+    });
+    const gallery = await read({
+      folder: "subproduct:" + s.id,
+      resultsOnly: "true",
+    });
+    assert.equal(gallery.inflightTotal, 0);
+    assert.equal(gallery.inflight.length, 0);
+    assert(gallery.entries.every((e) => e.kind === "image"));
+    assert.equal(gallery.total, 31);
+    assert.equal(
+      (
+        await db.generationJob.findUniqueOrThrow({
+          where: { id: unsettled.id },
+        })
+      ).status,
+      "UNCERTAIN",
+    );
     const missing = await read({ q: "not-present-" + tag });
     assert.equal(missing.total, 0);
     assert.equal(missing.documents.length, 0);

@@ -683,6 +683,7 @@ model MetaConnection {
   sources MetaAccountSource[]
 }
 model MetaAdAccount {
+  creativePageDirectory CreativeMetaPageDirectory?
   realtimeState Json @default("{}")
   id String @id
   connectionId String
@@ -1531,4 +1532,16 @@ model CreativeInventorySelection {
  itemIds Json
  createdAt DateTime @default(now())
  @@index([actorId,createdAt])
+}
+
+// Reusable Meta page metadata only; every read revalidates current account permissions.
+model CreativeMetaPageDirectory {
+ accountId String @id
+ account MetaAdAccount @relation(fields:[accountId],references:[id],onDelete:Cascade)
+ connectionId String
+ credentialRevision Int
+ pages Json
+ partial Boolean @default(false)
+ fetchedAt DateTime @default(now())
+ @@index([fetchedAt])
 }

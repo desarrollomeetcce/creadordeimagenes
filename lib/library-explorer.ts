@@ -334,6 +334,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     ...(foldersOnly || kind === "documents" ? { id: "" } : {}),
   };
   const dismissed = await dismissedOrderIds(user.id);
+  const resultsOnly = params.get("resultsOnly") === "true";
   const pendingWhere: Prisma.GenerationJobWhereInput = {
     status: { in: ["PENDING", "RUNNING", "FAILED", "UNCERTAIN"] },
     variation: null,
@@ -349,7 +350,8 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     ],
     ...(user.role === "OWNER" ? {} : { actorId: user.id }),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-    ...(query ||
+    ...(resultsOnly ||
+    query ||
     personal ||
     foldersOnly ||
     folder === "loose:root" ||
@@ -360,7 +362,9 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
       : {}),
   };
   const slotsWhere: Prisma.GenerationJobWhereInput = {
-    OR: [{ variation: where }, pendingWhere],
+    ...(resultsOnly
+      ? { variation: where }
+      : { OR: [{ variation: where }, pendingWhere] }),
   };
   const [
     nativeTotal,
@@ -416,7 +420,9 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
           _count: true,
         }),
     db.libraryDocument.count({ where: documentWhere }),
-    db.generationJob.count({ where: pendingWhere }),
+    resultsOnly
+      ? Promise.resolve(0)
+      : db.generationJob.count({ where: pendingWhere }),
     db.libraryImageCopy.count({ where: copyWhere }),
   ]);
   const variationSelect = {

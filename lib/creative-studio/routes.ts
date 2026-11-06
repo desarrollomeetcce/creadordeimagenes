@@ -89,7 +89,16 @@ export async function creativeStudioRoutes(
       );
   }
   if (p[0] === "account-resources" && p[1] && method === "GET")
-    return send(await campaigns.launchResources(actor, p[1]));
+    return send(
+      await campaigns.launchResources(
+        actor,
+        p[1],
+        z
+          .enum(["pages", "audiences", "all"])
+          .parse(req.nextUrl.searchParams.get("part") ?? "all"),
+        req.nextUrl.searchParams.get("refresh") === "1",
+      ),
+    );
   if (p[0] === "launches") {
     if (!p[1] && method === "POST")
       return send(await campaigns.createLaunch(actor, await body()), 201);
