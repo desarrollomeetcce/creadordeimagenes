@@ -87,6 +87,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
   const handoffCountry = useRef("");
+  const handoffSelection = useRef<any>(null);
   const draftProducts = useRef(new Map<string, Record<string, string>>());
   const mounted = useRef(true),
     projectSeq = useRef(0),
@@ -188,6 +189,65 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setCount(s.count);
       setMode(s.mode);
       setReferencesOpen(false);
+      if (handoffSelection.current) {
+        const selection = handoffSelection.current;
+        const prepared = await studioRequest(
+          "/selections/" + selection.id + "/prepare",
+          "POST",
+          {
+            projectId: p.id,
+            ...(initialProduct ? { preferredCategoryId: initialProduct } : {}),
+          },
+        );
+        if (
+          !mounted.current ||
+          seq !== projectSeq.current ||
+          handoffSelection.current?.id !== selection.id
+        )
+          return;
+        try {
+          localStorage.setItem(
+            "studio-unpinned:v1:" + userId + ":" + prepared.category.id,
+            JSON.stringify(
+              unpinnedIds(prepared.category.id).filter(
+                (id) => !prepared.items.some((s: any) => s.id === id),
+              ),
+            ),
+          );
+        } catch {}
+        setProject((current: any) => ({
+          ...current,
+          categories: current.categories.some(
+            (c: any) => c.id === prepared.category.id,
+          )
+            ? current.categories
+            : [...current.categories, prepared.category],
+        }));
+        const opened = await chooseProduct(
+          prepared.category.id,
+          prepared.items[0]?.id,
+        );
+        if (opened && opened.studio?.country !== prepared.country)
+          throw Error("La carpeta cambió de país. Reintenta la preparación.");
+        if (!mounted.current || seq !== projectSeq.current) return;
+        setInventoryId(prepared.listId);
+        setCountry(prepared.country);
+        setTargetSubs(prepared.items.map((s: any) => s.id));
+        handoffCountry.current = "";
+        handoffSelection.current = null;
+        setPendingSelection(null);
+        const canonicalQuery = new URLSearchParams(location.search);
+        canonicalQuery.delete("selection");
+        history.replaceState(null, "", "?" + canonicalQuery);
+        setZone("canvas");
+        setNotice(
+          "✓ " +
+            prepared.items.length +
+            " diplomados listos para generar · " +
+            countryName(prepared.country),
+        );
+        return;
+      }
       const compatible = handoffCountry.current
         ? p.categories.filter(
             (c: any) => c.studio?.country === handoffCountry.current,
@@ -223,7 +283,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
     const hidden = unpinnedIds(p.id);
     return {
       ...p,
-      subproducts: p.subproducts.filter((s: any) => !hidden.includes(s.id)),
+      subproducts: p.subproducts.filter(
+        (s: any) =>
+          !hidden.includes(s.id) ||
+          (handoffSelection.current &&
+            s.studio?.listId === handoffSelection.current.listId &&
+            handoffSelection.current.itemIds.includes(s.studio?.itemId)),
+      ),
     };
   }
   async function removeSubproduct(sub: any) {
@@ -286,6 +352,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
             view: "projects",
             project: projectId,
             category: p.id,
+            ...(handoffSelection.current
+              ? { selection: handoffSelection.current.id }
+              : {}),
           }),
       );
       try {
@@ -294,6 +363,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
           JSON.stringify({ project: projectId, product: p.id }),
         );
       } catch {}
+      return p;
     } finally {
       if (seq === productSeq.current) setLoading(false);
     }
@@ -311,8 +381,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
           const selection = await studioRequest("/selections/" + selectionId);
           if (!alive) return;
           handoffCountry.current = selection.country;
+          handoffSelection.current = selection;
           setPendingSelection(selection);
-          setZone("project");
+          setZone("canvas");
           setInventoryId(selection.listId);
           setCountry(selection.country);
         }
@@ -368,27 +439,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
   useEffect(() => {
     if (product) draftProducts.current.set(product.id, prompts);
   }, [product?.id, prompts]);
-  const importedSelection = useRef("");
-  useEffect(() => {
-    if (
-      !pendingSelection ||
-      !product ||
-      !inventoryId ||
-      product.studio?.country !== pendingSelection.country ||
-      inventoryId !== pendingSelection.listId ||
-      importedSelection.current === pendingSelection.id ||
-      busy ||
-      loading
-    )
-      return;
-    importedSelection.current = pendingSelection.id;
-    void run(() =>
-      addItems(
-        pendingSelection.items.map((i: any) => i.id),
-        pendingSelection.country,
-      ),
-    );
-  }, [pendingSelection, product?.id, inventoryId, busy, loading]);
   function draftProject(prompt: string, s: any) {
     if (project) draftProjects.current.set(project.id, { prompt, settings: s });
   }
@@ -407,6 +457,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setProjectConfigOpen(false);
   }
   async function createProject() {
+    const fromSelection = !!handoffSelection.current;
     const p = await studioRequest("/projects", "POST", {
       name: projectQuery.trim(),
       requestId: crypto.randomUUID(),
@@ -419,7 +470,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       ],
     }));
     await chooseProject(p.id);
-    setZone("project");
+    if (!fromSelection) setZone("project");
   }
   async function createProduct() {
     if (!project) return;
@@ -501,6 +552,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setTargetSubs(added.map((s: any) => s.id));
     }
     handoffCountry.current = "";
+    handoffSelection.current = null;
     setPendingSelection(null);
     setZone("canvas");
     setNotice("✓ " + added.length + " elementos listos en esta carpeta");
@@ -691,9 +743,21 @@ export function CreativeStudio({ userId }: { userId: string }) {
             Para anuncios · {countryName(pendingSelection.country)}
           </strong>
           <p>{pendingSelection.items.map((i: any) => i.name).join(" · ")}</p>
+          {error && project && (
+            <button
+              type="button"
+              disabled={busy || loading}
+              onClick={() => void run(() => chooseProject(project.id))}
+            >
+              Reintentar preparación
+            </button>
+          )}
           <small>
-            Elige o crea una carpeta de este país. La selección se añadirá sin
-            generar ni publicar anuncios.
+            {error
+              ? "La selección sigue guardada."
+              : project
+                ? "Preparando carpeta y diplomados…"
+                : "Elige un proyecto para preparar esta selección."}
           </small>
         </aside>
       )}
@@ -744,6 +808,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
           <div className="studio-project-picker">
             <SearchSelect
               label="Proyecto"
+              disabled={busy || loading}
               value={projectQuery}
               onChange={setProjectQuery}
               onSelect={(o) => void run(() => chooseProject(o.id))}
@@ -752,7 +817,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
             <button
               type="button"
               title={projectExists ? "Ya existe el proyecto" : "Crear proyecto"}
-              disabled={busy || !projectQuery.trim() || projectExists}
+              disabled={
+                busy || loading || !projectQuery.trim() || projectExists
+              }
               onClick={() => void run(createProject)}
             >
               ＋ Crear
@@ -1032,28 +1099,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       onChoose={(ids) => run(() => addItems(ids, country))}
                     />
                   </div>
-                  {pendingSelection && (
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={
-                        busy ||
-                        product.studio?.country !== pendingSelection.country ||
-                        inventoryId !== pendingSelection.listId
-                      }
-                      onClick={() =>
-                        void run(() =>
-                          addItems(
-                            pendingSelection.items.map((i: any) => i.id),
-                            pendingSelection.country,
-                          ),
-                        )
-                      }
-                    >
-                      Añadir selección guardada ({pendingSelection.items.length}
-                      )
-                    </button>
-                  )}
                   <div className="studio-add-sub">
                     <input
                       aria-label="Nombre nuevo"

@@ -176,7 +176,11 @@ export async function creativeStudioRoutes(
   if (p[0] === "inventory" && p[1] && method === "GET")
     return send(await studio.studioInventory(actor, p[1]));
   if (p[0] === "selections") {
-    if (p[1] && method === "GET")
+    if (p[1] && p[2] === "prepare" && p.length === 3 && method === "POST")
+      return send(
+        await studio.prepareInventorySelection(actor, p[1], await body()),
+      );
+    if (p[1] && p.length === 2 && method === "GET")
       return send(await studio.getInventorySelection(actor, p[1]));
     if (!p[1] && method === "POST")
       return send(

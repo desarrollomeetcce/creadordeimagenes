@@ -31,10 +31,10 @@ export function InventoryBatchReplacement({
   metaActions = false,
   onConfirmAndAds,
 }: {
-  onUsageNeeded?:()=>void;
-  metaActions?:boolean;
-  onConfirmAndAds?:(plan: ReplacementPlan[])=>Promise<void>;
-  canConfirm?:boolean;
+  onUsageNeeded?: () => void;
+  metaActions?: boolean;
+  onConfirmAndAds?: (plan: ReplacementPlan[]) => Promise<void>;
+  canConfirm?: boolean;
   directory: TrialDirectory;
   country: string;
   origins: Item[];
@@ -47,15 +47,46 @@ export function InventoryBatchReplacement({
   const [plan, setPlan] = useState<ReplacementPlan[]>(() =>
     origins.map((i) => ({ from: i.name, to: "", mode: "MANUAL" })),
   );
-  const originKey=JSON.stringify(origins.map(i=>i.name));
-  useEffect(()=>{setPlan(previous=>origins.map(i=>{const old=previous.find(p=>categoryKey(p.from)===categoryKey(i.name));return old ? {...old,to:origins.some(o=>categoryKey(o.name)===categoryKey(old.to))?"":old.to} : {from:i.name,to:"",mode:"MANUAL"}}));},[originKey]);
+  const originKey = JSON.stringify(origins.map((i) => i.name));
+  useEffect(() => {
+    setPlan((previous) =>
+      origins.map((i) => {
+        const old = previous.find(
+          (p) => categoryKey(p.from) === categoryKey(i.name),
+        );
+        return old
+          ? {
+              ...old,
+              to: origins.some(
+                (o) => categoryKey(o.name) === categoryKey(old.to),
+              )
+                ? ""
+                : old.to,
+            }
+          : { from: i.name, to: "", mode: "MANUAL" };
+      }),
+    );
+  }, [originKey]);
   const [error, setError] = useState("");
-  const [category,setCategory]=useState("");
-  const categories=[...new Set(candidates.flatMap(i=>[...i.primaryNames,...(i.secondaryNames??[])]))].sort((a,b)=>a.localeCompare(b,"es"));
+  const [category, setCategory] = useState("");
+  const categories = [
+    ...new Set(
+      candidates.flatMap((i) => [
+        ...i.primaryNames,
+        ...(i.secondaryNames ?? []),
+      ]),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "es"));
   const [groupId, setGroupId] = useState("");
   const [usage, setUsage] = useState<ReplacementUsageFilter>("ALL");
   const filteredCandidates = groupReplacementCandidates(
-    candidates.filter(i=>!category||[...i.primaryNames,...(i.secondaryNames??[])].some(c=>categoryKey(c)===categoryKey(category))),
+    candidates.filter(
+      (i) =>
+        !category ||
+        [...i.primaryNames, ...(i.secondaryNames ?? [])].some(
+          (c) => categoryKey(c) === categoryKey(category),
+        ),
+    ),
     directory,
     country,
     groupId,
@@ -76,18 +107,24 @@ export function InventoryBatchReplacement({
       const pool = filteredCandidates.filter(
         (c) =>
           !used.has(categoryKey(c.name)) &&
-          (same === null || (same
-            ? c.primaryIds.some((id) => i.primaryIds.includes(id))
-            : c.primaryIds.length > 0 &&
-              !c.primaryIds.some((id) => i.primaryIds.includes(id)))),
+          (same === null ||
+            (same
+              ? c.primaryIds.some((id) => i.primaryIds.includes(id))
+              : c.primaryIds.length > 0 &&
+                !c.primaryIds.some((id) => i.primaryIds.includes(id)))),
       );
       const chosen = pool[Math.floor(Math.random() * pool.length)];
       if (chosen) used.add(categoryKey(chosen.name));
       return {
         from: i.name,
-        pauseNow: plan.find(p=>p.from===i.name)?.pauseNow,
+        pauseNow: plan.find((p) => p.from === i.name)?.pauseNow,
         to: chosen?.name ?? "",
-        mode: same === null ? ("MANUAL" as const) : same ? ("SAME" as const) : ("OTHER" as const),
+        mode:
+          same === null
+            ? ("MANUAL" as const)
+            : same
+              ? ("SAME" as const)
+              : ("OTHER" as const),
       };
     });
     setPlan(next);
@@ -135,9 +172,26 @@ export function InventoryBatchReplacement({
             setError("");
           }}
         />
-        <SheetSearchSelect label="Categoría de los reemplazos" value={category} placeholder="Por categoría" options={[{value:"",label:"Todas las categorías"},...categories.map(c=>({value:c,label:c}))]} disabled={busy} onSelect={value=>{setCategory(value);setPlan(current=>current.map(p=>({...p,to:"",mode:"MANUAL"})));}}/>
+        <SheetSearchSelect
+          label="Categoría de los reemplazos"
+          value={category}
+          placeholder="Por categoría"
+          options={[
+            { value: "", label: "Todas las categorías" },
+            ...categories.map((c) => ({ value: c, label: c })),
+          ]}
+          disabled={busy}
+          onSelect={(value) => {
+            setCategory(value);
+            setPlan((current) =>
+              current.map((p) => ({ ...p, to: "", mode: "MANUAL" })),
+            );
+          }}
+        />
         <div className="row">
-          <button type="button" disabled={busy} onClick={() => propose(null)}>{category?"Azar por categoría":"Al azar"}</button>
+          <button type="button" disabled={busy} onClick={() => propose(null)}>
+            {category ? "Azar por categoría" : "Al azar"}
+          </button>
           <button type="button" disabled={busy} onClick={() => propose(true)}>
             Azar · misma categoría
           </button>
@@ -148,7 +202,9 @@ export function InventoryBatchReplacement({
       </div>
       {error && <p role="alert">{error}</p>}
       <div className="inventory-batch-column-headings" aria-hidden="true">
-        <span>Sale · por desactivar</span>
+        <span title="Pendiente interno: Meta aún no ha confirmado ninguna pausa">
+          Sale · pausa pendiente
+        </span>
         <span></span>
         <span>Entra · por hacer campaña</span>
         <span></span>
@@ -158,7 +214,25 @@ export function InventoryBatchReplacement({
           <div className="inventory-batch-pair" key={p.from}>
             <span>
               <strong>{p.from}</strong>
-              {metaActions && <select aria-label={`Acción de ${p.from}`} disabled={busy} value={p.pauseNow ? "NOW" : "PENDING"} onChange={e=>setPlan(current=>current.map((v,n)=>n===index?{...v,pauseNow:e.target.value==="NOW"}:v))}><option value="PENDING">Por desactivar</option><option value="NOW">Desactivar ahora en Meta</option></select>}
+              {metaActions && (
+                <select
+                  aria-label={`Acción de ${p.from}`}
+                  disabled={busy}
+                  value={p.pauseNow ? "NOW" : "PENDING"}
+                  onChange={(e) =>
+                    setPlan((current) =>
+                      current.map((v, n) =>
+                        n === index
+                          ? { ...v, pauseNow: e.target.value === "NOW" }
+                          : v,
+                      ),
+                    )
+                  }
+                >
+                  <option value="PENDING">Dejar pendiente (interno)</option>
+                  <option value="NOW">Pausar ahora en Meta</option>
+                </select>
+              )}
             </span>
             <b aria-hidden="true">→</b>
             <label>
@@ -171,9 +245,11 @@ export function InventoryBatchReplacement({
                   label:
                     i.name +
                     " · " +
-                    (directory.usageReady===false?"Uso por consultar":replacementUsageLabel(
-                      replacementUsage(directory, i.name, country),
-                    )),
+                    (directory.usageReady === false
+                      ? "Uso por consultar"
+                      : replacementUsageLabel(
+                          replacementUsage(directory, i.name, country),
+                        )),
                 }))}
                 disabled={busy}
                 onSelect={(to) => {
@@ -198,8 +274,10 @@ export function InventoryBatchReplacement({
       </div>
       <footer>
         <small>
-          El anterior quedará por desactivar; el nuevo, por hacer campaña. Los
-          datos se conservan.
+          {metaActions && plan.some((p) => p.pauseNow)
+            ? "Se solicitará la pausa en Meta de los que marques; los demás quedan pendientes internos."
+            : "Pendiente es una tarea interna: no pausa anuncios en Meta."}{" "}
+          El nuevo queda por hacer campaña; tus registros se conservan.
         </small>
         <button
           type="button"
@@ -209,9 +287,20 @@ export function InventoryBatchReplacement({
         >
           {busy
             ? "Guardando…"
-            : metaActions ? "Reemplazar" : `Confirmar ${plan.length === 1 ? "reemplazo" : plan.length + " reemplazos"}`}
+            : metaActions
+              ? "Reemplazar"
+              : `Confirmar ${plan.length === 1 ? "reemplazo" : plan.length + " reemplazos"}`}
         </button>
-        {onConfirmAndAds && <button type="button" className="primary" disabled={busy || !!remaining || !canConfirm} onClick={()=>void onConfirmAndAds(plan)}>Reemplazar + anuncios ↗</button>}
+        {onConfirmAndAds && (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !!remaining || !canConfirm}
+            onClick={() => void onConfirmAndAds(plan)}
+          >
+            Reemplazar + anuncios ↗
+          </button>
+        )}
       </footer>
     </section>
   );

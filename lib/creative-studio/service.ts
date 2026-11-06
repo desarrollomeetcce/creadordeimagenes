@@ -16,7 +16,11 @@ import { quickStartOptions } from "../quick-start";
 import { financialAccess } from "../meta-ads/financial-access";
 import { workspaceAccess } from "../meta-ads/workspace-access";
 import { accountWhere } from "../meta-ads/service";
-import { countryOptions, isCountryCode } from "../meta-ads/countries";
+import {
+  countryOptions,
+  countryName,
+  isCountryCode,
+} from "../meta-ads/countries";
 import { defaults } from "../inheritance";
 import { recordActivity } from "../activity";
 import type { Prisma } from "@prisma/client";
@@ -402,6 +406,7 @@ export async function addStudioItems(
   const b = z
     .object({
       names: z.array(name).max(100).optional(),
+      expectedCountry: country.optional(),
       listId: id.optional(),
       itemIds: z.array(id).max(100).optional(),
     })
@@ -413,7 +418,9 @@ export async function addStudioItems(
   if (b.listId) {
     const dir = await studioInventory(actor, b.listId);
     const wanted = new Set(b.itemIds ?? []);
-    const selected = dir.catalog.filter((i) => wanted.has(i.id));
+    const selected = [...wanted]
+      .map((id) => dir.catalog.find((i) => i.id === id))
+      .filter((i): i is NonNullable<typeof i> => !!i);
     demand(
       selected.length === wanted.size,
       "La selección del inventario cambió.",
@@ -437,6 +444,16 @@ export async function addStudioItems(
         where: { categoryId, deletedAt: null },
       }),
       out = [];
+    demand(!c.deletedAt, "La carpeta no está disponible.", 409);
+    demand(
+      !b.expectedCountry || object(c.studio).country === b.expectedCountry,
+      "La carpeta cambió de país. Vuelve a preparar la selección.",
+      409,
+    );
+    const currentUser = await tx.user.findFirst({
+      where: { id: actor.id, status: "APPROVED", role: actor.role as any },
+    });
+    demand(currentUser, "La cuenta cambió.", 403);
     for (const item of items) {
       const matches = existing.filter(
         (s) => keyName(s.name) === keyName(item.name),
@@ -466,6 +483,20 @@ export async function addStudioItems(
           },
         });
         existing.push(s);
+      }
+      if (item.source) {
+        const source = object(s.studio);
+        demand(
+          (!source.listId || source.listId === item.source.listId) &&
+            (!source.itemId || source.itemId === item.source.itemId),
+          "Este diplomado ya está asociado a otro inventario. Elige otra carpeta.",
+          409,
+        );
+        if (!source.listId || !source.itemId)
+          s = await tx.subproduct.update({
+            where: { id: s.id },
+            data: { studio: json({ ...source, ...item.source }) },
+          });
       }
       out.push({ id: s.id, name: s.name });
     }
@@ -688,9 +719,102 @@ export async function getInventorySelection(actor: Actor, selectionId: string) {
   const dir = await studioInventory(actor, selection.listId);
   return {
     ...selection,
-    items: dir.catalog.filter((i) =>
-      (selection.itemIds as string[]).includes(i.id),
-    ),
+    items: (selection.itemIds as string[])
+      .map((id) => dir.catalog.find((i) => i.id === id))
+      .filter((i): i is NonNullable<typeof i> => !!i),
+  };
+}
+/** Explicit replacement handoff: only prepares editable studio folders/items. */
+export async function prepareInventorySelection(
+  actor: Actor,
+  selectionId: string,
+  input: unknown,
+) {
+  studioAccess(actor);
+  const b = z
+    .object({ projectId: id, preferredCategoryId: id.optional() })
+    .strict()
+    .parse(input);
+  const selection = await getInventorySelection(actor, selectionId);
+  demand(
+    selection.items.length === (selection.itemIds as string[]).length &&
+      selection.items.length > 0,
+    "La selección del inventario cambió. Vuelve a elegir los diplomados.",
+    409,
+  );
+  await projectAccess(actor, b.projectId, "NAVIGATE");
+  const available = await db.category.findMany({
+    where: {
+      projectId: b.projectId,
+      deletedAt: null,
+      ...categoryFullFilter(actor),
+    },
+    select: { id: true, name: true, studio: true },
+  });
+  const sameCountry = available.filter(
+    (c) => object(c.studio).country === selection.country,
+  );
+  const countryLabel = countryName(selection.country);
+  let destination =
+    sameCountry.find((c) => c.id === b.preferredCategoryId) ??
+    sameCountry.find((c) => keyName(c.name) === keyName(countryLabel)) ??
+    (sameCountry.length === 1 ? sameCountry[0] : undefined);
+  if (!destination) {
+    await resourceAccess(actor, "project", b.projectId, "EDIT");
+    destination = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Project" WHERE id=${b.projectId} FOR UPDATE`;
+      const user = await tx.user.findFirst({
+        where: { id: actor.id, status: "APPROVED", role: actor.role as any },
+      });
+      demand(user, "La cuenta cambió.", 403);
+      const project = await tx.project.findFirst({
+        where: { id: b.projectId, deletedAt: null },
+      });
+      demand(project, "El proyecto no está disponible.", 404);
+      const categories = await tx.category.findMany({
+        where: { projectId: b.projectId, deletedAt: null },
+        select: { id: true, name: true, studio: true },
+      });
+      const existing = categories.find(
+        (c) =>
+          object(c.studio).country === selection.country &&
+          keyName(c.name) === keyName(countryLabel),
+      );
+      if (existing) return existing;
+      const folderName = categories.some(
+        (c) => keyName(c.name) === keyName(countryLabel),
+      )
+        ? countryLabel + " · " + selection.country
+        : countryLabel;
+      demand(
+        !categories.some((c) => keyName(c.name) === keyName(folderName)),
+        "Ya hay una carpeta con ese nombre y otro país. Revisa su organización.",
+        409,
+      );
+      return tx.category.create({
+        data: {
+          projectId: b.projectId,
+          name: folderName,
+          prompt: "",
+          applyPromptToAll: false,
+          settings: defaults,
+          studio: { country: selection.country, version: 1 },
+        },
+        select: { id: true, name: true, studio: true },
+      });
+    });
+  }
+  await resourceAccess(actor, "category", destination.id, "EDIT");
+  const items = await addStudioItems(actor, destination.id, {
+    listId: selection.listId,
+    expectedCountry: selection.country,
+    itemIds: selection.items.map((i) => i.id),
+  });
+  return {
+    category: destination,
+    items,
+    listId: selection.listId,
+    country: selection.country,
   };
 }
 export async function studioImages(
