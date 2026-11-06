@@ -589,7 +589,7 @@ export default function Home() {
             ) : financialViews.includes(view) && (user.role === "OWNER"||user.effectivenessShared) ? (
               <ProductsCatalog key={view} module={view==="inventory"?"inventory":view==="advisors"?"advisors":"sales"} initialAdvisorPeriod={view==="products"?salesAdvisorPeriod:null} onSalesPeriod={period=>{navigate("products");setSalesAdvisorPeriod(period)}} />
             ) : view === "metaads" ? (
-              <MetaAds role={user.role} userId={user.id} />
+              <MetaAds role={user.role} userId={user.id} canCreateCampaign={hasAiModuleAccess(user)&&user.role!=="OBSERVER"} />
             ) : view === "library" ? (
               <Library key={location} />
 

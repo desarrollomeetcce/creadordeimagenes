@@ -1,3 +1,4 @@
+import { linkedCampaignCountryCounts } from "./linked-campaign-counts";
 import { pendingInventoryCampaigns } from "./pending-campaigns";
 import { campaignInventoryTasks } from "./campaign-inventory-status";
 import { metaSearchConditions } from "./keyword-search";
@@ -70,7 +71,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   );
   const business = params.get("business");
   const scoped = allowed.filter((a) => !business || a.businessId === business);
-  if (!scoped.length) return { items: [], pendingCampaigns:[], summary:undefined, total: 0, page: 1, limited: false };
+  if (!scoped.length) return { items: [], pendingCampaigns:[], linkedCampaignCountries:[], summary:undefined, total: 0, page: 1, limited: false };
   const q = (params.get("q") ?? "").slice(0, 200),
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
@@ -234,12 +235,14 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       409,
     );
   const pendingCampaigns=await pendingInventoryCampaigns(actor,scoped.map(a=>a.id),{level,state,q,country});
+  const linkedCampaignCountries=await linkedCampaignCountryCounts(scoped.map(a=>a.id));
   const limited = objects.length > 10000;
   const visible = objects.slice(0, 10000);
   if (!visible.length)
     return {
       items: [],
       pendingCampaigns,
+      linkedCampaignCountries,
       total: 0,
       page: 1,
       limited,
@@ -847,6 +850,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   return {
     items: reportedItems,
     pendingCampaigns,
+    linkedCampaignCountries,
     total: items.length,
     page,
     limited,

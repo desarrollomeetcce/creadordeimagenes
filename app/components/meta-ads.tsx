@@ -1,5 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
+import { MetaCountryCampaigns } from "./meta-country-campaigns";
+import type { LinkedCampaignCountryCount } from "../../lib/meta-ads/linked-campaign-counts";
 import { createPortal } from "react-dom";
 import { studioRequest } from "./inventory-meta-picker";
 import type { PendingInventoryCampaign } from "../../lib/meta-ads/pending-campaigns";
@@ -554,7 +556,8 @@ type MetaModuleAccess = {
   primaryInitialized: boolean;
   accountPreferencesRevision: number;
 };
-export function MetaAds({ role, userId }: { role: string; userId: string }) {
+export function MetaAds({ role, userId, canCreateCampaign=false }: { role: string; userId: string; canCreateCampaign?: boolean }) {
+  const [countryCounts,setCountryCounts]=useState<LinkedCampaignCountryCount[]|null>(null);
   const [headerSlots,setHeaderSlots]=useState<{navigation:HTMLElement;share:HTMLElement}|null>(null);
   useEffect(()=>{const navigation=document.getElementById("meta-navigation-slot"),share=document.getElementById("meta-share-slot");if(navigation&&share)setHeaderSlots({navigation,share});},[]);
   const [moduleAccess, setModuleAccess] = useState<MetaModuleAccess | null>(
@@ -1035,6 +1038,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
       }
     })();
   };
+  useEffect(()=>setCountryCounts(null),[JSON.stringify([...accountIds].sort()),business,userId]);
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
   useEffect(() => {
     if (!moduleReady) return;
@@ -1518,6 +1522,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
             const reconciled = data.items.map((item: Item) => [...statusAcks.current.values()].reduce((row, ack) => applyMetaStatusAck(row, ack), item)).filter((item: Item) => matchesMetaStatusFilter(item, state));
             setItems(reconciled);
             setPendingCampaigns(data.pendingCampaigns??[]);
+            setCountryCounts(data.linkedCampaignCountries??[]);
             setSelected(old => old ? reconciled.find((item: Item) => item.id === old.id) ?? old : old);
             if (withSummary) {
               setSummary(data.summary ?? null);
@@ -3863,6 +3868,7 @@ export function MetaAds({ role, userId }: { role: string; userId: string }) {
                         onUpdated={visibleUpdated}
                         onReconnect={() => setTab("connections")}
                       />
+                      <MetaCountryCampaigns countries={countryCounts} canCreate={canCreateCampaign} loading={loading}/>
                       {bulkAliasControl()}
                     </div>
                   </div>

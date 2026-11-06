@@ -2989,3 +2989,10 @@ El detalle abre reemplazo en su misma ventana; selección abre ventana flotante 
 Desactivar ahora verifica/pausa todas las campañas vinculadas de cada saliente autorizado. La intención STOP se guarda antes de consultar Meta y persiste si rechaza o no confirma. El acuse actualiza activación/visibilidad mediante el mismo servicio financiero; una campaña pausada no apaga internamente el diplomado si hay otra sin pausa confirmada en ese país. Ventas/días/importes permanecen intactos. CREATE tiene proyección naranja separada de objetos y estadísticas Meta, y la publicación solo completa CREATE tras recibo verificado ACTIVE con permiso financiero; adjuntar/generar o crear PAUSED no activa el diplomado.
 
 Un editor de Inventario hereda acceso a todas las pestañas INVENTORY según la nueva instrucción explícita, con permiso actual revalidado en cada petición. No hereda hojas financieras/Totales/Asesores ni acceso Meta o a proyectos. Proyectos descubre e importa esos inventarios sin requerir rol OWNER. Sin migraciones nuevas en este bloque.
+
+
+## 2026-11-06 · Crear campaña y contadores de países en Meta
+
+Se añade a la fila de resumen el enlace Crear campaña ↗ seguido de fichas azules ISO+conteo, con nombre completo accesible y tooltip. Mantiene Actualizar vista verde. Crear abre Proyectos en pestaña nueva con noopener, sin cuadro intermedio, generación ni publicación; respeta acceso IA/rol.
+
+Dashboard agrupa campañas reales ACTIVE por aliasCountry explícito, con alias de diplomado y lista INVENTORY vigente, dentro de cuentas autorizadas seleccionadas y negocio. Omite pausadas, país inválido/vacío, campañas no vinculadas, anuncios/conjuntos y listas archivadas. Cada campaña cuenta una vez; STOP no altera estado Meta y sigue contando. Conteo independiente de página, selección de checks, nivel, búsqueda y período; no se infiere país por nombre ni moneda. No se carga histórico ni se llama a Meta para contar: se integra una sola agrupación DB en la respuesta existente. Adaptación móvil con desplazamiento interno de fichas, sin nueva franja fija. Sin migraciones ni escrituras de negocio por contadores/enlace.

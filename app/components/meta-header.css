@@ -135,3 +135,15 @@ body:has(.meta-topbar) > .theme-toggle {
 .meta-ads .meta-summary-row .meta-update-options .meta-sync-compact{width:100%}
 .meta-update-options .meta-freshness-body{position:static!important;width:100%!important;max-width:100%;box-shadow:none!important;padding:8px 0!important}
 .meta-ads .meta-visible-refresh>.primary{background:var(--accent);color:var(--accent-ink,#102e27);border-color:var(--accent);font-weight:700}
+.meta-country-campaigns{display:flex;align-items:center;gap:7px;min-width:190px;max-width:100%;flex:0 1 auto}
+.meta-create-campaign{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:38px;padding:7px 10px;border:1px solid #608bc1;border-radius:8px;background:color-mix(in srgb,var(--surface) 92%,#508bd0);color:var(--ink);font-size:11px;font-weight:700;line-height:1.2;text-decoration:none;white-space:nowrap;flex-shrink:0}
+.meta-create-campaign:hover{background:color-mix(in srgb,var(--surface) 80%,#508bd0);border-color:#508bd0}
+.meta-create-campaign:focus-visible,.meta-country-counts:focus-visible{outline:2px solid #608bc1;outline-offset:3px}
+.meta-country-counts{display:flex;align-items:center;gap:5px;min-width:48px;max-width:330px;overflow-x:auto;padding:3px 1px;scrollbar-width:thin;scrollbar-color:#608bc1 transparent}
+.meta-country-count{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 8px;border:1px solid #729bc1;border-radius:7px;background:color-mix(in srgb,var(--surface) 90%,#659bd1);white-space:nowrap;font-size:10px;line-height:1.2;color:var(--ink);flex-shrink:0}
+.meta-country-count abbr{font-weight:650;text-decoration:none;cursor:default}
+.meta-country-count strong{font-size:13px;font-variant-numeric:tabular-nums}
+.meta-country-count-dot{width:5px;height:5px;flex:0 0 5px;border-radius:50%;background:#428dcc}
+@media(max-width:650px){.meta-country-campaigns{width:100%}.meta-country-counts{max-width:none;flex:1 1 0}.meta-create-campaign{min-height:36px}}
+.meta-ads .meta-summary-row{flex-wrap:wrap}
+.meta-country-campaigns:not([data-has-countries]){min-width:0}.meta-country-counts:empty{display:none}
