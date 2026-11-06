@@ -9,6 +9,8 @@ import { campaignPageDirectory } from "./page-directory";
 import { campaignPageIssue } from "./page-errors";
 import { z } from "zod";
 import { MetaGraphError } from "../meta-ads/graph-error";
+import { MetaQuotaWait } from "../meta-ads/quota";
+import { canResumeLocalWait } from "./launch-wait";
 import { discoverCampaignPages } from "./pages";
 import { db } from "../db";
 import { demand, AppError } from "../errors";
@@ -473,12 +475,24 @@ export async function createLaunch(actor: Actor, input: unknown) {
 }
 function publicLaunch(d: any) {
   const steps = d.steps as LaunchStep[],
-    config = d.config as CampaignConfig;
+    config = d.config as CampaignConfig,
+    wait = steps.find((s) => s.state !== "DONE")?.wait;
   return {
     id: d.id,
     status: d.status,
     revision: d.revision,
     error: d.error,
+    waiting:
+      d.status === "PUBLISHING" &&
+      !!wait &&
+      Date.parse(wait.until) > Date.now(),
+    nextAttemptAt: wait?.until ?? null,
+    waitReason: wait?.reason ?? null,
+    canResumeWait: canResumeLocalWait({
+      status: d.status,
+      error: d.error,
+      steps,
+    }),
     config,
     items: d.campaigns,
     summary: launchSummary(d.campaigns, config),
@@ -521,6 +535,40 @@ async function launchAccess(actor: Actor, id: string) {
 }
 export async function getLaunch(actor: Actor, id: string) {
   return publicLaunch((await launchAccess(actor, id)).d);
+}
+export async function resumeLaunchWait(
+  actor: Actor,
+  id: string,
+  input: unknown,
+) {
+  const b = z.object({ revision: z.number().int() }).strict().parse(input);
+  const { d } = await launchAccess(actor, id);
+  const steps = structuredClone(d.steps) as LaunchStep[];
+  demand(
+    d.revision === b.revision &&
+      canResumeLocalWait({ status: d.status, error: d.error, steps }),
+    "Este resultado requiere revisión; no se puede repetir automáticamente.",
+    409,
+  );
+  const step = steps.find((s) => s.state !== "DONE")!;
+  step.state = "PENDING";
+  delete step.startedAt;
+  delete step.wait;
+  const changed = await db.creativeMetaLaunch.updateMany({
+    where: { id, revision: b.revision, status: "NEEDS_REVIEW" },
+    data: {
+      steps: json(steps),
+      status: "PUBLISHING",
+      error: null,
+      revision: { increment: 1 },
+    },
+  });
+  demand(
+    changed.count === 1,
+    "El intento cambió. Consulta su estado antes de continuar.",
+    409,
+  );
+  return getLaunch(actor, id);
 }
 export async function beginLaunch(actor: Actor, id: string, input: unknown) {
   const b = z
@@ -777,14 +825,20 @@ async function receiptStep(
 export async function tickLaunch(actor: Actor, id: string) {
   const { d, a } = await launchAccess(actor, id);
   if (d.status !== "PUBLISHING") return publicLaunch(d);
+  const steps = structuredClone(d.steps) as LaunchStep[],
+    step = steps.find((s) => s.state !== "DONE");
+  if (
+    !step ||
+    (step.state === "PENDING" &&
+      step.wait &&
+      Date.parse(step.wait.until) > Date.now())
+  )
+    return publicLaunch(d);
   // A confirmed batch has a finite plan. Another batch must not exhaust its progress allowance.
   await rateLimit(
     "creative-meta:" + actor.id + ":" + id,
     Math.max(120, (d.steps as unknown[]).length * 3),
   );
-  const steps = structuredClone(d.steps) as LaunchStep[],
-    step = steps.find((s) => s.state !== "DONE");
-  if (!step) return publicLaunch(d);
   if (step.state === "RUNNING") {
     if (Date.now() - Date.parse(step.startedAt ?? "") < 90000)
       return publicLaunch(d);
@@ -940,6 +994,7 @@ export async function tickLaunch(actor: Actor, id: string) {
     return getLaunch(actor, id);
   }
   step.state = "RUNNING";
+  delete step.wait;
   step.startedAt = new Date().toISOString();
   const claim = await db.creativeMetaLaunch.updateMany({
     where: { id, status: "PUBLISHING", revision: d.revision },
@@ -1060,6 +1115,18 @@ export async function tickLaunch(actor: Actor, id: string) {
     }
     await receiptStep(actor, d, steps, step, receipt);
   } catch (e) {
+    if (e instanceof MetaQuotaWait) {
+      // beforeRead rejected locally: this invocation never reached Meta. Retain
+      // the same pending step and all receipts; network/Meta errors stay uncertain.
+      step.state = "PENDING";
+      delete step.startedAt;
+      step.wait = { reason: e.reason, until: e.retryAt.toISOString() };
+      await db.creativeMetaLaunch.updateMany({
+        where: { id, status: "PUBLISHING", revision: d.revision + 1 },
+        data: { steps: json(steps), error: null, revision: { increment: 1 } },
+      });
+      return getLaunch(actor, id);
+    }
     step.state = "UNCERTAIN";
     const error =
       e instanceof AppError

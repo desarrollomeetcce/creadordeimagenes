@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../lib/db";
 import { studioGenerate } from "../lib/creative-studio/service";
+import { previewSubproduct } from "../lib/generation";
 test("A mixed studio batch reserves 2 + 10 jobs with per-diploma price, mode and offers; no external AI calls", async () => {
   assert(/studio_columns_qa_\d+/.test(process.env.DATABASE_URL ?? ""));
   const q = JSON.parse(
@@ -12,6 +13,9 @@ test("A mixed studio batch reserves 2 + 10 jobs with per-diploma price, mode and
     ),
     actor = await db.user.findUniqueOrThrow({ where: { id: q.users[0].id } }),
     subs = await db.subproduct.findMany({ where: { id: { in: q.subIds } } });
+  const category = await db.category.findUniqueOrThrow({
+    where: { id: q.productId },
+  });
   const requestId = randomUUID(),
     fetch = globalThis.fetch;
   const requestIds = [requestId];
@@ -23,6 +27,19 @@ test("A mixed studio batch reserves 2 + 10 jobs with per-diploma price, mode and
     [q.subIds[1]]: { count: 10, mode: "Texto", priceText: "" },
   };
   try {
+    await db.category.update({
+      where: { id: q.productId },
+      data: { applySettingsToAll: false },
+    });
+    assert(
+      subs.every((s) => Object.keys(s.settings as object).length === 0),
+      "Manual names have no legacy per-item configuration",
+    );
+    assert.equal(
+      (await previewSubproduct(q.subIds[0], true)).needsSettings,
+      true,
+      "Legacy generation still requires its own settings",
+    );
     const payload = {
       requestId,
       subproductIds: q.subIds,
@@ -109,6 +126,10 @@ test("A mixed studio batch reserves 2 + 10 jobs with per-diploma price, mode and
     });
     assert.deepEqual([...retried.jobs].sort(), [...mixed.jobs].sort());
   } finally {
+    await db.category.update({
+      where: { id: q.productId },
+      data: { applySettingsToAll: category.applySettingsToAll },
+    });
     globalThis.fetch = fetch;
     const jobs = await db.generationJob.findMany({
       where: {

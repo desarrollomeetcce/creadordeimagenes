@@ -1476,24 +1476,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         }))
                   }
                 />
-                <label className="studio-price-field">
-                  Precio · opcional
-                  <input
-                    aria-label="Precio de este diplomado"
-                    type="text"
-                    maxLength={160}
-                    placeholder="Sin precio · ej. 40 USD, 90 mil pesos, 30 soles"
-                    value={generationFor(activeSub).priceText}
-                    onChange={(e) =>
-                      changeGeneration({ priceText: e.target.value })
-                    }
-                  />
-                  <small>
-                    {generationFor(activeSub).priceText.trim()
-                      ? "Se incluirá tal como está escrito, junto con las condiciones del prompt."
-                      : "Sin precio adicional: se respeta lo indicado en el prompt."}
-                  </small>
-                </label>
                 <div className="studio-composer-tools">
                   <label className="studio-upload-button">
                     ↑ Subir afiches
@@ -1542,6 +1524,24 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       </option>
                     ))}
                   </select>
+                  <label className="studio-price-field">
+                    Precio
+                    <input
+                      aria-label="Precio de este diplomado"
+                      type="text"
+                      maxLength={160}
+                      placeholder="Sin precio"
+                      title={
+                        generationFor(activeSub).priceText.trim()
+                          ? "Se incluirá tal como está escrito, junto con las condiciones del prompt."
+                          : "Opcional. Vacío: se respeta lo indicado en el prompt. Ej.: 40 USD, 90 mil pesos, 30 soles."
+                      }
+                      value={generationFor(activeSub).priceText}
+                      onChange={(e) =>
+                        changeGeneration({ priceText: e.target.value })
+                      }
+                    />
+                  </label>
                   <button
                     type="button"
                     className="studio-generate-button"

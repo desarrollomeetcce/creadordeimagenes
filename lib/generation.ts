@@ -23,7 +23,17 @@ import {
   resolveInstructions,
   validateDistribution,
 } from "./inheritance";
-export async function previewSubproduct(id: string, projectOnly = false) {
+export async function previewSubproduct(
+  id: string,
+  projectOnly = false,
+  studioSettings?: {
+    count: number;
+    textCount: number;
+    imageTextCount: number;
+    imageCount: number;
+    format: string;
+  },
+) {
   const s = await db.subproduct.findUniqueOrThrow({
     where: { id },
     include: { category: { include: { project: true } } },
@@ -86,17 +96,21 @@ export async function previewSubproduct(id: string, projectOnly = false) {
       brand.logoAttachmentIds.includes(a.id),
   );
   const needsSettings =
+    !studioSettings &&
     !s.category.applySettingsToAll &&
     Object.keys(s.settings as object).length === 0;
   if (needsSettings)
     instructions.warnings.push(
       "Define la cantidad, distribución, formato y estilo de este subproducto; la producto no aplica parámetros comunes.",
     );
-  const resolvedSettings = effectiveSettings(
-    s.category.settings,
-    s.settings,
-    s.category.applySettingsToAll,
-  );
+  const resolvedSettings = {
+    ...effectiveSettings(
+      s.category.settings,
+      s.settings,
+      s.category.applySettingsToAll,
+    ),
+    ...studioSettings,
+  };
   try {
     validateDistribution(resolvedSettings);
     const configured = [
@@ -258,7 +272,20 @@ export async function generateBatch(
     const chosenModes = leaf
       ? generationModes(leaf.count, leaf.mode, requestId + ":" + sub.id)
       : [];
-    const p = await previewSubproduct(sub.id, studio?.projectOnly),
+    const p = await previewSubproduct(
+        sub.id,
+        studio?.projectOnly,
+        leaf
+          ? {
+              count: leaf.count,
+              textCount: chosenModes.filter((m) => m === "Texto").length,
+              imageTextCount: chosenModes.filter((m) => m === "Imagen + Texto")
+                .length,
+              imageCount: chosenModes.filter((m) => m === "Imagen").length,
+              format: leaf.format,
+            }
+          : undefined,
+      ),
       s = leaf
         ? {
             ...p.settings,

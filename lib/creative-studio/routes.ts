@@ -142,6 +142,8 @@ export async function creativeStudioRoutes(
       ),
     );
   if (p[0] === "launches") {
+    if (p[1] && p[2] === "resume-wait" && p.length === 3 && method === "POST")
+      return send(await campaigns.resumeLaunchWait(actor, p[1], await body()));
     if (!p[1] && method === "POST")
       return send(await campaigns.createLaunch(actor, await body()), 201);
     if (p[1] && p.length === 2 && method === "GET")

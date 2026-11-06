@@ -92,6 +92,7 @@ export type LaunchStep = {
   target?: string;
   state: "PENDING" | "RUNNING" | "DONE" | "UNCERTAIN";
   startedAt?: string;
+  wait?: { reason: "pacing" | "quota"; until: string };
   receipt?: Record<string, any>;
 };
 export function campaignText(

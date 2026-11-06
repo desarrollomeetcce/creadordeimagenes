@@ -17,6 +17,7 @@ import {
 } from "../../lib/creative-studio/campaign-policy";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
+import { launchPollDelay } from "../../lib/creative-studio/launch-wait";
 const initial: CampaignConfig = {
   planVersion: 2,
   campaignName: "{pais} · {diplomado}",
@@ -414,7 +415,11 @@ export function StudioCampaign({
         if (next.status === "PUBLISHING")
           timer = setTimeout(
             step,
-            next.completed > draft.completed ? 300 : 1500,
+            next.waiting
+              ? launchPollDelay(next)
+              : next.completed > draft.completed
+                ? 300
+                : 1500,
           );
       } catch (e) {
         if (alive) {
@@ -425,7 +430,7 @@ export function StudioCampaign({
         }
       }
     }
-    timer = setTimeout(step, 300);
+    timer = setTimeout(step, launchPollDelay(draft));
     return () => {
       alive = false;
       clearTimeout(timer);
@@ -1405,20 +1410,25 @@ export function StudioCampaign({
       )}
       {draft && (
         <div
-          className={"studio-publish-progress " + draft.status.toLowerCase()}
+          className={
+            "studio-publish-progress " +
+            (draft.waiting || draft.canResumeWait
+              ? "waiting"
+              : draft.status.toLowerCase())
+          }
           role="status"
         >
           <strong>
-            {
-              (
-                {
-                  DRAFT: "Borrador guardado",
-                  PUBLISHING: "Publicando en Meta…",
-                  PUBLISHED: "✓ Publicación confirmada por Meta",
-                  NEEDS_REVIEW: "Intento incompleto",
-                } as any
-              )[draft.status]
-            }
+            {draft.waiting || draft.canResumeWait
+              ? "En espera de turno"
+              : (
+                  {
+                    DRAFT: "Borrador guardado",
+                    PUBLISHING: "Publicando en Meta…",
+                    PUBLISHED: "✓ Publicación confirmada por Meta",
+                    NEEDS_REVIEW: "Intento incompleto",
+                  } as any
+                )[draft.status]}
           </strong>
           {draft.status === "PUBLISHING" && (
             <progress max={draft.total} value={draft.completed} />
@@ -1427,7 +1437,51 @@ export function StudioCampaign({
             {Math.round((100 * draft.completed) / Math.max(1, draft.total))} %
             confirmado
           </small>
-          {draft.error && (
+          {draft.waiting && (
+            <p>
+              El avance está guardado. Continuará automáticamente después de la
+              espera, sin repetir los pasos confirmados.
+            </p>
+          )}
+          {draft.canResumeWait && (
+            <>
+              <p>
+                Este intento se detuvo antes de enviar la siguiente solicitud.
+                Puedes continuar desde el avance guardado.
+              </p>
+              <button
+                type="button"
+                disabled={locked}
+                onClick={async () => {
+                  const context = aiContext.current;
+                  setBusy(true);
+                  setError("");
+                  try {
+                    const next = await studioRequest(
+                      "/launches/" + draft.id + "/resume-wait",
+                      "POST",
+                      { revision: draft.revision },
+                    );
+                    if (aiContext.current !== context) return;
+                    setDraft(next);
+                    setHalted(false);
+                  } catch (e) {
+                    if (aiContext.current !== context) return;
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : "No se pudo continuar el intento.",
+                    );
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Continuar publicación
+              </button>
+            </>
+          )}
+          {draft.error && !draft.canResumeWait && (
             <details>
               <summary>Ver motivo del intento</summary>
               <p>{draft.error}</p>
@@ -1451,15 +1505,20 @@ export function StudioCampaign({
               </button>
             </div>
           )}
-          {draft.status === "NEEDS_REVIEW" && resources.canAuthorizePages && (
-            <button
-              type="button"
-              disabled={locked}
-              onClick={() => void authorizePageAccess()}
-            >
-              Autorizar página y anuncios
-            </button>
-          )}
+          {draft.status === "NEEDS_REVIEW" &&
+            !draft.canResumeWait &&
+            /permis|permission|token|authorization|autorizaci[oó]n/i.test(
+              draft.error ?? "",
+            ) &&
+            resources.canAuthorizePages && (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => void authorizePageAccess()}
+              >
+                Autorizar página y anuncios
+              </button>
+            )}
 
           {draft.createdCampaigns.map((c: any) => (
             <a

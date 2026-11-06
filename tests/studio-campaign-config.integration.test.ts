@@ -8,7 +8,11 @@ import {
   createLaunch,
   beginLaunch,
   tickLaunch,
+  resumeLaunchWait,
+  getLaunch,
 } from "../lib/creative-studio/campaigns";
+import { MetaQuotaWait } from "../lib/meta-ads/quota";
+import { legacyPacingMessage } from "../lib/creative-studio/launch-wait";
 import { suggestCampaign } from "../lib/creative-studio/campaign-suggestion";
 import { adapter } from "../lib/providers";
 import { Prisma } from "@prisma/client";
@@ -35,6 +39,7 @@ test("Campaign objectives reach verified paused objects with exact distribution,
   const old = MetaReader.prototype.launchRequest,
     fetch = globalThis.fetch;
   let seq = 9908800000;
+  let waitInjection: "pacing" | "quota" | null = null;
   const objects = new Map<string, any>(),
     calls: any[] = [],
     drafts: string[] = [];
@@ -49,6 +54,11 @@ test("Campaign objectives reach verified paused objects with exact distribution,
     fields,
   ) {
     assert.equal(account, q.accountId);
+    if (edge === "adcreatives" && waitInjection) {
+      const reason = waitInjection;
+      waitInjection = null;
+      throw new MetaQuotaWait(new Date(Date.now() + 60000), reason);
+    }
     calls.push({ edge, body, id });
     if (edge === "promote_pages")
       return { data: [{ id: q.pageId, name: "QA" }] };
@@ -125,6 +135,103 @@ test("Campaign objectives reach verified paused objects with exact distribution,
         revision: d.revision,
         confirmPublish: true,
       });
+      if (objective !== "TRAFFIC") {
+        waitInjection = objective === "WHATSAPP" ? "pacing" : "quota";
+        while (state.status === "PUBLISHING" && state.current !== "CREATIVE")
+          state = await tickLaunch(owner, d.id);
+        const confirmed = state.completed;
+        state = await tickLaunch(owner, d.id); // Local wait, no creative sent.
+        assert.equal(state.status, "PUBLISHING");
+        assert.equal(state.waiting, true);
+        assert.equal(state.error, null);
+        assert.equal(
+          state.waitReason,
+          objective === "WHATSAPP" ? "pacing" : "quota",
+        );
+        const stored = await db.creativeMetaLaunch.findUniqueOrThrow({
+          where: { id: d.id },
+        });
+        const saved = stored.steps as any[];
+        assert.equal(saved.find((s) => s.state !== "DONE").state, "PENDING");
+        const count = calls.length;
+        const unchanged = await tickLaunch(owner, d.id);
+        assert.equal(unchanged.revision, state.revision);
+        assert.equal(unchanged.completed, confirmed);
+        assert.equal(
+          calls.length,
+          count,
+          "No requests before the durable wait expires",
+        );
+        if (objective === "WHATSAPP") {
+          const legacy = structuredClone(saved);
+          legacy.find((s) => s.state !== "DONE").state = "UNCERTAIN";
+          await db.creativeMetaLaunch.update({
+            where: { id: d.id },
+            data: {
+              steps: legacy,
+              status: "NEEDS_REVIEW",
+              error: legacyPacingMessage,
+            },
+          });
+          assert.equal((await getLaunch(owner, d.id)).canResumeWait, true);
+          await assert.rejects(
+            () =>
+              resumeLaunchWait(owner, d.id, { revision: state.revision - 1 }),
+            /revisi[oó]n/,
+          );
+          state = await resumeLaunchWait(owner, d.id, {
+            revision: state.revision,
+          });
+          assert.equal(state.completed, confirmed);
+          assert.equal(
+            calls.length,
+            count,
+            "Explicit recovery only changes durable state",
+          );
+          const unknown = await db.creativeMetaLaunch.create({
+            data: {
+              actorId: owner.id,
+              projectId: q.projectId,
+              categoryId: q.productId,
+              requestId: randomUUID(),
+              accountId: q.accountId,
+              connectionId: stored.connectionId,
+              connectionRevision: stored.connectionRevision,
+              config: stored.config as Prisma.InputJsonValue,
+              campaigns: stored.campaigns as Prisma.InputJsonValue,
+              steps: legacy,
+              status: "NEEDS_REVIEW",
+              error: "Network timeout: result unknown",
+            },
+          });
+          drafts.push(unknown.id);
+          assert.equal(
+            (await getLaunch(owner, unknown.id)).canResumeWait,
+            false,
+          );
+          await assert.rejects(
+            () =>
+              resumeLaunchWait(owner, unknown.id, {
+                revision: unknown.revision,
+              }),
+            /revisi[oó]n/,
+          );
+          await tickLaunch(owner, unknown.id);
+          assert.equal(
+            calls.length,
+            count,
+            "An uncertain network result is never retried",
+          );
+        } else {
+          saved.find((s) => s.state !== "DONE").wait.until = new Date(
+            Date.now() - 1,
+          ).toISOString();
+          await db.creativeMetaLaunch.update({
+            where: { id: d.id },
+            data: { steps: saved },
+          });
+        }
+      }
       for (let i = 0; i < 25 && state.status === "PUBLISHING"; i++)
         state = await tickLaunch(owner, d.id);
       assert.equal(state.status, "PUBLISHED", JSON.stringify(state));
