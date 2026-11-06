@@ -1,6 +1,7 @@
 "use client";
 import { useContext, useEffect, useRef, useState } from "react";
 import { CurrentUserId } from "./role-guide";
+import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
 import { StudioPagePicker } from "./studio-page-picker";
 import { StudioMaximize } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
@@ -10,7 +11,8 @@ import {
   type CampaignConfig,
   type CampaignItem,
 } from "../../lib/creative-studio/campaign-policy";
-import { countryName } from "../../lib/meta-ads/countries";
+import { SheetSearchSelect } from "./sheet-search-select";
+import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 const initial: CampaignConfig = {
   accountId: "",
   pageId: "",
@@ -55,7 +57,11 @@ export function StudioCampaign({
   template,
   latestLaunchId,
   onRestore,
+  onCountryChange,
+  countryBusy=false,
 }: {
+  onCountryChange?:(country:string)=>Promise<unknown>;
+  countryBusy?:boolean;
   categoryId: string;
   country: string;
   accounts: any[];
@@ -98,6 +104,24 @@ export function StudioCampaign({
     );
     return () => clearTimeout(timer);
   }, [pageRetryAt]);
+  const [phone,setPhone]=useState<{scope:string;number:string}|null>(null),[phoneLoading,setPhoneLoading]=useState(false),[phoneError,setPhoneError]=useState(""),[phoneRevision,setPhoneRevision]=useState(0);
+  const forcePhone=useRef("");
+  const phoneScope=form.accountId+":"+form.pageId;
+  const selectedPage=resources.accountId===form.accountId ? resources.pages.find((p:any)=>p.id===form.pageId) : null;
+  const directoryPhone=metaPageWhatsAppNumber(selectedPage?.whatsapp);
+  const phoneNumber=phone?.scope===phoneScope ? phone.number : "";
+  useEffect(()=>{
+    const controller=new AbortController();setPhone(null);setPhoneError("");
+    if(!form.accountId||!form.pageId||!selectedPage){setPhoneLoading(false);return ()=>controller.abort();}
+    const force=forcePhone.current===phoneScope;forcePhone.current="";
+    if(directoryPhone&&!force){setPhone({scope:phoneScope,number:directoryPhone});setPhoneLoading(false);return ()=>controller.abort();}
+    setPhoneLoading(true);
+    void studioRequest("/page-whatsapp/"+form.accountId+"?"+new URLSearchParams({pageId:form.pageId,...(force?{refresh:"1"}:{})}),"GET",undefined,controller.signal).then(r=>{
+      if(!controller.signal.aborted){setPhone({scope:phoneScope,number:r.number});setResources((current:any)=>({...current,pages:current.pages.map((p:any)=>p.id===r.pageId?{...p,whatsapp:r.number}:p)}));}
+    }).catch(e=>{if(!controller.signal.aborted)setPhoneError(e.message)}).finally(()=>{if(!controller.signal.aborted)setPhoneLoading(false)});
+    return ()=>controller.abort();
+  },[form.accountId,form.pageId,!!selectedPage,directoryPhone,phoneRevision]);
+  useEffect(()=>{if(form.whatsapp!==phoneNumber)setForm(f=>({...f,whatsapp:phoneNumber}));},[phoneNumber,form.whatsapp]);
   const lastCountry = useRef(country);
   const pending = useRef(false),
     dialog = useRef<HTMLDialogElement>(null),
@@ -281,7 +305,7 @@ export function StudioCampaign({
     setForm((f) => ({
       ...f,
       [key]: value,
-      ...(key === "accountId" ? { pageId: "" } : {}),
+      ...(key === "accountId" ? { pageId: "", whatsapp:"" } : {}),
     }));
     if (draft?.status === "DRAFT") setDraft(null);
     setSpend(false);
@@ -386,6 +410,7 @@ export function StudioCampaign({
             ))}
           </select>
         </label>
+        {onCountryChange&&<label>País de destino<SheetSearchSelect label="País de la campaña" value={country} placeholder="Selecciona un país" disabled={locked||countryBusy} options={countryOptions.map(c=>({value:c.code,label:c.name+" · "+c.code}))} onSelect={v=>void onCountryChange(v)}/></label>}
         {!accounts.length && (
           <p className="hint">
             Marca tus cuentas principales en{" "}
@@ -401,12 +426,7 @@ export function StudioCampaign({
           value={form.pageId}
           loading={loading && !resources.pages.length}
           disabled={!form.accountId || locked}
-          onChange={(id) => {
-            update("pageId", id);
-            const page = resources.pages.find((p: any) => p.id === id);
-            if (page?.whatsapp)
-              setForm((f) => ({ ...f, whatsapp: page.whatsapp }));
-          }}
+          onChange={(id) => {if(id!==form.pageId){update("pageId",id);setForm(f=>({...f,whatsapp:""}));}}}
         />
         {resources.pageCached && resources.pageSavedAt && (
           <small className="studio-pages-saved">
@@ -495,18 +515,12 @@ export function StudioCampaign({
               <a href="?view=metaads">Revisar conexión Meta</a>
             </div>
           )}
-        <label>
-          WhatsApp vinculado a la página
-          <input
-            aria-label="WhatsApp de campaña"
-            placeholder="+51 999 999 999"
-            type="tel"
-            value={form.whatsapp}
-            onChange={(e) =>
-              update("whatsapp", e.target.value.replace(/[ ()-]/g, ""))
-            }
-          />
-        </label>
+        <section className="studio-whatsapp-auto" aria-label="WhatsApp automático de la página" aria-busy={phoneLoading}>
+          <span>WhatsApp de la página</span>
+          {phoneNumber ? <><strong>{phoneNumber}</strong><small>Se obtiene de Meta automáticamente.</small></> : <small role="status">{phoneLoading?"Consultando el WhatsApp de esta página…":(!form.pageId?"Elige una página de Facebook.":"Se usará el WhatsApp predeterminado de la página en Meta. Meta comprobará la vinculación al crear los anuncios.")}</small>}
+          {phoneError&&<details className="studio-whatsapp-note"><summary>No se pudo leer el número · ver motivo</summary><small>{phoneError}</small></details>}
+          {form.pageId&&<button type="button" disabled={phoneLoading||locked} onClick={()=>{forcePhone.current=phoneScope;setPhoneRevision(n=>n+1)}}>{phoneNumber?"Actualizar desde Meta":"Volver a consultar"}</button>}
+        </section>
         <div className="studio-budget">
           <label>
             Presupuesto diario por campaña <span>{currency}</span>
@@ -877,7 +891,7 @@ export function StudioCampaign({
               <strong>
                 {campaignText(draft.config.headline, i, draft.config)}
               </strong>
-              <small>WhatsApp: {draft.config.whatsapp}</small>
+              <small>WhatsApp: {draft.config.whatsapp || "Predeterminado de la página en Meta"}</small>
             </section>
           ))}
           <p>

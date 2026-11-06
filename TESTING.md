@@ -1,3 +1,7 @@
+### 2026-11-06 · Inventario inline y WhatsApp automático
+
+319 pruebas generales, 6 de política, 3 integraciones en base exclusiva, 6 flujos de navegador del selector y 4 de WhatsApp aprobados; TypeScript y build correctos. Verificados selección única, uso distinto por país, preselección privada, afiches conservados, móvil, borrado de número al cambiar página, caché autorizada y ausencia de número sin bloquear preparación. Transportes simulados: cero llamadas IA con cargo y cero escrituras reales en Meta. Publicación en main verificable; despliegue Hostinger no verificado desde este entorno.
+
 
 ### 2026-11-05 · Carga independiente y trabajo reducido de Inventario
 

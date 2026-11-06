@@ -1,3 +1,4 @@
+import { metaPageWhatsAppNumber,readMetaPageWhatsApp } from "./page-whatsapp";
 import { inventoryMetaStatusChange } from "../meta-ads/inventory-sheet-activation";
 import { authorizeFinancialRequest,financialAccess,scopePermission } from "../meta-ads/financial-access";
 import { campaignPageDirectory } from "./page-directory";
@@ -18,6 +19,7 @@ import {
   campaignText,
   minorBudget,
   audienceTargeting,
+  whatsappPromotedObject,
   launchPlan,
   launchSummary,
   type CampaignItem,
@@ -63,7 +65,7 @@ export async function launchResources(
               edge,
               undefined,
               undefined,
-              "id,name,picture.type(square){url}",
+              "id,name,picture.type(square){url},whatsapp_number",
               after,
             );
           } catch (error) {
@@ -136,6 +138,36 @@ export async function launchResources(
     usesLoginConfiguration: !!a.connection.loginConfigId,
   };
 }
+const pagePhonePending=new Map<string,Promise<{pageId:string;number:string}>>();
+/** A single selected-page read; no page scanning or campaign/history imports. */
+export async function campaignPageWhatsApp(actor:Actor, accountId:string, pageId:string, refresh=false){
+  studioAccess(actor);demand(/^\d{1,40}$/.test(pageId),"Página no válida.");
+  const a=await primaryAccount(actor,accountId);
+  const directory=await launchResources(actor,accountId,"pages");
+  const page=directory.pages.find(p=>p.id===pageId);
+  demand(page,"La página no está autorizada para esta cuenta. Actualiza las páginas.",403);
+  const saved=metaPageWhatsAppNumber(page.whatsapp);
+  if(saved&&!refresh)return {pageId,number:saved};
+  const key=JSON.stringify([accountId,a.connectionId,a.connection.revision,pageId]);
+  let pending=pagePhonePending.get(key);
+  if(!pending){
+    pending=(async()=>{
+      const {reader:r}=await reader(a.connectionId,false,true);
+      const number=await readMetaPageWhatsApp(r,a.id,pageId);
+      const current=await primaryAccount(actor,accountId);
+      demand(current.connectionId===a.connectionId&&current.connection.revision===a.connection.revision,"La conexión cambió. Actualiza antes de continuar.",409);
+      const cached=await db.creativeMetaPageDirectory.findUnique({where:{accountId}});
+      if(cached&&cached.connectionId===a.connectionId&&cached.credentialRevision===a.connection.revision&&Array.isArray(cached.pages)){
+        const pages=cached.pages.map((p:any)=>p&&p.id===pageId?{...p,whatsapp:number}:p);
+        await db.creativeMetaPageDirectory.updateMany({where:{accountId,connectionId:a.connectionId,credentialRevision:a.connection.revision,fetchedAt:cached.fetchedAt},data:{pages:json(pages)}});
+      }
+      return {pageId,number};
+    })();
+    pagePhonePending.set(key,pending);void pending.finally(()=>{if(pagePhonePending.get(key)===pending)pagePhonePending.delete(key)}).catch(()=>{});
+  }
+  return pending;
+}
+
 export async function createLaunch(actor: Actor, input: unknown) {
   studioAccess(actor);
   const b = z
@@ -236,6 +268,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
     "La página no está autorizada para anunciar desde esta cuenta. Comprueba la vinculación.",
     409,
   );
+  if(b.config.whatsapp){const metaNumber=await readMetaPageWhatsApp(r,a.id,b.config.pageId);demand(metaPageWhatsAppNumber(b.config.whatsapp)===metaNumber,"El WhatsApp de la página cambió. Vuelve a consultarlo antes de preparar la campaña.",409);b.config.whatsapp=metaNumber;}
   const eu =
     "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split(
       " ",
@@ -385,7 +418,7 @@ export async function beginLaunch(actor: Actor, id: string, input: unknown) {
     })
     .strict()
     .parse(input);
-  const { d } = await launchAccess(actor, id);
+  const { d, a } = await launchAccess(actor, id);
   if (["PUBLISHED", "PUBLISHING"].includes(d.status)) return publicLaunch(d);
   demand(
     d.status === "DRAFT",
@@ -397,6 +430,7 @@ export async function beginLaunch(actor: Actor, id: string, input: unknown) {
     config.targetStatus !== "ACTIVE" || b.confirmSpend,
     "Confirma el presupuesto diario antes de publicar activas.",
   );
+  if(config.whatsapp){const {reader:r}=await reader(a.connectionId,false,true);const metaNumber=await readMetaPageWhatsApp(r,a.id,config.pageId);demand(metaPageWhatsAppNumber(config.whatsapp)===metaNumber,"El WhatsApp de la página cambió. Actualiza y prepara la campaña nuevamente.",409);}
   const result = await db.creativeMetaLaunch.updateMany({
     where: { id, status: "DRAFT", revision: b.revision },
     data: { status: "PUBLISHING", revision: { increment: 1 }, error: null },
@@ -644,10 +678,7 @@ export async function tickLaunch(actor: Actor, id: string) {
         billing_event: "IMPRESSIONS",
         optimization_goal: "CONVERSATIONS",
         destination_type: "WHATSAPP",
-        promoted_object: {
-          page_id: config.pageId,
-          whatsapp_phone_number: config.whatsapp.replace(/^\+/, ""),
-        },
+        promoted_object: whatsappPromotedObject(config),
         targeting: audienceTargeting(
           config,
           step.audience!,

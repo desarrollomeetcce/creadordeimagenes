@@ -1,3 +1,7 @@
+### 2026-11-06 · Inventario inline y WhatsApp automático
+
+Proyectos permite elegir cantidad, buscar en cada espacio, filtrar por grupo/uso del país/categoría y completar aleatoriamente sin duplicar. Conserva preselecciones y cantidad de afiches; elegir no genera ni publica. País de campaña sincronizado con primera columna. WhatsApp procede exclusivamente de página autorizada; sin número manual. Si Meta no expone el número se omite el campo opcional, dejando que Meta valide el predeterminado al crear anuncios. La lectura no garantiza publicación ni revisión de Meta.
+
 
 ### 2026-11-05 · Carga independiente y trabajo reducido de Inventario
 

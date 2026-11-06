@@ -5,6 +5,8 @@ import { StudioColumns, StudioMaximize } from "./studio-columns";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { SearchSelect } from "./search-select";
 import { studioRequest } from "./inventory-meta-picker";
+import { StudioInventorySlots } from "./studio-inventory-slots";
+import { readGroupDirectory } from "./inventory-group-directory-cache";
 import { StudioCampaign } from "./studio-campaign";
 import {
   ProductionControls,
@@ -17,9 +19,6 @@ import type { CampaignItem } from "../../lib/creative-studio/campaign-policy";
 import "./studio-workspace.css";
 const Attachments = dynamic(() =>
   import("./attachments").then((m) => m.Attachments),
-);
-const InventoryGroupEditor = dynamic(() =>
-  import("./inventory-group-editor").then((m) => m.InventoryGroupEditor),
 );
 const modes = [
   { id: "Imagen + Texto", label: "Imagen + texto" },
@@ -55,7 +54,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [notice, setNotice] = useState(""),
     [zone, setZone] = useState("canvas"),
     [inventoryId, setInventoryId] = useState(""),
-    [picker, setPicker] = useState<any>(null),
+    [inventoryFocusRequest,setInventoryFocusRequest]=useState(0),
     [pendingSelection, setPendingSelection] = useState<any>(null),
     [manualName, setManualName] = useState(""),
     [web, setWeb] = useState(""),
@@ -74,7 +73,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     productSeq = useRef(0),
     gallerySeq = useRef(0),
     action = useRef(false),
-    inventoryCache = useRef(new Map<string, any>()),
+
     draftProjects = useRef(new Map<string, any>()),
     activeRef = useRef(activeSub),
     pageRef = useRef(page),
@@ -121,17 +120,19 @@ export function CreativeStudio({ userId }: { userId: string }) {
     };
   }, []);
   async function run(fn: () => Promise<void>) {
-    if (action.current) return;
+    if (action.current) return false;
     action.current = true;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await fn();
+      return true;
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "No se pudo completar la operación.",
       );
+      return false;
     } finally {
       action.current = false;
       if (mounted.current) setBusy(false);
@@ -231,6 +232,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       const p = visibleProduct(await studioRequest("/products/" + id));
       if (!mounted.current || seq !== productSeq.current) return;
       setProduct(p);
+      setInventoryFocusRequest(0);
       setProductQuery(p.name);
       setCountry(p.studio?.country ?? "");
       setPrompts({
@@ -460,28 +462,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setActiveSub(added[0].id);
       setTargetSubs(added.map((s: any) => s.id));
     }
-    setPicker(null);
     handoffCountry.current="";
     setPendingSelection(null);
     setZone("canvas");
-    setNotice("✓ " + added.length + " diplomados listos en este producto");
+    setNotice("✓ " + added.length + " elementos listos en esta carpeta");
   }
-  const [pickerGroupId, setPickerGroupId] = useState("");
-  async function refreshPicker() {
-    const next = await studioRequest("/inventory/" + inventoryId);
-    inventoryCache.current.set(inventoryId, next);
-    setPicker(next);
-  }
-  async function openInventory() {
-    setPickerGroupId("");
-    if (!inventoryId) return;
-    let dir = inventoryCache.current.get(inventoryId);
-    if (!dir) {
-      dir = await studioRequest("/inventory/" + inventoryId);
-      inventoryCache.current.set(inventoryId, dir);
-    }
-    setPicker(dir);
-  }
+  const loadInventoryDirectory=useCallback((id:string)=>readGroupDirectory(userId,id,()=>studioRequest("/inventory/"+id)),[userId]);
+  function focusInventorySelector(){setZone("project");setInventoryFocusRequest(n=>n+1)}
   async function addName() {
     const added = await studioRequest(
       "/products/" + product.id + "/items",
@@ -500,6 +487,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     } catch {}
     await reloadProduct();
     setActiveSub(added[0].id);
+    setTargetSubs(ids=>[...new Set([...ids,added[0].id])]);
     setManualName("");
     setZone("canvas");
   }
@@ -898,6 +886,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       Inventario
                       <select
                         aria-label="Inventario de productos"
+                        disabled={busy||!!pendingSelection}
                         value={inventoryId}
                         onChange={(e) => setInventoryId(e.target.value)}
                       >
@@ -909,13 +898,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         ))}
                       </select>
                     </label>
-                    <button
-                      type="button"
-                      disabled={!inventoryId || busy}
-                      onClick={() => void run(openInventory)}
-                    >
-                      ▦ Elegir diplomados / grupos
-                    </button>
+                    <StudioInventorySlots key={product.id+":"+inventoryId+":"+country} listId={inventoryId} country={country} existingNames={product.subproducts.map((s:any)=>s.name)} predefined={!!pendingSelection||targetSubs.length>0} disabled={busy||!!pendingSelection} focusRequest={inventoryFocusRequest} loadDirectory={loadInventoryDirectory} onChoose={ids=>run(()=>addItems(ids,country))}/>
                   </div>
                   {pendingSelection && (
                     <button
@@ -937,8 +920,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   )}
                   <div className="studio-add-sub">
                     <input
-                      aria-label="Añadir subproducto manualmente"
-                      placeholder="O escribe un diplomado…"
+                      aria-label="Nombre nuevo"
+                      placeholder="O escribe un nombre…"
                       value={manualName}
                       onChange={(e) => setManualName(e.target.value)}
                       onKeyDown={(e) => {
@@ -950,7 +933,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     />
                     <button
                       type="button"
-                      aria-label="Añadir subproducto"
+                      aria-label="Añadir nombre"
                       disabled={busy || !manualName.trim()}
                       onClick={() => void run(addName)}
                     >
@@ -1010,7 +993,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     <span>
                       {targetSubs.length
                         ? targetSubs.length + " seleccionados"
-                        : "Todos los diplomados"}{" "}
+                        : "Todos los elementos"}{" "}
                       · {count} variaciones cada uno
                     </span>
                     <button
@@ -1034,7 +1017,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     >
                       ✦ Generar en{" "}
                       {targetSubs.length || product.subproducts.length}{" "}
-                      diplomados
+                      elementos
                     </button>
                   </div>
                 </>
@@ -1101,8 +1084,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 type="button"
                 className="studio-add-tab"
                 disabled={!inventoryId || busy}
-                onClick={() => void run(openInventory)}
-                aria-label="Añadir diplomados del inventario"
+                onClick={focusInventorySelector}
+                aria-label="Elegir más del inventario"
               >
                 ＋
               </button>
@@ -1441,6 +1424,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
             key={product.id}
             categoryId={product.id}
             country={country}
+            countryBusy={busy}
+            onCountryChange={value=>run(()=>changeCountry(value))}
             accounts={context.accounts}
             items={campaignItems}
             template={project?.studio?.campaignTemplates?.[country]}
@@ -1467,28 +1452,6 @@ export function CreativeStudio({ userId }: { userId: string }) {
           </aside>
         )}
       </StudioColumns>
-      {picker && (
-        <InventoryGroupEditor
-          directory={picker}
-          onUsageLoaded={(usage) => {
-            const next = { ...picker, ...usage, usageReady: true };
-            inventoryCache.current.set(picker.listId, next);
-            setPicker(next);
-          }}
-          group={picker.groups.find((g: any) => g.id === pickerGroupId)}
-          initialNames={[]}
-          initialCountry={country}
-          onClose={() => setPicker(null)}
-          initialTab="ads"
-          adsDestination={{ project: project.id, category: product.id }}
-          onChooseGroup={setPickerGroupId}
-          onSaved={async (id) => {
-            await refreshPicker();
-            setPickerGroupId(id);
-          }}
-          onGroupsChanged={refreshPicker}
-        />
-      )}
       {preview && (
         <ImagePreviewModal {...preview} onClose={() => setPreview(null)} />
       )}

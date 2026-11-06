@@ -1,0 +1,21 @@
+.studio-inventory-slots{grid-column:1/-1;display:flex;flex-direction:column;gap:9px;min-width:0;padding-top:10px;border-top:1px solid var(--line)}
+.studio-slot-quantity{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;gap:10px!important;font-size:11px!important;font-weight:650}
+.studio-slot-quantity input{width:65px!important;min-width:60px;flex:0 0 65px;padding:7px!important;font-size:12px;border-radius:7px;text-align:center}
+.studio-slot-scope{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;border:0;padding:0;margin:0;min-width:0}
+.studio-slot-scope legend{font-size:10px;font-weight:650;padding:0 0 5px;max-width:100%;color:var(--muted)}
+.studio-slot-scope select{width:100%;min-width:0;font-size:10px;padding:7px;border-radius:7px;min-height:33px}
+.studio-inventory-slots>.sheet-search-trigger{font-size:11px;min-height:33px;padding:7px;width:100%;border-radius:7px}
+.studio-slot-random{display:flex;gap:6px}.studio-slot-random>button{flex:1 1 0;min-width:0;padding:7px 5px;font-size:10px;min-height:32px;border-radius:7px}
+.studio-slot-progress{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;line-height:1.4}.studio-slot-progress>strong{color:var(--accent);white-space:nowrap}.studio-slot-progress>small{font-size:9px;color:var(--muted);text-align:right}
+.studio-slot-list{display:flex;flex-direction:column;gap:6px;max-height:265px;overflow:auto;min-width:0;padding:1px}
+.studio-slot{display:grid;grid-template-columns:19px minmax(0,1fr) 25px;align-items:center;gap:5px;min-width:0}
+.studio-slot>span{display:flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:color-mix(in srgb,var(--accent) 13%,var(--surface));color:var(--accent);font-size:10px;font-weight:700}
+.studio-slot>.sheet-search-trigger{width:100%;min-width:0;padding:8px 6px;min-height:36px;font-size:11px;border-radius:7px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.studio-slot>button:last-child{padding:2px;min-width:25px;min-height:28px;border-radius:6px;font-size:17px}
+.studio-slot-apply{width:100%;min-height:36px;padding:8px;font-size:11px;font-weight:700;border:1px solid var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-radius:8px}
+.studio-slot-apply:not(:disabled):hover{background:color-mix(in srgb,var(--accent) 22%,var(--surface))}
+.studio-slot-help{font-size:9px!important;line-height:1.5;color:var(--muted)}
+.studio-inventory-slots .notice{margin:0;padding:8px;font-size:11px;overflow-wrap:anywhere}
+.studio-inventory-slots .notice button{margin-left:5px;padding:3px 6px;font-size:10px}
+
+.studio-slot-more{width:100%;font-size:11px;padding:8px;border-radius:7px;min-height:35px}

@@ -25,8 +25,8 @@ export const campaignConfigSchema = z
       .trim()
       .regex(
         /^\+?\d{7,15}$/,
-        "Indica el WhatsApp vinculado a la página con código de país.",
-      ),
+        "WhatsApp de Meta no válido.",
+      ).or(z.literal("")).default(""),
     dailyBudget: z.number().finite().positive().max(1000000),
     body: z.string().trim().min(1).max(5000),
     headline: z.string().trim().min(1).max(250),
@@ -158,3 +158,5 @@ export function launchSummary(items: CampaignItem[], c: CampaignConfig) {
     dailyTotal: Math.round(c.dailyBudget * items.length * 1000000) / 1000000,
   };
 }
+
+export function whatsappPromotedObject(config:Pick<CampaignConfig,"pageId"|"whatsapp">){return {page_id:config.pageId,...(config.whatsapp?{whatsapp_phone_number:config.whatsapp.replace(/^\+/,"")}:{})};}

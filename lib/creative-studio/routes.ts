@@ -77,6 +77,10 @@ export async function creativeStudioRoutes(
     return send(await studio.saveStudioImages(actor, await body()));
   if (p[0] === "upload" && p[1] && method === "POST")
     return send(await uploadReady(actor, p[1], req), 201);
+  if(p[0]==="page-whatsapp"&&p[1]&&p.length===2&&method==="GET"){
+    const q=z.object({pageId:z.string().regex(/^\d{1,40}$/),refresh:z.enum(["0","1"]).optional()}).strict().parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(await campaigns.campaignPageWhatsApp(actor,p[1],q.pageId,q.refresh==="1"));
+  }
   if (p[0] === "inventory" && p[1] && method === "GET")
     return send(await studio.studioInventory(actor, p[1]));
   if (p[0] === "selections") {
