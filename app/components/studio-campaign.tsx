@@ -157,12 +157,8 @@ export function StudioCampaign({
     return () => clearTimeout(timer);
   }, [pageRetryAt]);
   const [phone, setPhone] = useState<{ scope: string; number: string } | null>(
-      null,
-    ),
-    [phoneLoading, setPhoneLoading] = useState(false),
-    [phoneError, setPhoneError] = useState(""),
-    [phoneRevision, setPhoneRevision] = useState(0);
-  const forcePhone = useRef("");
+    null,
+  );
   const phoneScope = form.accountId + ":" + form.pageId;
   const selectedPage =
     resources.accountId === form.accountId
@@ -173,26 +169,19 @@ export function StudioCampaign({
   useEffect(() => {
     const controller = new AbortController();
     setPhone(null);
-    setPhoneError("");
     if (!form.accountId || !form.pageId || !selectedPage) {
-      setPhoneLoading(false);
       return () => controller.abort();
     }
-    const force = forcePhone.current === phoneScope;
-    forcePhone.current = "";
-    if (directoryPhone && !force) {
+    if (directoryPhone) {
       setPhone({ scope: phoneScope, number: directoryPhone });
-      setPhoneLoading(false);
       return () => controller.abort();
     }
-    setPhoneLoading(true);
     void studioRequest(
       "/page-whatsapp/" +
         form.accountId +
         "?" +
         new URLSearchParams({
           pageId: form.pageId,
-          ...(force ? { refresh: "1" } : {}),
         }),
       "GET",
       undefined,
@@ -209,20 +198,10 @@ export function StudioCampaign({
           }));
         }
       })
-      .catch((e) => {
-        if (!controller.signal.aborted) setPhoneError(e.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPhoneLoading(false);
-      });
+      // Reading the number is optional; Meta validates the linked default when publishing.
+      .catch(() => {});
     return () => controller.abort();
-  }, [
-    form.accountId,
-    form.pageId,
-    !!selectedPage,
-    directoryPhone,
-    phoneRevision,
-  ]);
+  }, [form.accountId, form.pageId, !!selectedPage, directoryPhone]);
   useEffect(() => {
     if (form.whatsapp !== phoneNumber)
       setForm((f) => ({ ...f, whatsapp: phoneNumber }));
@@ -801,47 +780,6 @@ export function StudioCampaign({
             </select>
             {leadError && <small role="status">{leadError}</small>}
           </label>
-        )}
-        {form.objective === "WHATSAPP" && (
-          <section
-            className="studio-whatsapp-auto"
-            aria-label="WhatsApp automático de la página"
-            aria-busy={phoneLoading}
-          >
-            <span>WhatsApp de la página</span>
-            {phoneNumber ? (
-              <>
-                <strong>{phoneNumber}</strong>
-                <small>Se obtiene de Meta automáticamente.</small>
-              </>
-            ) : (
-              <small role="status">
-                {phoneLoading
-                  ? "Consultando el WhatsApp de esta página…"
-                  : !form.pageId
-                    ? "Elige una página de Facebook."
-                    : "Se usará el WhatsApp predeterminado de la página en Meta. Meta comprobará la vinculación al crear los anuncios."}
-              </small>
-            )}
-            {phoneError && (
-              <details className="studio-whatsapp-note">
-                <summary>No se pudo leer el número · ver motivo</summary>
-                <small>{phoneError}</small>
-              </details>
-            )}
-            {form.pageId && (
-              <button
-                type="button"
-                disabled={phoneLoading || locked}
-                onClick={() => {
-                  forcePhone.current = phoneScope;
-                  setPhoneRevision((n) => n + 1);
-                }}
-              >
-                {phoneNumber ? "Actualizar desde Meta" : "Volver a consultar"}
-              </button>
-            )}
-          </section>
         )}
         <div className="studio-budget">
           <label>
