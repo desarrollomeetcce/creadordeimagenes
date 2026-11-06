@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
   user,
@@ -16,55 +16,52 @@ export function SidebarAccount({
   navigate: (view: string) => void;
   logout: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null),
-    trigger = useRef<HTMLButtonElement>(null);
-  const options = [
+  const panel = useRef<HTMLDivElement>(null),
+    trigger = useRef<HTMLButtonElement>(null),
+    id = useId();
+  const [open, setOpen] = useState(false),
+    [position, setPosition] = useState({
+      left: 12,
+      bottom: 12,
+      width: 260,
+      maxHeight: 500,
+    });
+  const ai = hasAiModuleAccess(user),
+    history = ai && !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role);
+  const settings = [
     ...(user.role === "OWNER"
       ? [
           ["mail", "✉", "Ajustes de correo"],
           ["ai", "⚙", "Ajustes de IA"],
+          ["payments", "◇", "Ajustes de pago"],
         ]
       : []),
-    ...(hasAiModuleAccess(user) &&
-    !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role)
-      ? [["usage", "↗", "Costos de IA"]]
-      : []),
-    ...(user.role === "OWNER" ? [["payments", "◇", "Ajustes de pago"]] : []),
+    ...(ai && history ? [["usage", "↗", "Costos de IA"]] : []),
   ];
+  const close = () => panel.current?.hidePopover();
+  useEffect(() => {
+    panel.current?.hidePopover();
+  }, [view]);
   useEffect(() => {
     if (!open) return;
-    const outside = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    const resize = () => panel.current?.hidePopover();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
   }, [open]);
-  useEffect(() => {
-    setOpen(false);
-  }, [view]);
-  const item = (id: string, icon: string, label: string) => (
+  const item = (v: string, icon: string, label: string) => (
     <a
-      href={"?view=" + encodeURIComponent(id)}
-      className={
-        view === id ? "sidebar-account-link active" : "sidebar-account-link"
-      }
-      key={id}
+      key={v}
+      href={"?view=" + encodeURIComponent(v)}
       title={label}
       aria-label={label}
-      aria-current={view === id ? "page" : undefined}
-      onClick={(event) => {
-        if (
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        )
+      aria-current={view === v ? "page" : undefined}
+      className={"sidebar-account-link" + (view === v ? " active" : "")}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
           return;
-        event.preventDefault();
-        setOpen(false);
-        navigate(id);
+        e.preventDefault();
+        close();
+        navigate(v);
       }}
     >
       <span aria-hidden="true">{icon}</span>
@@ -73,69 +70,98 @@ export function SidebarAccount({
   );
   return (
     <footer className="sidebar-account">
-      <div className="sidebar-account-user">
-        <span className="avatar">{user.name[0].toUpperCase()}</span>
-        <div>
+      <button
+        type="button"
+        ref={trigger}
+        className="sidebar-account-trigger"
+        aria-label={`Menú de ${user.name}`}
+        title={`Menú de ${user.name}`}
+        aria-expanded={open}
+        aria-controls={id}
+        popoverTarget={id}
+        onClick={() => {
+          const r = trigger.current?.getBoundingClientRect();
+          if (r)
+            setPosition({
+              left: Math.max(8, Math.min(r.left, innerWidth - 288)),
+              bottom: innerHeight - r.top + 8,
+              width: Math.min(280, innerWidth - 16),
+              maxHeight: Math.max(100, r.top - 20),
+            });
+        }}
+      >
+        <span className="avatar">{user.name[0]?.toUpperCase()}</span>
+        <span>
           <strong>{user.name}</strong>
-          <div className="eyebrow">{roleLabels[user.role]}</div>
-        </div>
-      </div>
-      <div className="sidebar-account-actions">
-        {options.length > 0 && (
-          <div
-            className="sidebar-settings"
-            ref={root}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setOpen(false);
-                trigger.current?.focus();
-              }
+          <span className="eyebrow">{roleLabels[user.role]}</span>
+        </span>
+        <span aria-hidden="true">{open ? "▾" : "▴"}</span>
+      </button>
+      <div
+        id={id}
+        ref={panel}
+        popover="auto"
+        className="sidebar-account-popover"
+        style={position}
+        onToggle={(e) => setOpen(e.newState === "open")}
+        aria-label="Opciones de cuenta"
+      >
+        <div className="sidebar-account-actions">
+          {settings.length > 0 && (
+            <details>
+              <summary>⚙ Ajustes</summary>
+              <nav aria-label="Ajustes">
+                {settings.map(([v, icon, label]) => item(v, icon, label))}
+              </nav>
+            </details>
+          )}
+          {user.role === "OWNER" && (
+            <>
+              {item("statistics", "▥", "Estadísticas")}
+              {item("website", "◈", "Página web")}
+            </>
+          )}
+          {(history || user.role === "OWNER") && (
+            <details open={["visual-audit", "history"].includes(view)}>
+              <summary>▧ Auditoría</summary>
+              <nav aria-label="Auditoría">
+                {user.role === "OWNER" && item("visual-audit", "▧", "Visual")}
+                {history && item("history", "◷", "Historial")}
+              </nav>
+            </details>
+          )}
+          {managesUsers(user.role) && (
+            <div className="sidebar-admin-group">
+              <small>Equipo y planes</small>
+              {item("users", "♙", "Usuarios y accesos")}
+              {user.role === "OWNER" && (
+                <a
+                  className="sidebar-account-link"
+                  href="?view=users&tab=plans"
+                  aria-label="Planes de IA"
+                >
+                  <span aria-hidden="true">◇</span>
+                  <span>Planes de IA</span>
+                </a>
+              )}
+            </div>
+          )}
+          {item("account", "♙", "Mi cuenta")}
+          {ai &&
+            !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
+            item("plans", "◇", "Mi plan IA")}
+          <button
+            type="button"
+            className="sidebar-logout"
+            onClick={() => {
+              close();
+              logout();
             }}
           >
-            <button
-              type="button"
-              ref={trigger}
-              aria-expanded={open}
-              aria-controls="sidebar-settings-options"
-              aria-label="Ajustes" title="Ajustes"
-              className={options.some(([id]) => id === view) ? "active" : ""}
-              onClick={() => setOpen(!open)}
-            >
-              <span aria-hidden="true">⚙</span>
-              <span>Ajustes</span>
-              <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-            </button>
-            {open && (
-              <nav
-                id="sidebar-settings-options"
-                className="sidebar-settings-options"
-                aria-label="Ajustes"
-              >
-                {options.map(([id, icon, label]) => item(id, icon, label))}
-              </nav>
-            )}
-          </div>
-        )}
-        {managesUsers(user.role) && (
-          <div className="sidebar-admin-group">
-            <small>Equipo y planes</small>
-            {item("users", "♙", "Usuarios y accesos")}
-            {user.role === "OWNER" && (
-              <a className="sidebar-account-link" aria-label="Planes de IA" title="Planes de IA" href="?view=users&tab=plans">
-                <span aria-hidden="true">◇</span>
-                <span>Planes de IA</span>
-              </a>
-            )}
-          </div>
-        )}
-        {item("account", "♙", "Mi cuenta")}
-        {hasAiModuleAccess(user) &&
-          !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
-          item("plans", "◇", "Mi plan IA")}
-        <button type="button" className="sidebar-logout" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={logout}>
-          <span aria-hidden="true">↪</span>
-          <span>Cerrar sesión</span>
-        </button>
+            <span aria-hidden="true">↪</span>
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
       </div>
     </footer>
   );

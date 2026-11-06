@@ -2946,3 +2946,11 @@ Carga de código independiente para Inventario, hojas, Asesores y Totales; el in
 Crear grupo muestra cantidades de diplomados disponibles por categoría, sin duplicar la misma categoría principal/secundaria. Evaluar seleccionados junto al contador de Top utiliza el país elegido, el período y únicamente nombres seleccionados desde las consultas del servidor, incluidos sus vínculos. Reutiliza evaluación de ventas, gasto Meta, CAC y filtros; activo por defecto. Se mantienen ceros, ausencias y gasto manual separado del gasto Meta. Cierre aborta consultas.
 
 Medición sintética anterior a añadir evaluación: 768 diplomados,57 categorías, CPU4×,100 filas dibujadas. JavaScript inicial1376046→1106837 bytes (-19.6%); consultas de asesores1→0. Apertura4819→4668ms: diferencia pequeña, no acredita una mejora grande ni la velocidad del dominio privado. Selección media339→335ms, p95455→405ms.
+
+## 2026-11-05 · Inventario, Asesores y Ventas independientes
+
+El lateral muestra Inventario, Asesores y Ventas. Inventario y Asesores conservan sus pestañas existentes y agregan del mismo tipo con +; Ventas mantiene hojas físicas y Totales, con URL histórica products y enlaces de períodos compatibles. Se reutilizan datos, IDs, permisos, sincronización y cálculos, sin migraciones ni duplicaciones. Cada módulo recuerda su selección por usuario, con recuperación compatible de la preferencia anterior. Historial del asesor puede abrir su hoja en Ventas.
+
+Pestañas antes de controles, cabecera compacta y sin leyenda ni aviso general de rol en estos tres módulos. No se montan vistas financieras de las otras secciones; el directorio de relaciones sigue disponible para sincronizar/evaluar. Configuraciones guardadas sale del lateral: no se borran configuraciones, proyectos ni prompts.
+
+Menú principal reordenable por agarre con ratón/táctil y Alt+flechas, orden local por usuario. Cuenta en botón del nombre con desplegable nativo hacia arriba, Escape/cierre exterior, ajustes y opciones del equipo conservados. Estadísticas y Página web pasan allí; Auditoría agrupa Visual e Historial con los mismos permisos. Sin nuevas consultas para abrir ese menú o reordenarlo.

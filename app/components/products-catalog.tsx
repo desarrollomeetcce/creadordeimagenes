@@ -19,11 +19,23 @@ import { CurrentUserId, CurrentRole } from "./role-guide";
 import { financialRequest as api } from "./financial-request";
 import { SheetTabColorDialog, useSheetTabColors } from "./sheet-tab-colors";
 import { useSheetOrder } from "./use-sheet-order";
-const InventoryCatalog=dynamic(()=>import("./inventory-catalog").then(m=>m.InventoryCatalog),{loading:()=> <p role="status">Cargando vista…</p>});
-const MetaEffectiveness=dynamic(()=>import("./meta-effectiveness").then(m=>m.MetaEffectiveness),{loading:()=> <p role="status">Cargando vista…</p>});
+const InventoryCatalog = dynamic(
+  () => import("./inventory-catalog").then((m) => m.InventoryCatalog),
+  { loading: () => <p role="status">Cargando vista…</p> },
+);
+const MetaEffectiveness = dynamic(
+  () => import("./meta-effectiveness").then((m) => m.MetaEffectiveness),
+  { loading: () => <p role="status">Cargando vista…</p> },
+);
 import { DeleteAliasTable } from "./delete-alias-table";
-const AdvisorsSheet=dynamic(()=>import("./advisors-sheet").then(m=>m.AdvisorsSheet),{loading:()=> <p role="status">Cargando vista…</p>});
-const EffectivenessTotals=dynamic(()=>import("./effectiveness-totals").then(m=>m.EffectivenessTotals),{loading:()=> <p role="status">Cargando vista…</p>});
+const AdvisorsSheet = dynamic(
+  () => import("./advisors-sheet").then((m) => m.AdvisorsSheet),
+  { loading: () => <p role="status">Cargando vista…</p> },
+);
+const EffectivenessTotals = dynamic(
+  () => import("./effectiveness-totals").then((m) => m.EffectivenessTotals),
+  { loading: () => <p role="status">Cargando vista…</p> },
+);
 import {
   parsePeriodTableLink,
   type PeriodTableLink,
@@ -39,9 +51,25 @@ type CatalogTable = {
   defaultCountry: string;
   defaultCurrency: string;
 };
-export function ProductsCatalog() {
+export function ProductsCatalog({
+  module = "sales",
+  onSalesPeriod,
+  initialAdvisorPeriod,
+}: {
+  module?: "sales" | "inventory" | "advisors";
+  onSalesPeriod?: (period: AdvisorPeriodView) => void;
+  initialAdvisorPeriod?: AdvisorPeriodView | null;
+}) {
+  const moduleKind =
+    module === "inventory"
+      ? "INVENTORY"
+      : module === "advisors"
+        ? "ADVISORS"
+        : "TOTALS";
   const actualRole = useContext(CurrentRole);
-  const warmFinancialView=useCallback(()=>{void import("./meta-effectiveness").catch(()=>{});},[]);
+  const warmFinancialView = useCallback(() => {
+    void import("./meta-effectiveness").catch(() => {});
+  }, []);
   const [access, setAccess] = useState<{
     isOwner: boolean;
     global: "VIEW" | "EDIT" | null;
@@ -113,7 +141,7 @@ export function ProductsCatalog() {
     };
   }, []);
   const userId = useContext(CurrentUserId),
-    locationKey = `effectiveness-location:v1:${userId}`;
+    locationKey = `effectiveness-location:v2:${userId}:${module}`;
   const [restoredLocationKey, setRestoredLocationKey] = useState<string | null>(
       null,
     ),
@@ -179,6 +207,10 @@ export function ProductsCatalog() {
   } | null>(null);
   const openAdvisorPeriod = (period: AdvisorPeriodView) => {
     if (!period.from || !period.since) return;
+    if (module !== "sales" && onSalesPeriod) {
+      onSalesPeriod(period);
+      return;
+    }
     setSpecialId(null);
     setSelected(period.tableId);
     setAdvisorPeriodRequest({ key: ++periodSequence.current, period });
@@ -187,7 +219,8 @@ export function ProductsCatalog() {
   const specialDeletePending = useRef(false);
   const [specials, setSpecials] = useState<Special[]>([]),
     [specialId, setSpecialId] = useState<string | null>(null);
-  const special = specials.find((s) => s.id === specialId);
+  const moduleSpecials = specials.filter((s) => s.kind === moduleKind);
+  const special = moduleSpecials.find((s) => s.id === specialId);
   const totals = special?.kind === "TOTALS",
     advisorSheet = special?.kind === "ADVISORS",
     inventorySheet = special?.kind === "INVENTORY";
@@ -201,21 +234,34 @@ export function ProductsCatalog() {
     if (!access || !specialsLoaded || loading) return;
     if (special && permission("TAB:" + special.id)) return;
     if (
+      module === "sales" &&
       !specialId &&
       tables.some((t) => t.id === selected) &&
       permission("TABLE:" + selected)
     )
       return;
-    const allowed = specials.find((s) => permission("TAB:" + s.id));
+    const allowed = moduleSpecials.find((s) => permission("TAB:" + s.id));
     if (allowed) setSpecialId(allowed.id);
     else {
-      const first = tables.find((t) => permission("TABLE:" + t.id));
+      const first =
+        module === "sales"
+          ? tables.find((t) => permission("TABLE:" + t.id))
+          : undefined;
       if (first) {
         setSpecialId(null);
         setSelected(first.id);
       }
     }
-  }, [access, specialsLoaded, loading, specialId, specials, tables, selected]);
+  }, [
+    access,
+    specialsLoaded,
+    loading,
+    specialId,
+    specials,
+    tables,
+    selected,
+    module,
+  ]);
   const [editing, setEditing] = useState<{
       id: string;
       name: string;
@@ -416,9 +462,7 @@ export function ProductsCatalog() {
       const next = specials.filter((s) => s.id !== id);
       setSpecials((old) => old.filter((s) => s.id !== id));
       setSpecialId((old) =>
-        old === id
-          ? (next.find((s) => s.kind === kind)?.id ?? next[0]?.id ?? null)
-          : old,
+        old === id ? (next.find((s) => s.kind === kind)?.id ?? null) : old,
       );
       setContextTable(null);
       try {
@@ -454,9 +498,29 @@ export function ProductsCatalog() {
     }
   };
   useEffect(() => {
-    if (!specialsLoaded || locationReady || parsePeriodTableLink(new URLSearchParams(window.location.search))) return;
-    try { const raw = JSON.parse(sessionStorage.getItem(locationKey) || localStorage.getItem(locationKey) || "null"); const saved = specials.find(s => s.id === raw?.specialId && s.kind === "INVENTORY"); if (saved) { setSpecialId(saved.id); setRestoredLocationKey(locationKey); } } catch {}
-  }, [specialsLoaded, specials, locationReady, locationKey]);
+    if (
+      module !== "inventory" ||
+      !specialsLoaded ||
+      locationReady ||
+      parsePeriodTableLink(new URLSearchParams(window.location.search))
+    )
+      return;
+    try {
+      const raw = JSON.parse(
+        sessionStorage.getItem(locationKey) ||
+          localStorage.getItem(locationKey) ||
+          localStorage.getItem(`effectiveness-location:v1:${userId}`) ||
+          "null",
+      );
+      const saved = specials.find(
+        (s) => s.id === raw?.specialId && s.kind === "INVENTORY",
+      );
+      if (saved) {
+        setSpecialId(saved.id);
+        setRestoredLocationKey(locationKey);
+      }
+    } catch {}
+  }, [specialsLoaded, specials, locationReady, locationKey, module, userId]);
   const [view, setView] = useState<"manual" | "automatic">("manual");
   const [tableWindowMode, setTableWindowMode] =
     useState<FinancialTableWindowMode>("inline");
@@ -469,7 +533,9 @@ export function ProductsCatalog() {
       } catch {}
       if (saved === null)
         try {
-          saved = localStorage.getItem(locationKey);
+          saved =
+            localStorage.getItem(locationKey) ??
+            localStorage.getItem(`effectiveness-location:v1:${userId}`);
         } catch {}
       const raw = JSON.parse(saved || "null");
       if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -480,14 +546,19 @@ export function ProductsCatalog() {
             : (tables[0]?.id ?? "");
         const storedSpecial =
           typeof raw.specialId === "string"
-            ? specials.find((t) => t.id === raw.specialId)
+            ? moduleSpecials.find((t) => t.id === raw.specialId)
             : undefined;
         const replacement =
           !storedSpecial && typeof raw.specialId === "string"
-            ? specials.find((t) => t.kind === raw.kind)
+            ? moduleSpecials.find((t) => t.kind === raw.kind)
             : undefined;
         setSelected(tableId);
-        setSpecialId(storedSpecial?.id ?? replacement?.id ?? null);
+        setSpecialId(
+          storedSpecial?.id ??
+            replacement?.id ??
+            (module !== "sales" ? moduleSpecials[0]?.id : null) ??
+            null,
+        );
         if (raw.view === "manual" || raw.view === "automatic")
           setView(raw.view);
       }
@@ -496,9 +567,16 @@ export function ProductsCatalog() {
         "No se pudo recuperar la última pestaña de este navegador.",
       );
     }
-    const requested = parsePeriodTableLink(
-      new URLSearchParams(window.location.search),
-    );
+    if (module !== "sales")
+      setSpecialId((old) =>
+        moduleSpecials.some((t) => t.id === old)
+          ? old
+          : (moduleSpecials[0]?.id ?? null),
+      );
+    const requested =
+      module === "sales"
+        ? parsePeriodTableLink(new URLSearchParams(window.location.search))
+        : null;
     if (requested) {
       const linkedTable = tables.find((t) => t.id === requested.tableId);
       if (
@@ -515,7 +593,16 @@ export function ProductsCatalog() {
         );
     }
     setRestoredLocationKey(locationKey);
-  }, [loading, specialsLoaded, locationReady, locationKey, tables, specials]);
+  }, [
+    loading,
+    specialsLoaded,
+    locationReady,
+    locationKey,
+    tables,
+    specials,
+    module,
+    userId,
+  ]);
   useEffect(() => {
     if (!locationReady || loading || !specialsLoaded) return;
     const saved = JSON.stringify({
@@ -552,9 +639,25 @@ export function ProductsCatalog() {
     { id: string; name: string; label?: string }[]
   >([]);
   const loadAdvisors = async () => setAdvisors(await api("meta-ads/advisors"));
-  const needsAdvisors=locationReady&&!loading&&specialsLoaded&&!inventorySheet&&!totals&&!advisorSheet;
   useEffect(() => {
-    if(!needsAdvisors)return;
+    if (
+      module === "sales" &&
+      initialAdvisorPeriod &&
+      locationReady &&
+      tables.some((t) => t.id === initialAdvisorPeriod.tableId)
+    )
+      openAdvisorPeriod(initialAdvisorPeriod);
+  }, [initialAdvisorPeriod, locationReady, module]);
+  const needsAdvisors =
+    module === "sales" &&
+    locationReady &&
+    !loading &&
+    specialsLoaded &&
+    !inventorySheet &&
+    !totals &&
+    !advisorSheet;
+  useEffect(() => {
+    if (!needsAdvisors) return;
     let active = true;
     void api("meta-ads/advisors")
       .then((v) => {
@@ -588,14 +691,16 @@ export function ProductsCatalog() {
   };
   const table = tables.find((t) => t.id === selected);
   const sheetTabs = (
-    <nav className="sheet-tabs" aria-label="Hojas del libro de efectividad">
+    <nav
+      className="sheet-tabs"
+      aria-label={`Pestañas de ${module === "sales" ? "Ventas" : module === "inventory" ? "Inventario" : "Asesores"}`}
+    >
       <div
         className="sheet-tab-list sheet-special-tabs"
         role="tablist"
         aria-label="Pestañas del libro"
       >
-        <span className="sheet-tab-row-label">Pestañas:</span>
-        {(["TOTALS", "ADVISORS", "INVENTORY"] as const).map((kind) => (
+        {([moduleKind] as const).map((kind) => (
           <span className="sheet-tab-group" key={kind}>
             {specials
               .filter((s) => s.kind === kind)
@@ -657,132 +762,137 @@ export function ProductsCatalog() {
           </span>
         ))}
       </div>
-      <div
-        className={
-          "sheet-tab-list sheet-financial-tabs" +
-          (!orderedTables.some((t) => permission("TABLE:" + t.id)) && !canCreate
-            ? " sheet-financial-tabs-empty"
-            : "")
-        }
-        role="tablist"
-        aria-label="Hojas de datos"
-      >
-        <span className="sheet-tab-row-label">Hojas:</span>
-        {orderedTables
-          .filter((t) => permission("TABLE:" + t.id))
-          .map((t) => (
-            <span key={t.id} className="sheet-tab-wrap">
-              <button
-                role="tab"
-                style={tabColors.style(t.id)}
-                data-custom-tab-color={!!tabColors.colors[t.id] || undefined}
-                aria-selected={
-                  !totals &&
-                  !advisorSheet &&
-                  !inventorySheet &&
-                  selected === t.id
-                }
-                className={
-                  "sheet-tab-alias" + (editing?.id === t.id ? " sr-only" : "")
-                }
-                draggable
-                data-sheet-id={t.id}
-                onPointerEnter={warmFinancialView}
-                onFocus={warmFinancialView}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  openMenu(t, e.clientX, e.clientY, e.currentTarget);
-                }}
-                data-dragging={dragging === t.id || undefined}
-                data-drop-edge={
-                  drop?.id === t.id
-                    ? drop.after
-                      ? "after"
-                      : "before"
-                    : undefined
-                }
-                title={`${t.visibleAliasCount} diplomados presentes en esta hoja, incluidos los desactivados fijados; no cuenta retirados ni duplica países. Clic derecho para editar; arrastra para ordenar.`}
-                onDragStart={(e) => {
-                  dragged.current = t.id;
-                  setDragging(t.id);
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", t.id);
-                }}
-                onDragOver={(e) => {
-                  if (!dragged.current) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  const rect = e.currentTarget.getBoundingClientRect(),
-                    after = e.clientX > rect.left + rect.width / 2;
-                  setDrop((old) =>
-                    old?.id === t.id && old.after === after
-                      ? old
-                      : { id: t.id, after },
-                  );
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  if (dragged.current)
-                    reorder(
-                      dragged.current,
-                      t.id,
-                      e.clientX > rect.left + rect.width / 2,
-                    );
-                  dragged.current = null;
-                  setDragging(null);
-                  setDrop(null);
-                }}
-                onDragEnd={() => {
-                  dragged.current = null;
-                  setDragging(null);
-                  setDrop(null);
-                }}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "ContextMenu" ||
-                    (e.shiftKey && e.key === "F10")
-                  ) {
-                    e.preventDefault();
-                    const r = e.currentTarget.getBoundingClientRect();
-                    openMenu(t, r.left, r.bottom, e.currentTarget);
-                    return;
-                  }
-                  if (!e.altKey || !["ArrowLeft", "ArrowRight"].includes(e.key))
-                    return;
-                  e.preventDefault();
-                  const index = sheetOrder.indexOf(t.id),
-                    target =
-                      sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
-                  if (target) {
-                    const button = e.currentTarget;
-                    reorder(t.id, target, e.key === "ArrowRight");
-                    requestAnimationFrame(() =>
-                      button.focus({ preventScroll: true }),
-                    );
-                  }
-                }}
-                onClick={() => {
-                  setSelected(t.id);
-                  setSpecialId(null);
-                  setEditing(null);
-                  setMessage("");
-                }}
-              >
-                {t.name} ({t.visibleAliasCount})
-              </button>
-              {tabEditor(t.id)}
-            </span>
-          ))}
-        <button
-          className="sheet-add-tab"
-          hidden={!canCreate}
-          disabled={busy}
-          onClick={() => void createTableDirectly()}
+      {module === "sales" && (
+        <div
+          className={
+            "sheet-tab-list sheet-financial-tabs" +
+            (!orderedTables.some((t) => permission("TABLE:" + t.id)) &&
+            !canCreate
+              ? " sheet-financial-tabs-empty"
+              : "")
+          }
+          role="tablist"
+          aria-label="Hojas de datos"
         >
-          + Tabla
-        </button>
-      </div>
+          {orderedTables
+            .filter((t) => permission("TABLE:" + t.id))
+            .map((t) => (
+              <span key={t.id} className="sheet-tab-wrap">
+                <button
+                  role="tab"
+                  style={tabColors.style(t.id)}
+                  data-custom-tab-color={!!tabColors.colors[t.id] || undefined}
+                  aria-selected={
+                    !totals &&
+                    !advisorSheet &&
+                    !inventorySheet &&
+                    selected === t.id
+                  }
+                  className={
+                    "sheet-tab-alias" + (editing?.id === t.id ? " sr-only" : "")
+                  }
+                  draggable
+                  data-sheet-id={t.id}
+                  onPointerEnter={warmFinancialView}
+                  onFocus={warmFinancialView}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openMenu(t, e.clientX, e.clientY, e.currentTarget);
+                  }}
+                  data-dragging={dragging === t.id || undefined}
+                  data-drop-edge={
+                    drop?.id === t.id
+                      ? drop.after
+                        ? "after"
+                        : "before"
+                      : undefined
+                  }
+                  title={`${t.visibleAliasCount} diplomados presentes en esta hoja, incluidos los desactivados fijados; no cuenta retirados ni duplica países. Clic derecho para editar; arrastra para ordenar.`}
+                  onDragStart={(e) => {
+                    dragged.current = t.id;
+                    setDragging(t.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", t.id);
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragged.current) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    const rect = e.currentTarget.getBoundingClientRect(),
+                      after = e.clientX > rect.left + rect.width / 2;
+                    setDrop((old) =>
+                      old?.id === t.id && old.after === after
+                        ? old
+                        : { id: t.id, after },
+                    );
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    if (dragged.current)
+                      reorder(
+                        dragged.current,
+                        t.id,
+                        e.clientX > rect.left + rect.width / 2,
+                      );
+                    dragged.current = null;
+                    setDragging(null);
+                    setDrop(null);
+                  }}
+                  onDragEnd={() => {
+                    dragged.current = null;
+                    setDragging(null);
+                    setDrop(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "ContextMenu" ||
+                      (e.shiftKey && e.key === "F10")
+                    ) {
+                      e.preventDefault();
+                      const r = e.currentTarget.getBoundingClientRect();
+                      openMenu(t, r.left, r.bottom, e.currentTarget);
+                      return;
+                    }
+                    if (
+                      !e.altKey ||
+                      !["ArrowLeft", "ArrowRight"].includes(e.key)
+                    )
+                      return;
+                    e.preventDefault();
+                    const index = sheetOrder.indexOf(t.id),
+                      target =
+                        sheetOrder[index + (e.key === "ArrowRight" ? 1 : -1)];
+                    if (target) {
+                      const button = e.currentTarget;
+                      reorder(t.id, target, e.key === "ArrowRight");
+                      requestAnimationFrame(() =>
+                        button.focus({ preventScroll: true }),
+                      );
+                    }
+                  }}
+                  onClick={() => {
+                    setSelected(t.id);
+                    setSpecialId(null);
+                    setEditing(null);
+                    setMessage("");
+                  }}
+                >
+                  {t.name} ({t.visibleAliasCount})
+                </button>
+                {tabEditor(t.id)}
+              </span>
+            ))}
+          <button
+            className="sheet-add-tab"
+            hidden={!canCreate}
+            disabled={busy}
+            onClick={() => void createTableDirectly()}
+          >
+            + Tabla
+          </button>
+        </div>
+      )}
     </nav>
   );
   const documentShare = isOwner ? (
@@ -800,13 +910,18 @@ export function ProductsCatalog() {
   ) : null;
   if (!access)
     return (
-      <section className="products-catalog effectiveness-workbook">
-        <p role="status">Verificando acceso a Efectividad…</p>
+      <section
+        className={`products-catalog effectiveness-workbook financial-module financial-module-${module}`}
+      >
+        <p role="status">Verificando acceso…</p>
       </section>
     );
   if (access && !isOwner && !permission(documentScope))
     return (
-      <section ref={root} className="products-catalog effectiveness-workbook">
+      <section
+        ref={root}
+        className={`products-catalog effectiveness-workbook financial-module financial-module-${module}`}
+      >
         {access.grants.length ? sheetTabs : null}
         <p role="status" className="notice">
           {access.grants.length
@@ -823,7 +938,7 @@ export function ProductsCatalog() {
       ref={root}
       data-effectiveness-document={documentScope}
       data-financial-read-only={!canEdit || undefined}
-      className="products-catalog effectiveness-workbook"
+      className={`products-catalog effectiveness-workbook financial-module financial-module-${module}`}
     >
       {sharingScope && isOwner && (
         <MetaWorkspaceSharing
@@ -836,38 +951,43 @@ export function ProductsCatalog() {
           {canEdit ? "Puede editar" : "Solo lectura"}
         </p>
       )}
-      {locationReady && !totals && !advisorSheet && !inventorySheet && (
-        <div className="sheet-book-bar">
-          {!totals && !advisorSheet && !inventorySheet && (
-            <div
-              className="row sheet-view-buttons"
-              aria-label="Vista de la hoja"
-            >
-              <button
-                className={
-                  "sheet-mode-manual" + (view === "manual" ? " primary" : "")
-                }
-                aria-pressed={view === "manual"}
-                onClick={() => setView("manual")}
+      {sheetTabs}
+      {module === "sales" &&
+        locationReady &&
+        !totals &&
+        !advisorSheet &&
+        !inventorySheet && (
+          <div className="sheet-book-bar">
+            {!totals && !advisorSheet && !inventorySheet && (
+              <div
+                className="row sheet-view-buttons"
+                aria-label="Vista de la hoja"
               >
-                Vista manual
-              </button>
-              <button
-                className={
-                  "sheet-mode-automatic" +
-                  (view === "automatic" ? " primary" : "")
-                }
-                aria-pressed={view === "automatic"}
-                onClick={() => setView("automatic")}
-              >
-                Vista automática
-              </button>
-            </div>
-          )}
-          {documentShare}
-        </div>
-      )}
-      {(!locationReady || (loading && !special)) && sheetTabs}
+                <button
+                  className={
+                    "sheet-mode-manual" + (view === "manual" ? " primary" : "")
+                  }
+                  aria-pressed={view === "manual"}
+                  onClick={() => setView("manual")}
+                >
+                  Vista manual
+                </button>
+                <button
+                  className={
+                    "sheet-mode-automatic" +
+                    (view === "automatic" ? " primary" : "")
+                  }
+                  aria-pressed={view === "automatic"}
+                  onClick={() => setView("automatic")}
+                >
+                  Vista automática
+                </button>
+              </div>
+            )}
+            {documentShare}
+          </div>
+        )}
+
       {message && (
         <p className="sheet-message" role="status">
           {message}
@@ -894,22 +1014,22 @@ export function ProductsCatalog() {
       <span className="sr-only" role="status">
         {orderMessage}
       </span>
-      {locationReady && !loading && !tables.length && !special && (
-        <div className="sheet-empty-workbook">
-          {sheetTabs}
-          <p>
-            No hay tablas. Usa + Tabla para crear una; Asesores sigue
-            disponible.
-          </p>
-        </div>
-      )}
+      {locationReady &&
+        !loading &&
+        !special &&
+        (module !== "sales" ||
+          !tables.some((t) => permission("TABLE:" + t.id))) && (
+          <div className="sheet-empty-workbook">
+            <p>No hay pestañas en esta sección. Usa + para crear una.</p>
+          </div>
+        )}
       {locationReady && inventorySheet && (
         <InventoryCatalog
           key={special!.id}
           listId={special!.id}
           tables={orderedTables}
           initialTableId={table?.id ?? ""}
-          sheetTabs={sheetTabs}
+          sheetTabs={null}
           toolbarActions={documentShare}
           onChanged={load}
           onOpenInventory={(id) => setSpecialId(id)}
@@ -922,7 +1042,7 @@ export function ProductsCatalog() {
           listId={special!.id}
           tables={orderedTables}
           initialTableId={table?.id ?? "all"}
-          sheetTabs={sheetTabs}
+          sheetTabs={null}
           toolbarActions={documentShare}
           onChanged={loadAdvisors}
           onOpenPeriod={openAdvisorPeriod}
@@ -937,39 +1057,45 @@ export function ProductsCatalog() {
           initialSelected={
             !isOwner ? (special?.config?.selected ?? null) : undefined
           }
-          sheetTabs={sheetTabs}
+          sheetTabs={null}
           toolbarActions={documentShare}
         />
       )}
-      {table && !totals && !advisorSheet && !inventorySheet && (
-        <MetaEffectiveness
-          readOnly={!canEdit}
-          key={table.id}
-          inventoryLists={specials.filter((s) => s.kind === "INVENTORY")}
-          view={view}
-          onViewChange={setView}
-          tableWindowMode={tableWindowMode}
-          onTableWindowModeChange={setTableWindowMode}
-          onChooseTable={(id) => {
-            setSelected(id);
-            setSpecialId(null);
-            setEditing(null);
-            setMessage("");
-          }}
-          advisors={advisors}
-          sheetTabs={sheetTabs}
-          tables={orderedTables}
-          tableId={table.id}
-          aliases={table.aliases}
-          settings={table}
-          onNamesChanged={load}
-          onPresenceChanged={updatePresenceCount}
-          onOpenAdvisorPeriod={openAdvisorPeriod}
-          advisorPeriodRequest={advisorPeriodRequest}
-          onAdvisorPeriodHandled={() => setAdvisorPeriodRequest(null)}
-          initialPeriodLink={periodLink}
-        />
-      )}
+      {module === "sales" &&
+        locationReady &&
+        table &&
+        permission("TABLE:" + table.id) &&
+        !totals &&
+        !advisorSheet &&
+        !inventorySheet && (
+          <MetaEffectiveness
+            readOnly={!canEdit}
+            key={table.id}
+            inventoryLists={specials.filter((s) => s.kind === "INVENTORY")}
+            view={view}
+            onViewChange={setView}
+            tableWindowMode={tableWindowMode}
+            onTableWindowModeChange={setTableWindowMode}
+            onChooseTable={(id) => {
+              setSelected(id);
+              setSpecialId(null);
+              setEditing(null);
+              setMessage("");
+            }}
+            advisors={advisors}
+            sheetTabs={null}
+            tables={orderedTables}
+            tableId={table.id}
+            aliases={table.aliases}
+            settings={table}
+            onNamesChanged={load}
+            onPresenceChanged={updatePresenceCount}
+            onOpenAdvisorPeriod={openAdvisorPeriod}
+            advisorPeriodRequest={advisorPeriodRequest}
+            onAdvisorPeriodHandled={() => setAdvisorPeriodRequest(null)}
+            initialPeriodLink={periodLink}
+          />
+        )}
       <div
         id={menuId}
         ref={menu}
