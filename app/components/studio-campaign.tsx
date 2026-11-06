@@ -7,6 +7,7 @@ import { StudioMaximize } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   campaignText,
+  imageDistribution,
   launchSummary,
   type CampaignConfig,
   type CampaignItem,
@@ -14,6 +15,13 @@ import {
 import { SheetSearchSelect } from "./sheet-search-select";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 const initial: CampaignConfig = {
+  planVersion: 2,
+  objective: "WHATSAPP",
+  website: "",
+  leadFormId: "",
+  platforms: ["facebook", "instagram"],
+  variables: {},
+  distribution: {},
   accountId: "",
   pageId: "",
   country: "",
@@ -58,10 +66,10 @@ export function StudioCampaign({
   latestLaunchId,
   onRestore,
   onCountryChange,
-  countryBusy=false,
+  countryBusy = false,
 }: {
-  onCountryChange?:(country:string)=>Promise<unknown>;
-  countryBusy?:boolean;
+  onCountryChange?: (country: string) => Promise<unknown>;
+  countryBusy?: boolean;
   categoryId: string;
   country: string;
   accounts: any[];
@@ -71,6 +79,50 @@ export function StudioCampaign({
   onRestore: (items: CampaignItem[]) => void;
 }) {
   const userId = useContext(CurrentUserId);
+  const [mode, setMode] = useState<"TRADITIONAL" | "AI">("TRADITIONAL"),
+    [aiPrompt, setAiPrompt] = useState(""),
+    [aiConsent, setAiConsent] = useState(false),
+    [aiBusy, setAiBusy] = useState(false),
+    [aiRequest, setAiRequest] = useState<string | null>(null),
+    [aiProposal, setAiProposal] = useState<any>(null);
+  const aiPending = useRef(false);
+  const [leadForms, setLeadForms] = useState<{ id: string; name: string }[]>(
+      [],
+    ),
+    [leadError, setLeadError] = useState(""),
+    [leadLoading, setLeadLoading] = useState(false);
+  const [variableKey, setVariableKey] = useState(""),
+    [variableValue, setVariableValue] = useState("");
+  const [accountPins, setAccountPins] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const v = JSON.parse(
+        localStorage.getItem("studio-account-pins:" + userId) || "[]",
+      );
+      setAccountPins(
+        Array.isArray(v)
+          ? v
+              .filter((x) => typeof x === "string" && /^\d{1,40}$/.test(x))
+              .slice(0, 12)
+          : [],
+      );
+    } catch {
+      setAccountPins([]);
+    }
+  }, [userId]);
+  function pinAccount() {
+    const next = accountPins.includes(form.accountId)
+      ? accountPins.filter((x) => x !== form.accountId)
+      : [...accountPins, form.accountId].slice(-12);
+    setAccountPins(next);
+    try {
+      localStorage.setItem(
+        "studio-account-pins:" + userId,
+        JSON.stringify(next),
+      );
+    } catch {}
+  }
+
   const forceAccount = useRef<string | null>(null),
     loadedAccount = useRef("");
   const [audiencesFor, setAudiencesFor] = useState(""),
@@ -104,24 +156,113 @@ export function StudioCampaign({
     );
     return () => clearTimeout(timer);
   }, [pageRetryAt]);
-  const [phone,setPhone]=useState<{scope:string;number:string}|null>(null),[phoneLoading,setPhoneLoading]=useState(false),[phoneError,setPhoneError]=useState(""),[phoneRevision,setPhoneRevision]=useState(0);
-  const forcePhone=useRef("");
-  const phoneScope=form.accountId+":"+form.pageId;
-  const selectedPage=resources.accountId===form.accountId ? resources.pages.find((p:any)=>p.id===form.pageId) : null;
-  const directoryPhone=metaPageWhatsAppNumber(selectedPage?.whatsapp);
-  const phoneNumber=phone?.scope===phoneScope ? phone.number : "";
-  useEffect(()=>{
-    const controller=new AbortController();setPhone(null);setPhoneError("");
-    if(!form.accountId||!form.pageId||!selectedPage){setPhoneLoading(false);return ()=>controller.abort();}
-    const force=forcePhone.current===phoneScope;forcePhone.current="";
-    if(directoryPhone&&!force){setPhone({scope:phoneScope,number:directoryPhone});setPhoneLoading(false);return ()=>controller.abort();}
+  const [phone, setPhone] = useState<{ scope: string; number: string } | null>(
+      null,
+    ),
+    [phoneLoading, setPhoneLoading] = useState(false),
+    [phoneError, setPhoneError] = useState(""),
+    [phoneRevision, setPhoneRevision] = useState(0);
+  const forcePhone = useRef("");
+  const phoneScope = form.accountId + ":" + form.pageId;
+  const selectedPage =
+    resources.accountId === form.accountId
+      ? resources.pages.find((p: any) => p.id === form.pageId)
+      : null;
+  const directoryPhone = metaPageWhatsAppNumber(selectedPage?.whatsapp);
+  const phoneNumber = phone?.scope === phoneScope ? phone.number : "";
+  useEffect(() => {
+    const controller = new AbortController();
+    setPhone(null);
+    setPhoneError("");
+    if (!form.accountId || !form.pageId || !selectedPage) {
+      setPhoneLoading(false);
+      return () => controller.abort();
+    }
+    const force = forcePhone.current === phoneScope;
+    forcePhone.current = "";
+    if (directoryPhone && !force) {
+      setPhone({ scope: phoneScope, number: directoryPhone });
+      setPhoneLoading(false);
+      return () => controller.abort();
+    }
     setPhoneLoading(true);
-    void studioRequest("/page-whatsapp/"+form.accountId+"?"+new URLSearchParams({pageId:form.pageId,...(force?{refresh:"1"}:{})}),"GET",undefined,controller.signal).then(r=>{
-      if(!controller.signal.aborted){setPhone({scope:phoneScope,number:r.number});setResources((current:any)=>({...current,pages:current.pages.map((p:any)=>p.id===r.pageId?{...p,whatsapp:r.number}:p)}));}
-    }).catch(e=>{if(!controller.signal.aborted)setPhoneError(e.message)}).finally(()=>{if(!controller.signal.aborted)setPhoneLoading(false)});
-    return ()=>controller.abort();
-  },[form.accountId,form.pageId,!!selectedPage,directoryPhone,phoneRevision]);
-  useEffect(()=>{if(form.whatsapp!==phoneNumber)setForm(f=>({...f,whatsapp:phoneNumber}));},[phoneNumber,form.whatsapp]);
+    void studioRequest(
+      "/page-whatsapp/" +
+        form.accountId +
+        "?" +
+        new URLSearchParams({
+          pageId: form.pageId,
+          ...(force ? { refresh: "1" } : {}),
+        }),
+      "GET",
+      undefined,
+      controller.signal,
+    )
+      .then((r) => {
+        if (!controller.signal.aborted) {
+          setPhone({ scope: phoneScope, number: r.number });
+          setResources((current: any) => ({
+            ...current,
+            pages: current.pages.map((p: any) =>
+              p.id === r.pageId ? { ...p, whatsapp: r.number } : p,
+            ),
+          }));
+        }
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setPhoneError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPhoneLoading(false);
+      });
+    return () => controller.abort();
+  }, [
+    form.accountId,
+    form.pageId,
+    !!selectedPage,
+    directoryPhone,
+    phoneRevision,
+  ]);
+  useEffect(() => {
+    if (form.whatsapp !== phoneNumber)
+      setForm((f) => ({ ...f, whatsapp: phoneNumber }));
+  }, [phoneNumber, form.whatsapp]);
+  useEffect(() => {
+    setLeadForms([]);
+    setLeadError("");
+    if (form.objective !== "LEADS" || !form.pageId || !form.accountId) return;
+    const controller = new AbortController();
+    setLeadLoading(true);
+    void studioRequest(
+      "/page-lead-forms/" + form.accountId + "?pageId=" + form.pageId,
+      "GET",
+      undefined,
+      controller.signal,
+    )
+      .then((r) => {
+        if (!controller.signal.aborted) {
+          setLeadForms(r.forms);
+          if (!r.forms.length)
+            setLeadError(
+              "Esta página no tiene formularios activos disponibles. Revisa sus permisos o crea uno en Meta.",
+            );
+        }
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setLeadError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLeadLoading(false);
+      });
+    return () => controller.abort();
+  }, [form.objective, form.pageId, form.accountId]);
+  const aiContext = useRef("");
+  aiContext.current = JSON.stringify({
+    categoryId,
+    country,
+    items: items.map((i) => i.subproductId),
+    form,
+  });
   const lastCountry = useRef(country);
   const pending = useRef(false),
     dialog = useRef<HTMLDialogElement>(null),
@@ -292,9 +433,9 @@ export function StudioCampaign({
       clearTimeout(timer);
     };
   }, [draft?.id, draft?.status, halted]);
-  const locked = busy || draft?.status === "PUBLISHING",
+  const locked = busy || aiBusy || draft?.status === "PUBLISHING",
     account = accounts.find((a) => a.id === form.accountId),
-    summary = launchSummary(items, form),
+    summary = launchSummary(items, { ...form, planVersion: 2 }),
     currency = account?.currency ?? draft?.config.currency ?? "",
     money = (n: number) =>
       new Intl.NumberFormat("es-PE", {
@@ -305,11 +446,59 @@ export function StudioCampaign({
     setForm((f) => ({
       ...f,
       [key]: value,
-      ...(key === "accountId" ? { pageId: "", whatsapp:"" } : {}),
+      ...(key === "accountId"
+        ? { pageId: "", whatsapp: "", leadFormId: "" }
+        : {}),
+      ...(key === "pageId" ? { leadFormId: "" } : {}),
+      ...(key === "specialCategory" && value !== "NONE"
+        ? {
+            audiences: f.audiences.map((a) => ({
+              ...a,
+              ageMin: 18,
+              ageMax: 65,
+              gender: "ALL" as const,
+              strictAge: false,
+              savedAudienceId: undefined,
+            })),
+          }
+        : {}),
     }));
     if (draft?.status === "DRAFT") setDraft(null);
     setSpend(false);
+    setAiRequest(null);
+    setAiProposal(null);
     setError("");
+  }
+  async function suggest() {
+    if (aiPending.current || !aiConsent) return;
+    aiPending.current = true;
+    const context = aiContext.current;
+    setAiBusy(true);
+    setError("");
+    const requestId = aiRequest ?? crypto.randomUUID();
+    setAiRequest(requestId);
+    try {
+      const result = await studioRequest("/campaign-suggestion", "POST", {
+        requestId,
+        categoryId,
+        confirmAi: true,
+        prompt: aiPrompt,
+        config: form,
+        subproductIds: items.map((i) => i.subproductId),
+      });
+      if (aiContext.current === context) setAiProposal(result.proposal);
+      else
+        setError(
+          "La selección o el país cambió durante la consulta. Revisa la configuración antes de pedir otra propuesta.",
+        );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se confirmó la propuesta de IA.",
+      );
+    } finally {
+      aiPending.current = false;
+      setAiBusy(false);
+    }
   }
   async function prepare(open: boolean) {
     if (pending.current) return;
@@ -320,7 +509,7 @@ export function StudioCampaign({
       const d = await studioRequest("/launches", "POST", {
         requestId: crypto.randomUUID(),
         categoryId,
-        config: form,
+        config: { ...form, planVersion: 2 },
         items: items.map((i) => ({
           subproductId: i.subproductId,
           variationIds: i.variationIds,
@@ -372,7 +561,13 @@ export function StudioCampaign({
           <span className="studio-eyebrow">TU SIGUIENTE CAMPAÑA</span>
           <h2>De afiche a anuncio</h2>
         </div>
-        <span className="studio-chip">WhatsApp</span>
+        <span className="studio-chip">
+          {form.objective === "LEADS"
+            ? "Clientes potenciales"
+            : form.objective === "TRAFFIC"
+              ? "Visitas web"
+              : "WhatsApp"}
+        </span>
       </header>
       <div className="studio-selected-summary">
         <span className="studio-orbit">↗</span>
@@ -410,7 +605,47 @@ export function StudioCampaign({
             ))}
           </select>
         </label>
-        {onCountryChange&&<label>País de destino<SheetSearchSelect label="País de la campaña" value={country} placeholder="Selecciona un país" disabled={locked||countryBusy} options={countryOptions.map(c=>({value:c.code,label:c.name+" · "+c.code}))} onSelect={v=>void onCountryChange(v)}/></label>}
+        <div className="studio-personal-pins" aria-label="Cuentas fijadas">
+          <button
+            type="button"
+            disabled={!form.accountId || locked}
+            onClick={pinAccount}
+          >
+            {accountPins.includes(form.accountId)
+              ? "★ Fijada"
+              : "☆ Fijar cuenta"}
+          </button>
+          {accounts
+            .filter((a) => accountPins.includes(a.id))
+            .map((a) => (
+              <button
+                type="button"
+                key={a.id}
+                disabled={!a.canPublish || locked}
+                title={a.name}
+                aria-pressed={form.accountId === a.id}
+                onClick={() => update("accountId", a.id)}
+              >
+                {a.name}
+              </button>
+            ))}
+        </div>
+        {onCountryChange && (
+          <label>
+            País de destino
+            <SheetSearchSelect
+              label="País de la campaña"
+              value={country}
+              placeholder="Selecciona un país"
+              disabled={locked || countryBusy}
+              options={countryOptions.map((c) => ({
+                value: c.code,
+                label: c.name + " · " + c.code,
+              }))}
+              onSelect={(v) => void onCountryChange(v)}
+            />
+          </label>
+        )}
         {!accounts.length && (
           <p className="hint">
             Marca tus cuentas principales en{" "}
@@ -426,7 +661,12 @@ export function StudioCampaign({
           value={form.pageId}
           loading={loading && !resources.pages.length}
           disabled={!form.accountId || locked}
-          onChange={(id) => {if(id!==form.pageId){update("pageId",id);setForm(f=>({...f,whatsapp:""}));}}}
+          onChange={(id) => {
+            if (id !== form.pageId) {
+              update("pageId", id);
+              setForm((f) => ({ ...f, whatsapp: "" }));
+            }
+          }}
         />
         {resources.pageCached && resources.pageSavedAt && (
           <small className="studio-pages-saved">
@@ -515,12 +755,94 @@ export function StudioCampaign({
               <a href="?view=metaads">Revisar conexión Meta</a>
             </div>
           )}
-        <section className="studio-whatsapp-auto" aria-label="WhatsApp automático de la página" aria-busy={phoneLoading}>
-          <span>WhatsApp de la página</span>
-          {phoneNumber ? <><strong>{phoneNumber}</strong><small>Se obtiene de Meta automáticamente.</small></> : <small role="status">{phoneLoading?"Consultando el WhatsApp de esta página…":(!form.pageId?"Elige una página de Facebook.":"Se usará el WhatsApp predeterminado de la página en Meta. Meta comprobará la vinculación al crear los anuncios.")}</small>}
-          {phoneError&&<details className="studio-whatsapp-note"><summary>No se pudo leer el número · ver motivo</summary><small>{phoneError}</small></details>}
-          {form.pageId&&<button type="button" disabled={phoneLoading||locked} onClick={()=>{forcePhone.current=phoneScope;setPhoneRevision(n=>n+1)}}>{phoneNumber?"Actualizar desde Meta":"Volver a consultar"}</button>}
-        </section>
+        <label>
+          Objetivo de campaña
+          <select
+            aria-label="Objetivo de campaña"
+            value={form.objective}
+            onChange={(e) => update("objective", e.target.value)}
+          >
+            <option value="WHATSAPP">Conversaciones por WhatsApp</option>
+            <option value="LEADS">Clientes potenciales · formulario</option>
+            <option value="TRAFFIC">Visitas a tu página web</option>
+          </select>
+        </label>
+        {form.objective === "TRAFFIC" && (
+          <label>
+            Página web de destino
+            <input
+              aria-label="Página web de destino"
+              type="url"
+              placeholder="https://…"
+              value={form.website}
+              onChange={(e) => update("website", e.target.value)}
+            />
+          </label>
+        )}
+        {form.objective === "LEADS" && (
+          <label>
+            Formulario de esta página
+            <select
+              aria-label="Formulario de clientes potenciales"
+              disabled={leadLoading}
+              value={form.leadFormId}
+              onChange={(e) => update("leadFormId", e.target.value)}
+            >
+              <option value="">
+                {leadLoading
+                  ? "Consultando formularios…"
+                  : "Selecciona un formulario activo"}
+              </option>
+              {leadForms.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            {leadError && <small role="status">{leadError}</small>}
+          </label>
+        )}
+        {form.objective === "WHATSAPP" && (
+          <section
+            className="studio-whatsapp-auto"
+            aria-label="WhatsApp automático de la página"
+            aria-busy={phoneLoading}
+          >
+            <span>WhatsApp de la página</span>
+            {phoneNumber ? (
+              <>
+                <strong>{phoneNumber}</strong>
+                <small>Se obtiene de Meta automáticamente.</small>
+              </>
+            ) : (
+              <small role="status">
+                {phoneLoading
+                  ? "Consultando el WhatsApp de esta página…"
+                  : !form.pageId
+                    ? "Elige una página de Facebook."
+                    : "Se usará el WhatsApp predeterminado de la página en Meta. Meta comprobará la vinculación al crear los anuncios."}
+              </small>
+            )}
+            {phoneError && (
+              <details className="studio-whatsapp-note">
+                <summary>No se pudo leer el número · ver motivo</summary>
+                <small>{phoneError}</small>
+              </details>
+            )}
+            {form.pageId && (
+              <button
+                type="button"
+                disabled={phoneLoading || locked}
+                onClick={() => {
+                  forcePhone.current = phoneScope;
+                  setPhoneRevision((n) => n + 1);
+                }}
+              >
+                {phoneNumber ? "Actualizar desde Meta" : "Volver a consultar"}
+              </button>
+            )}
+          </section>
+        )}
         <div className="studio-budget">
           <label>
             Presupuesto diario por campaña <span>{currency}</span>
@@ -538,15 +860,112 @@ export function StudioCampaign({
             <strong>{money(summary.dailyTotal)} / día en total</strong>
           )}
         </div>
-        <label>
-          Texto del anuncio
-          <textarea
-            aria-label="Texto del anuncio"
-            rows={4}
-            value={form.body}
-            onChange={(e) => update("body", e.target.value)}
-          />
-        </label>
+        <section className="studio-adset-distribution">
+          <label>
+            Cantidad de conjuntos de anuncios
+            <input
+              aria-label="Cantidad de conjuntos de anuncios"
+              type="number"
+              min="1"
+              max="10"
+              value={form.audiences.length}
+              onChange={(e) => {
+                const n = Math.max(
+                  1,
+                  Math.min(10, Number(e.target.value) || 1),
+                );
+                update(
+                  "audiences",
+                  Array.from(
+                    { length: n },
+                    (_, i) =>
+                      form.audiences[i] ?? {
+                        name: "Público " + (i + 1),
+                        ageMin: 18,
+                        ageMax: 65,
+                        gender: "ALL",
+                        strictAge: false,
+                      },
+                  ),
+                );
+                update("distribution", {});
+              }}
+            />
+          </label>
+          <small>
+            Los afiches se reparten una sola vez. El presupuesto pertenece a la
+            campaña.
+          </small>
+          {items.map((item) => {
+            let counts: number[] = [];
+            try {
+              counts = imageDistribution(item, form);
+            } catch {
+              counts = form.distribution?.[item.subproductId] ?? [];
+            }
+            return (
+              <div key={item.subproductId} className="studio-distribution-item">
+                <strong>
+                  {item.name} · {item.variationIds.length} afiches
+                </strong>
+                {!counts.length ? (
+                  <small role="status">
+                    Selecciona al menos {form.audiences.length} afiches o reduce
+                    los conjuntos.
+                  </small>
+                ) : (
+                  <>
+                    <div className="studio-distribution-counts">
+                      {counts.map((n, i) => (
+                        <label key={i}>
+                          Conjunto {i + 1}
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            aria-label={
+                              item.name + " · afiches del conjunto " + (i + 1)
+                            }
+                            value={
+                              form.distribution?.[item.subproductId]?.[i] ?? n
+                            }
+                            onChange={(e) =>
+                              update("distribution", {
+                                ...form.distribution,
+                                [item.subproductId]: counts.map((x, j) =>
+                                  j === i ? Number(e.target.value) : x,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <small role="status">
+                      {counts.join(" + ")} = {counts.reduce((a, b) => a + b, 0)}{" "}
+                      / {item.variationIds.length} anuncios
+                      {counts.some((n) => n < 1) ||
+                      counts.reduce((a, b) => a + b, 0) !==
+                        item.variationIds.length
+                        ? " · Ajusta la suma para incluir todos los afiches."
+                        : ""}
+                    </small>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = { ...form.distribution };
+                    delete d[item.subproductId];
+                    update("distribution", d);
+                  }}
+                >
+                  Repartir equitativamente
+                </button>
+              </div>
+            );
+          })}
+        </section>
         <div className="studio-field-pair">
           <label>
             Código del país
@@ -569,6 +988,211 @@ export function StudioCampaign({
         <small className="studio-template-help">
           {"{diplomado} · {pais} · {codigo}"}
         </small>
+        <details className="studio-custom-variables">
+          <summary>Variables del anuncio</summary>
+          <small>
+            Se reemplazan en texto, headline y descripción. El nombre del
+            inventario se conserva en {"{diplomado}"}.
+          </small>
+          {Object.entries(form.variables).map(([k, v]) => (
+            <div className="studio-variable-row" key={k}>
+              <code>{"{" + k + "}"}</code>
+              <span>{v}</span>
+              <button
+                type="button"
+                aria-label={"Quitar variable " + k}
+                onClick={() => {
+                  const next = { ...form.variables };
+                  delete next[k];
+                  update("variables", next);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <label>
+            Nombre de variable
+            <input
+              aria-label="Nombre de variable"
+              value={variableKey}
+              placeholder="institucion"
+              onChange={(e) => setVariableKey(e.target.value)}
+            />
+          </label>
+          <label>
+            Valor
+            <input
+              aria-label="Valor de variable"
+              value={variableValue}
+              onChange={(e) => setVariableValue(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              !/^[a-z][a-z0-9_]{0,39}$/.test(variableKey) ||
+              ["diplomado", "producto", "pais", "codigo"].includes(
+                variableKey,
+              ) ||
+              Object.keys(form.variables).length >= 20
+            }
+            onClick={() => {
+              update("variables", {
+                ...form.variables,
+                [variableKey]: variableValue,
+              });
+              setVariableKey("");
+              setVariableValue("");
+            }}
+          >
+            Añadir variable
+          </button>
+        </details>
+        <section className="studio-placements">
+          <strong>Ubicaciones</strong>
+          <small>
+            Todas las ubicaciones compatibles de las plataformas que
+            selecciones.
+          </small>
+          <div>
+            {(
+              [
+                ["facebook", "Facebook"],
+                ["instagram", "Instagram"],
+                ["messenger", "Messenger"],
+                ["audience_network", "Audience Network"],
+              ] as const
+            ).map(([key, name]) => (
+              <label key={key}>
+                <input
+                  type="checkbox"
+                  checked={form.platforms.includes(key)}
+                  onChange={(e) =>
+                    update(
+                      "platforms",
+                      e.target.checked
+                        ? [...form.platforms, key]
+                        : form.platforms.filter((p) => p !== key),
+                    )
+                  }
+                />
+                {name}
+              </label>
+            ))}
+          </div>
+          <small>
+            Meta validará la compatibilidad con el objetivo. WhatsApp es el
+            destino de conversación, no una ubicación añadida automáticamente.
+          </small>
+        </section>
+        <div
+          className="studio-campaign-modes"
+          role="group"
+          aria-label="Preparación de campaña"
+        >
+          <button
+            type="button"
+            aria-pressed={mode === "TRADITIONAL"}
+            onClick={() => {
+              setMode("TRADITIONAL");
+              setAdvanced(true);
+            }}
+          >
+            Tradicional
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "AI"}
+            onClick={() => setMode("AI")}
+          >
+            Con IA
+          </button>
+        </div>
+        {mode === "AI" && (
+          <section className="studio-campaign-ai">
+            <label>
+              Instrucciones para la propuesta
+              <textarea
+                aria-label="Prompt de campaña IA"
+                rows={4}
+                value={aiPrompt}
+                onChange={(e) => {
+                  setAiPrompt(e.target.value);
+                  setAiRequest(null);
+                  setAiProposal(null);
+                }}
+                placeholder="Propón textos y públicos para {diplomado} en {pais}…"
+              />
+            </label>
+            <small>
+              La IA propone textos, edades y género. No cambia headline, país,
+              presupuesto ni ubicaciones; no publica.
+            </small>
+            <label className="studio-check">
+              <input
+                type="checkbox"
+                checked={aiConsent}
+                onChange={(e) => setAiConsent(e.target.checked)}
+              />
+              Autorizo esta consulta de IA y su posible cargo.
+            </label>
+            <button
+              type="button"
+              disabled={
+                !aiConsent ||
+                !aiPrompt.trim() ||
+                !items.length ||
+                aiBusy ||
+                locked
+              }
+              onClick={() => void suggest()}
+            >
+              {aiBusy ? "Preparando propuesta…" : "Preparar propuesta con IA"}
+            </button>
+            {aiProposal && (
+              <div className="studio-ai-proposal">
+                <p>{aiProposal.body}</p>
+                <small>{aiProposal.description}</small>
+                {aiProposal.audiences.map((a: any, i: number) => (
+                  <small key={i}>
+                    {a.name} · {a.ageMin}–{a.ageMax} · {a.gender}
+                  </small>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    update("body", aiProposal.body);
+                    update("description", aiProposal.description);
+                    update("audiences", aiProposal.audiences);
+                    setAdvanced(true);
+                    setAiProposal(null);
+                  }}
+                >
+                  Usar propuesta y revisar
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+        <label>
+          Texto del anuncio
+          <textarea
+            aria-label="Texto del anuncio"
+            rows={4}
+            value={form.body}
+            onChange={(e) => update("body", e.target.value)}
+          />
+        </label>
+        <label>
+          Descripción
+          <textarea
+            aria-label="Descripción del anuncio"
+            rows={2}
+            value={form.description}
+            onChange={(e) => update("description", e.target.value)}
+          />
+        </label>
         <button
           className="studio-advanced-trigger"
           type="button"
@@ -852,7 +1476,14 @@ export function StudioCampaign({
               <span className="studio-eyebrow">
                 TODO LISTO PARA TU REVISIÓN
               </span>
-              <h2>{draft.summary.campaigns} campañas a WhatsApp</h2>
+              <h2>
+                {draft.summary.campaigns} campañas ·{" "}
+                {draft.config.objective === "LEADS"
+                  ? "Clientes potenciales"
+                  : draft.config.objective === "TRAFFIC"
+                    ? "Visitas web"
+                    : "WhatsApp"}
+              </h2>
             </div>
             <button
               type="button"
@@ -874,6 +1505,10 @@ export function StudioCampaign({
               {draft.summary.adsets} conjuntos · {draft.summary.ads} anuncios
             </small>
           </div>
+          <p>
+            Ubicaciones:{" "}
+            {(draft.config.platforms ?? ["facebook", "instagram"]).join(" · ")}
+          </p>
           {draft.items.map((i: CampaignItem) => (
             <section key={i.subproductId} className="studio-ad-preview">
               <div className="studio-preview-thumbs">
@@ -891,7 +1526,26 @@ export function StudioCampaign({
               <strong>
                 {campaignText(draft.config.headline, i, draft.config)}
               </strong>
-              <small>WhatsApp: {draft.config.whatsapp || "Predeterminado de la página en Meta"}</small>
+              {(!draft.config.objective ||
+                draft.config.objective === "WHATSAPP") && (
+                <small>
+                  WhatsApp:{" "}
+                  {draft.config.whatsapp ||
+                    "Predeterminado de la página en Meta"}
+                </small>
+              )}
+              {draft.config.objective === "TRAFFIC" && (
+                <small>Destino: {draft.config.website}</small>
+              )}
+              {draft.config.objective === "LEADS" && (
+                <small>Formulario: {draft.config.leadFormId}</small>
+              )}
+              {draft.config.planVersion === 2 && (
+                <small>
+                  Afiches por conjunto:{" "}
+                  {imageDistribution(i, draft.config).join(" + ")}
+                </small>
+              )}
             </section>
           ))}
           <p>

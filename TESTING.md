@@ -1,3 +1,7 @@
+### 2026-11-06 · Configurador Meta e IA
+
+319 pruebas generales, 14 pruebas de políticas/selector, 5 integraciones en base exclusiva (3 de regresión y 2 nuevas), TypeScript y build correctos. Tres objetivos completan el flujo de objetos pausados con transporte simulado, presupuesto de campaña, headline idéntico y una sola asignación por imagen; formularios/CTA/destino consistentes. IA verifica consentimiento, reserva/consumo, esquema restringido, idempotencia y resultado incierto sin repetición. 17 flujos de navegador: 7 configurador/IA/país/móvil, 6 selector y 4 WhatsApp. Cero anuncios reales o IA con cargo en QA. Main publicado con CAS y blobs verificados; Hostinger no comprobado desde este entorno.
+
 ### 2026-11-06 · Inventario inline y WhatsApp automático
 
 319 pruebas generales, 6 de política, 3 integraciones en base exclusiva, 6 flujos de navegador del selector y 4 de WhatsApp aprobados; TypeScript y build correctos. Verificados selección única, uso distinto por país, preselección privada, afiches conservados, móvil, borrado de número al cambiar página, caché autorizada y ausencia de número sin bloquear preparación. Transportes simulados: cero llamadas IA con cargo y cero escrituras reales en Meta. Publicación en main verificable; despliegue Hostinger no verificado desde este entorno.

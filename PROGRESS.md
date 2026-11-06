@@ -1,3 +1,9 @@
+### 2026-11-06 · Configuración de campañas e IA revisable
+
+Tercera columna incorpora fijadas personales de cuentas/páginas con alias corto, objetivos WhatsApp/clientes potenciales/visitas, país compartido, conjuntos configurables, reparto equilibrado sin duplicar imágenes y distribución manual validada. Headline común usa nombre guardado y variables propias; plataformas seleccionadas sustituyen posiciones heredadas. Formularios se consultan bajo demanda y se valida pertenencia/estado; destino web HTTPS. Nuevos planes versionados conservan ejecución histórica. Recibo de creativo verifica página, CTA y headline exacto antes de activar.
+
+IA propone texto, descripción y públicos demográficos mediante modelo creativo ya configurado. Consentimiento explícito, presupuesto/reserva/ledger y una solicitud idempotente con heartbeat; incertidumbre no se reintenta. No altera headline/país/presupuesto/ubicaciones y no aplica respuesta a selección cambiada. Revisión final muestra objetivo, destino, plataformas, reparto e importe. Construcción pausada y confirmación adicional para ACTIVE permanecen. Ninguna garantía de aprobación o entrega de Meta.
+
 ### 2026-11-06 · Inventario inline y WhatsApp automático
 
 Proyectos permite elegir cantidad, buscar en cada espacio, filtrar por grupo/uso del país/categoría y completar aleatoriamente sin duplicar. Conserva preselecciones y cantidad de afiches; elegir no genera ni publica. País de campaña sincronizado con primera columna. WhatsApp procede exclusivamente de página autorizada; sin número manual. Si Meta no expone el número se omite el campo opcional, dejando que Meta valide el predeterminado al crear anuncios. La lectura no garantiza publicación ni revisión de Meta.

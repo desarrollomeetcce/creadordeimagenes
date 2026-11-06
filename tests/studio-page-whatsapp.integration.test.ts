@@ -102,7 +102,7 @@ test("Automatic page WhatsApp is scoped, cached, refreshed and verified before p
         dailyBudget: 10,
         body: "QA {diplomado}",
         headline: "QA",
-        audiences: [{ name: "QA A" }, { name: "QA B" }],
+        audiences: [{ name: "QA A" }],
       },
       items: [
         { subproductId: q.images[0].subId, variationIds: [q.images[0].id] },
@@ -112,15 +112,42 @@ test("Automatic page WhatsApp is scoped, cached, refreshed and verified before p
       () => createLaunch(owner, payload),
       /WhatsApp.*cambió/,
     );
-    const good=await createLaunch(owner,{...payload,requestId:randomUUID(),config:{...payload.config,whatsapp:number}});
+    const good = await createLaunch(owner, {
+      ...payload,
+      requestId: randomUUID(),
+      config: { ...payload.config, whatsapp: number },
+    });
     drafts.push(good.id);
-    const begun=await beginLaunch(owner,good.id,{revision:good.revision,confirmPublish:true});
-    assert.equal(begun.status,"PUBLISHING","Matching Meta number allows the existing publish workflow; no tick or Meta write is executed");
-    const phoneReads=calls.filter(c=>c.edge==="object").length;
-    const fallback=await createLaunch(owner,{...payload,requestId:randomUUID(),config:{...payload.config,whatsapp:""}});
+    const begun = await beginLaunch(owner, good.id, {
+      revision: good.revision,
+      confirmPublish: true,
+    });
+    assert.equal(
+      begun.status,
+      "PUBLISHING",
+      "Matching Meta number allows the existing publish workflow; no tick or Meta write is executed",
+    );
+    const phoneReads = calls.filter((c) => c.edge === "object").length;
+    const fallback = await createLaunch(owner, {
+      ...payload,
+      requestId: randomUUID(),
+      config: { ...payload.config, whatsapp: "" },
+    });
     drafts.push(fallback.id);
-    assert.equal((await beginLaunch(owner,fallback.id,{revision:fallback.revision,confirmPublish:true})).status,"PUBLISHING");
-    assert.equal(calls.filter(c=>c.edge==="object").length,phoneReads,"Meta page default does not require reading a phone number");
+    assert.equal(
+      (
+        await beginLaunch(owner, fallback.id, {
+          revision: fallback.revision,
+          confirmPublish: true,
+        })
+      ).status,
+      "PUBLISHING",
+    );
+    assert.equal(
+      calls.filter((c) => c.edge === "object").length,
+      phoneReads,
+      "Meta page default does not require reading a phone number",
+    );
     const legacy = await db.creativeMetaLaunch.create({
       data: {
         actorId: owner.id,
@@ -171,7 +198,10 @@ test("Automatic page WhatsApp is scoped, cached, refreshed and verified before p
     await db.creativeMetaPageDirectory.deleteMany({
       where: { accountId: a.id },
     });
-    if (prior) await db.creativeMetaPageDirectory.create({ data: {...prior,pages:prior.pages as Prisma.InputJsonValue} });
+    if (prior)
+      await db.creativeMetaPageDirectory.create({
+        data: { ...prior, pages: prior.pages as Prisma.InputJsonValue },
+      });
     await db.$disconnect();
   }
 });

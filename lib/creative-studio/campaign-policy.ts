@@ -17,23 +17,45 @@ export const audienceSchema = z
   .refine((a) => a.ageMax >= a.ageMin, "El rango de edades no es válido.");
 export const campaignConfigSchema = z
   .object({
+    planVersion: z.literal(2).optional(),
+    objective: z.enum(["WHATSAPP", "LEADS", "TRAFFIC"]).default("WHATSAPP"),
+    website: z.string().max(2000).default(""),
+    leadFormId: z
+      .string()
+      .regex(/^\d{1,40}$/)
+      .or(z.literal(""))
+      .default(""),
+    platforms: z
+      .array(z.enum(["facebook", "instagram", "messenger", "audience_network"]))
+      .min(1)
+      .max(4)
+      .refine((v) => new Set(v).size === v.length)
+      .default(["facebook", "instagram"]),
+    variables: z
+      .record(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), z.string().max(500))
+      .default({}),
+    distribution: z
+      .record(
+        z.string().min(1).max(100),
+        z.array(z.number().int().positive().max(50)).min(1).max(10),
+      )
+      .default({}),
     accountId: z.string().regex(/^\d{1,40}$/),
     pageId: z.string().regex(/^\d{1,40}$/),
     country: z.string().refine(isCountryCode),
     whatsapp: z
       .string()
       .trim()
-      .regex(
-        /^\+?\d{7,15}$/,
-        "WhatsApp de Meta no válido.",
-      ).or(z.literal("")).default(""),
+      .regex(/^\+?\d{7,15}$/, "WhatsApp de Meta no válido.")
+      .or(z.literal(""))
+      .default(""),
     dailyBudget: z.number().finite().positive().max(1000000),
     body: z.string().trim().min(1).max(5000),
     headline: z.string().trim().min(1).max(250),
     description: z.string().max(500).default(""),
     code: z.string().max(80).default(""),
     targetStatus: z.enum(["PAUSED", "ACTIVE"]).default("PAUSED"),
-    audiences: z.array(audienceSchema).length(2),
+    audiences: z.array(audienceSchema).min(1).max(10),
     specialCategory: z
       .enum(["NONE", "EMPLOYMENT", "HOUSING", "FINANCIAL_PRODUCTS_SERVICES"])
       .default("NONE"),
@@ -73,8 +95,14 @@ export function campaignText(
   item: CampaignItem,
   c: CampaignConfig,
 ) {
-  return template.replace(/\{(diplomado|producto|pais|codigo)\}/g, (_m, k) =>
-    k === "pais" ? countryName(c.country) : k === "codigo" ? c.code : item.name,
+  return template.replace(/\{([a-z][a-z0-9_]{0,39})\}/g, (m, k) =>
+    k === "pais"
+      ? countryName(c.country)
+      : k === "codigo"
+        ? c.code
+        : ["diplomado", "producto"].includes(k)
+          ? item.name
+          : (c.variables?.[k] ?? m),
   );
 }
 export function minorBudget(value: number, currency: string) {
@@ -100,18 +128,35 @@ export function audienceTargeting(
   saved?: Record<string, unknown>,
 ) {
   const a = config.audiences[index];
+  const special = config.specialCategory && config.specialCategory !== "NONE";
+  const {
+    publisher_platforms: _p,
+    facebook_positions: _f,
+    instagram_positions: _i,
+    messenger_positions: _m,
+    audience_network_positions: _n,
+    genders: _g,
+    device_platforms: _d,
+    excluded_geo_locations: _eg,
+    ...safeSaved
+  } = saved ?? {};
   return {
-    ...(saved ?? {}),
+    ...safeSaved,
+    publisher_platforms: config.platforms ?? ["facebook", "instagram"],
     geo_locations: { countries: [config.country] },
-    age_min: a.ageMin,
-    age_max: a.ageMax,
-    ...(a.gender === "ALL" ? {} : { genders: [a.gender === "MEN" ? 1 : 2] }),
-    targeting_automation: { advantage_audience: a.strictAge ? 0 : 1 },
+    ...(special ? {} : { age_min: a.ageMin, age_max: a.ageMax }),
+    ...(special || a.gender === "ALL"
+      ? {}
+      : { genders: [a.gender === "MEN" ? 1 : 2] }),
+    targeting_automation: {
+      advantage_audience: special || !a.strictAge ? 1 : 0,
+    },
   };
 }
 export function launchPlan(
   campaigns: CampaignItem[],
   active: boolean,
+  config?: CampaignConfig,
 ): LaunchStep[] {
   const steps: LaunchStep[] = [];
   const add = (
@@ -120,29 +165,33 @@ export function launchPlan(
     campaign: number,
     extra: Partial<LaunchStep> = {},
   ) => steps.push({ key, kind, campaign, state: "PENDING", ...extra });
+  const count = config?.audiences.length ?? 2;
+  const balanced = config?.planVersion === 2;
   campaigns.forEach((c, i) => {
     c.variationIds.forEach((_v, j) =>
       add(`image:${i}:${j}`, "IMAGE", i, { image: j }),
     );
     add(`campaign:${i}`, "CAMPAIGN", i);
-    for (let a = 0; a < 2; a++)
+    for (let a = 0; a < count; a++)
       add(`set:${i}:${a}`, "ADSET", i, { audience: a });
     c.variationIds.forEach((_v, j) => {
       add(`creative:${i}:${j}`, "CREATIVE", i, { image: j });
       add(`verify-creative:${i}:${j}`, "VERIFY_CREATIVE", i, { image: j });
-      for (let a = 0; a < 2; a++)
-        add(`ad:${i}:${a}:${j}`, "AD", i, { audience: a, image: j });
+      for (let a = 0; a < count; a++)
+        if (!balanced || imageAudience(c, j, config!) === a)
+          add(`ad:${i}:${a}:${j}`, "AD", i, { audience: a, image: j });
     });
     add(`verify:${i}`, "VERIFY", i);
   });
   if (active) {
     campaigns.forEach((c, i) => {
-      for (let a = 0; a < 2; a++)
+      for (let a = 0; a < count; a++)
         for (let j = 0; j < c.variationIds.length; j++)
-          add(`active-ad:${i}:${a}:${j}`, "ACTIVATE", i, {
-            target: `ad:${i}:${a}:${j}`,
-          });
-      for (let a = 0; a < 2; a++)
+          if (!balanced || imageAudience(c, j, config!) === a)
+            add(`active-ad:${i}:${a}:${j}`, "ACTIVATE", i, {
+              target: `ad:${i}:${a}:${j}`,
+            });
+      for (let a = 0; a < count; a++)
         add(`active-set:${i}:${a}`, "ACTIVATE", i, { target: `set:${i}:${a}` });
       add(`active-campaign:${i}`, "ACTIVATE", i, { target: `campaign:${i}` });
       add(`verify-live:${i}`, "VERIFY_LIVE", i);
@@ -153,10 +202,153 @@ export function launchPlan(
 export function launchSummary(items: CampaignItem[], c: CampaignConfig) {
   return {
     campaigns: items.length,
-    adsets: items.length * 2,
-    ads: items.reduce((n, i) => n + i.variationIds.length * 2, 0),
+    adsets: items.length * c.audiences.length,
+    ads: items.reduce(
+      (n, i) =>
+        n +
+        i.variationIds.length * (c.planVersion === 2 ? 1 : c.audiences.length),
+      0,
+    ),
     dailyTotal: Math.round(c.dailyBudget * items.length * 1000000) / 1000000,
   };
 }
 
-export function whatsappPromotedObject(config:Pick<CampaignConfig,"pageId"|"whatsapp">){return {page_id:config.pageId,...(config.whatsapp?{whatsapp_phone_number:config.whatsapp.replace(/^\+/,"")}:{})};}
+export function whatsappPromotedObject(
+  config: Pick<CampaignConfig, "pageId" | "whatsapp">,
+) {
+  return {
+    page_id: config.pageId,
+    ...(config.whatsapp
+      ? { whatsapp_phone_number: config.whatsapp.replace(/^\+/, "") }
+      : {}),
+  };
+}
+
+export function imageDistribution(item: CampaignItem, config: CampaignConfig) {
+  const n = config.audiences.length,
+    images = item.variationIds.length;
+  const custom = config.distribution?.[item.subproductId];
+  if (custom) {
+    demand(
+      custom.length === n &&
+        custom.every((v) => Number.isInteger(v) && v > 0) &&
+        custom.reduce((a, b) => a + b, 0) === images,
+      "La distribución debe asignar todos los afiches una sola vez, sin conjuntos vacíos.",
+    );
+    return custom;
+  }
+  demand(
+    images >= n,
+    `Selecciona al menos ${n} afiches para ${item.name}, o reduce los conjuntos.`,
+  );
+  return Array.from(
+    { length: n },
+    (_, i) => Math.floor(images / n) + (i < images % n ? 1 : 0),
+  );
+}
+export function imageAudience(
+  item: CampaignItem,
+  image: number,
+  config: CampaignConfig,
+) {
+  let end = 0;
+  return imageDistribution(item, config).findIndex((n) => (end += n) > image);
+}
+export function campaignObjective(c: Pick<CampaignConfig, "objective">) {
+  return c.objective === "LEADS"
+    ? "OUTCOME_LEADS"
+    : c.objective === "TRAFFIC"
+      ? "OUTCOME_TRAFFIC"
+      : "OUTCOME_ENGAGEMENT";
+}
+export function campaignDestination(c: Pick<CampaignConfig, "objective">) {
+  return c.objective === "LEADS"
+    ? "ON_AD"
+    : c.objective === "TRAFFIC"
+      ? "WEBSITE"
+      : "WHATSAPP";
+}
+export function campaignOptimization(c: Pick<CampaignConfig, "objective">) {
+  return c.objective === "LEADS"
+    ? "LEAD_GENERATION"
+    : c.objective === "TRAFFIC"
+      ? "LINK_CLICKS"
+      : "CONVERSATIONS";
+}
+export function campaignLink(
+  c: Pick<CampaignConfig, "objective" | "website" | "pageId">,
+) {
+  return c.objective === "TRAFFIC"
+    ? c.website
+    : "https://www.facebook.com/" + c.pageId;
+}
+export function campaignCTA(
+  c: Pick<CampaignConfig, "objective" | "leadFormId" | "website">,
+) {
+  return c.objective === "LEADS"
+    ? { type: "SIGN_UP", value: { lead_gen_form_id: c.leadFormId } }
+    : c.objective === "TRAFFIC"
+      ? { type: "LEARN_MORE", value: { link: c.website } }
+      : { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } };
+}
+export function validateCampaignDestination(c: CampaignConfig) {
+  if (c.specialCategory !== "NONE")
+    demand(
+      c.audiences.every(
+        (a) =>
+          a.ageMin === 18 &&
+          a.ageMax === 65 &&
+          a.gender === "ALL" &&
+          !a.savedAudienceId,
+      ),
+      "Las categorías especiales requieren público amplio sin edad, género ni público guardado restringido.",
+    );
+  if (c.objective === "TRAFFIC") {
+    let url: URL | undefined;
+    try {
+      url = new URL(c.website);
+    } catch {}
+    demand(
+      url?.protocol === "https:" && !url.username && !url.password,
+      "Indica una página web HTTPS válida para el objetivo de visitas.",
+    );
+  }
+  if (c.objective === "LEADS")
+    demand(
+      c.leadFormId,
+      "Selecciona un formulario de clientes potenciales de esta página.",
+    );
+  const keys = Object.keys(c.variables);
+  demand(
+    keys.length <= 20 &&
+      !keys.some((k) =>
+        ["diplomado", "producto", "pais", "codigo"].includes(k),
+      ),
+    "Usa hasta 20 variables propias; los nombres predeterminados están reservados.",
+  );
+}
+
+export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
+  const known = new Set([
+    "diplomado",
+    "producto",
+    "pais",
+    "codigo",
+    ...Object.keys(c.variables ?? {}),
+  ]);
+  for (const [key, max] of [
+    ["headline", 250],
+    ["body", 5000],
+    ["description", 500],
+  ] as const) {
+    const value = c[key];
+    for (const match of value.matchAll(/\{([a-z][a-z0-9_]{0,39})\}/g))
+      demand(known.has(match[1]), `Falta definir la variable {${match[1]}}.`);
+    const rendered = campaignText(value, item, c);
+    demand(
+      rendered.length <= max &&
+        (key === "description" || rendered.trim().length > 0),
+      `El ${key === "headline" ? "headline" : key === "body" ? "texto" : "detalle"} de ${item.name} excede el límite o está vacío después de reemplazar variables.`,
+    );
+  }
+}

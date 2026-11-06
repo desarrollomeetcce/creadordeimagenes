@@ -68,6 +68,44 @@ export function StudioPagePicker({
         );
     } catch {}
   }, [pinKey]);
+  const aliasKey = "studio-page-pin-alias:v1:" + pinScope;
+  const [aliases, setAliases] = useState<Record<string, string>>({}),
+    [alias, setAlias] = useState("");
+  useEffect(() => {
+    setAliases({});
+    try {
+      const v = JSON.parse(localStorage.getItem(aliasKey) || "{}");
+      if (v && typeof v === "object" && !Array.isArray(v))
+        setAliases(
+          Object.fromEntries(
+            Object.entries(v)
+              .filter(
+                ([k, v]) =>
+                  /^\d{1,40}$/.test(k) &&
+                  typeof v === "string" &&
+                  v.length <= 16,
+              )
+              .slice(0, 12),
+          ) as Record<string, string>,
+        );
+    } catch {}
+  }, [aliasKey]);
+  useEffect(() => {
+    setAlias(aliases[value] ?? "");
+  }, [value, aliases]);
+  function saveAlias() {
+    if (!value || !pins.includes(value)) return;
+    const next = Object.fromEntries(
+      pins.map((id) => [
+        id,
+        id === value ? alias.trim().slice(0, 16) : (aliases[id] ?? ""),
+      ]),
+    );
+    setAliases(next);
+    try {
+      localStorage.setItem(aliasKey, JSON.stringify(next));
+    } catch {}
+  }
   function pin(pageId: string) {
     setPins((current) => {
       const next = current.includes(pageId)
@@ -233,7 +271,7 @@ export function StudioPagePicker({
                 title={page.name}
               >
                 <PageLogo page={page} />
-                <span>{page.name}</span>
+                <span>{aliases[page.id] || page.name}</span>
               </button>
               <button
                 type="button"
@@ -246,6 +284,24 @@ export function StudioPagePicker({
             </div>
           ))}
         </div>
+      )}
+      {pins.includes(value) && (
+        <details className="studio-page-alias">
+          <summary>Nombre corto de esta fijación</summary>
+          <label>
+            Solo para ti
+            <input
+              aria-label="Nombre corto de página fijada"
+              maxLength={16}
+              value={alias}
+              placeholder={aliases[value] || "Ej. PE, UY"}
+              onChange={(e) => setAlias(e.target.value)}
+            />
+          </label>
+          <button type="button" disabled={disabled} onClick={saveAlias}>
+            Guardar nombre
+          </button>
+        </details>
       )}
       <input
         ref={input}

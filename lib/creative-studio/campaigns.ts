@@ -1,6 +1,10 @@
-import { metaPageWhatsAppNumber,readMetaPageWhatsApp } from "./page-whatsapp";
+import { metaPageWhatsAppNumber, readMetaPageWhatsApp } from "./page-whatsapp";
 import { inventoryMetaStatusChange } from "../meta-ads/inventory-sheet-activation";
-import { authorizeFinancialRequest,financialAccess,scopePermission } from "../meta-ads/financial-access";
+import {
+  authorizeFinancialRequest,
+  financialAccess,
+  scopePermission,
+} from "../meta-ads/financial-access";
 import { campaignPageDirectory } from "./page-directory";
 import { campaignPageIssue } from "./page-errors";
 import { z } from "zod";
@@ -16,6 +20,14 @@ import { recordActivity } from "../activity";
 import { studioAccess, object, json, type Actor } from "./service";
 import {
   campaignConfigSchema,
+  campaignObjective,
+  campaignDestination,
+  campaignOptimization,
+  campaignCTA,
+  campaignLink,
+  imageDistribution,
+  validateCampaignDestination,
+  validateCampaignText,
   campaignText,
   minorBudget,
   audienceTargeting,
@@ -138,32 +150,77 @@ export async function launchResources(
     usesLoginConfiguration: !!a.connection.loginConfigId,
   };
 }
-const pagePhonePending=new Map<string,Promise<{pageId:string;number:string}>>();
+const pagePhonePending = new Map<
+  string,
+  Promise<{ pageId: string; number: string }>
+>();
 /** A single selected-page read; no page scanning or campaign/history imports. */
-export async function campaignPageWhatsApp(actor:Actor, accountId:string, pageId:string, refresh=false){
-  studioAccess(actor);demand(/^\d{1,40}$/.test(pageId),"Página no válida.");
-  const a=await primaryAccount(actor,accountId);
-  const directory=await launchResources(actor,accountId,"pages");
-  const page=directory.pages.find(p=>p.id===pageId);
-  demand(page,"La página no está autorizada para esta cuenta. Actualiza las páginas.",403);
-  const saved=metaPageWhatsAppNumber(page.whatsapp);
-  if(saved&&!refresh)return {pageId,number:saved};
-  const key=JSON.stringify([accountId,a.connectionId,a.connection.revision,pageId]);
-  let pending=pagePhonePending.get(key);
-  if(!pending){
-    pending=(async()=>{
-      const {reader:r}=await reader(a.connectionId,false,true);
-      const number=await readMetaPageWhatsApp(r,a.id,pageId);
-      const current=await primaryAccount(actor,accountId);
-      demand(current.connectionId===a.connectionId&&current.connection.revision===a.connection.revision,"La conexión cambió. Actualiza antes de continuar.",409);
-      const cached=await db.creativeMetaPageDirectory.findUnique({where:{accountId}});
-      if(cached&&cached.connectionId===a.connectionId&&cached.credentialRevision===a.connection.revision&&Array.isArray(cached.pages)){
-        const pages=cached.pages.map((p:any)=>p&&p.id===pageId?{...p,whatsapp:number}:p);
-        await db.creativeMetaPageDirectory.updateMany({where:{accountId,connectionId:a.connectionId,credentialRevision:a.connection.revision,fetchedAt:cached.fetchedAt},data:{pages:json(pages)}});
+export async function campaignPageWhatsApp(
+  actor: Actor,
+  accountId: string,
+  pageId: string,
+  refresh = false,
+) {
+  studioAccess(actor);
+  demand(/^\d{1,40}$/.test(pageId), "Página no válida.");
+  const a = await primaryAccount(actor, accountId);
+  const directory = await launchResources(actor, accountId, "pages");
+  const page = directory.pages.find((p) => p.id === pageId);
+  demand(
+    page,
+    "La página no está autorizada para esta cuenta. Actualiza las páginas.",
+    403,
+  );
+  const saved = metaPageWhatsAppNumber(page.whatsapp);
+  if (saved && !refresh) return { pageId, number: saved };
+  const key = JSON.stringify([
+    accountId,
+    a.connectionId,
+    a.connection.revision,
+    pageId,
+  ]);
+  let pending = pagePhonePending.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const { reader: r } = await reader(a.connectionId, false, true);
+      const number = await readMetaPageWhatsApp(r, a.id, pageId);
+      const current = await primaryAccount(actor, accountId);
+      demand(
+        current.connectionId === a.connectionId &&
+          current.connection.revision === a.connection.revision,
+        "La conexión cambió. Actualiza antes de continuar.",
+        409,
+      );
+      const cached = await db.creativeMetaPageDirectory.findUnique({
+        where: { accountId },
+      });
+      if (
+        cached &&
+        cached.connectionId === a.connectionId &&
+        cached.credentialRevision === a.connection.revision &&
+        Array.isArray(cached.pages)
+      ) {
+        const pages = cached.pages.map((p: any) =>
+          p && p.id === pageId ? { ...p, whatsapp: number } : p,
+        );
+        await db.creativeMetaPageDirectory.updateMany({
+          where: {
+            accountId,
+            connectionId: a.connectionId,
+            credentialRevision: a.connection.revision,
+            fetchedAt: cached.fetchedAt,
+          },
+          data: { pages: json(pages) },
+        });
       }
-      return {pageId,number};
+      return { pageId, number };
     })();
-    pagePhonePending.set(key,pending);void pending.finally(()=>{if(pagePhonePending.get(key)===pending)pagePhonePending.delete(key)}).catch(()=>{});
+    pagePhonePending.set(key, pending);
+    void pending
+      .finally(() => {
+        if (pagePhonePending.get(key) === pending) pagePhonePending.delete(key);
+      })
+      .catch(() => {});
   }
   return pending;
 }
@@ -192,6 +249,8 @@ export async function createLaunch(actor: Actor, input: unknown) {
   await resourceAccess(actor, "category", b.categoryId, "EDIT");
   const a = await primaryAccount(actor, b.config.accountId);
   minorBudget(b.config.dailyBudget, a.currency);
+  b.config.planVersion = 2;
+  validateCampaignDestination(b.config);
   const c = await db.category.findUniqueOrThrow({
     where: { id: b.categoryId },
   });
@@ -268,7 +327,27 @@ export async function createLaunch(actor: Actor, input: unknown) {
     "La página no está autorizada para anunciar desde esta cuenta. Comprueba la vinculación.",
     409,
   );
-  if(b.config.whatsapp){const metaNumber=await readMetaPageWhatsApp(r,a.id,b.config.pageId);demand(metaPageWhatsAppNumber(b.config.whatsapp)===metaNumber,"El WhatsApp de la página cambió. Vuelve a consultarlo antes de preparar la campaña.",409);b.config.whatsapp=metaNumber;}
+  items.forEach((i) => {
+    imageDistribution(i, b.config);
+    validateCampaignText(i, b.config);
+  });
+  if (b.config.objective === "LEADS") {
+    const forms = await campaignLeadForms(actor, a.id, b.config.pageId);
+    demand(
+      forms.forms.some((f: { id: string }) => f.id === b.config.leadFormId),
+      "El formulario no está activo o no pertenece a esta página.",
+      409,
+    );
+  }
+  if (b.config.objective === "WHATSAPP" && b.config.whatsapp) {
+    const metaNumber = await readMetaPageWhatsApp(r, a.id, b.config.pageId);
+    demand(
+      metaPageWhatsAppNumber(b.config.whatsapp) === metaNumber,
+      "El WhatsApp de la página cambió. Vuelve a consultarlo antes de preparar la campaña.",
+      409,
+    );
+    b.config.whatsapp = metaNumber;
+  }
   const eu =
     "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split(
       " ",
@@ -327,7 +406,9 @@ export async function createLaunch(actor: Actor, input: unknown) {
         connectionRevision: a.connection.revision,
         config: json(config),
         campaigns: json(items),
-        steps: json(launchPlan(items, b.config.targetStatus === "ACTIVE")),
+        steps: json(
+          launchPlan(items, b.config.targetStatus === "ACTIVE", b.config),
+        ),
       },
     });
     await recordActivity(tx, {
@@ -430,7 +511,18 @@ export async function beginLaunch(actor: Actor, id: string, input: unknown) {
     config.targetStatus !== "ACTIVE" || b.confirmSpend,
     "Confirma el presupuesto diario antes de publicar activas.",
   );
-  if(config.whatsapp){const {reader:r}=await reader(a.connectionId,false,true);const metaNumber=await readMetaPageWhatsApp(r,a.id,config.pageId);demand(metaPageWhatsAppNumber(config.whatsapp)===metaNumber,"El WhatsApp de la página cambió. Actualiza y prepara la campaña nuevamente.",409);}
+  if (
+    (!config.objective || config.objective === "WHATSAPP") &&
+    config.whatsapp
+  ) {
+    const { reader: r } = await reader(a.connectionId, false, true);
+    const metaNumber = await readMetaPageWhatsApp(r, a.id, config.pageId);
+    demand(
+      metaPageWhatsAppNumber(config.whatsapp) === metaNumber,
+      "El WhatsApp de la página cambió. Actualiza y prepara la campaña nuevamente.",
+      409,
+    );
+  }
   const result = await db.creativeMetaLaunch.updateMany({
     where: { id, status: "DRAFT", revision: b.revision },
     data: { status: "PUBLISHING", revision: { increment: 1 }, error: null },
@@ -449,7 +541,8 @@ async function receiptStep(
   step.receipt = result;
   const done = steps.every((s) => s.state === "DONE");
   await db.$transaction(async (tx) => {
-    if(step.kind === "VERIFY" || step.kind === "VERIFY_LIVE")await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    if (step.kind === "VERIFY" || step.kind === "VERIFY_LIVE")
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
     const written = await tx.creativeMetaLaunch.updateMany({
       where: { id: d.id, status: "PUBLISHING", revision: d.revision + 1 },
       data: {
@@ -475,8 +568,20 @@ async function receiptStep(
             select: { sheetId: true, name: true },
           })
         : null;
-      if(!canonical && item.source?.itemId){const legacy=await tx.metaAlias.findUnique({where:{id:item.source.itemId},select:{inventorySheetId:true,name:true}});if(legacy?.inventorySheetId)canonical={sheetId:legacy.inventorySheetId,name:legacy.name};}
-      const pendingAliases = canonical && item.source?.listId ? await tx.$queryRaw<{id:string}[]>`SELECT a.id FROM "MetaAlias" a JOIN "MetaEffectivenessSheet" s ON s.id=a."inventorySheetId" WHERE s.id=${item.source.listId} AND lower(a.name)=lower(${item.name}) AND jsonb_extract_path_text(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'campaignTask')='CREATE' AND COALESCE(jsonb_extract_path(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'metaOrigin','accountIds'),'[]'::jsonb) ? ${d.accountId}` : [];
+      if (!canonical && item.source?.itemId) {
+        const legacy = await tx.metaAlias.findUnique({
+          where: { id: item.source.itemId },
+          select: { inventorySheetId: true, name: true },
+        });
+        if (legacy?.inventorySheetId)
+          canonical = { sheetId: legacy.inventorySheetId, name: legacy.name };
+      }
+      const pendingAliases =
+        canonical && item.source?.listId
+          ? await tx.$queryRaw<
+              { id: string }[]
+            >`SELECT a.id FROM "MetaAlias" a JOIN "MetaEffectivenessSheet" s ON s.id=a."inventorySheetId" WHERE s.id=${item.source.listId} AND lower(a.name)=lower(${item.name}) AND jsonb_extract_path_text(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'campaignTask')='CREATE' AND COALESCE(jsonb_extract_path(s.config,'inventoryActivation','rows',a.id||'|'||${config.country},'metaOrigin','accountIds'),'[]'::jsonb) ? ${d.accountId}`
+          : [];
       const aliases =
         canonical &&
         canonical.sheetId === item.source?.listId &&
@@ -486,9 +591,17 @@ async function receiptStep(
               where: {
                 inventorySheetId: item.source.listId,
                 name: { equals: item.name, mode: "insensitive" },
-                OR:[{table: { defaultCountry: { in: [config.country, ""] } }},{id:{in:pendingAliases.map(a=>a.id)}}],
+                OR: [
+                  { table: { defaultCountry: { in: [config.country, ""] } } },
+                  { id: { in: pendingAliases.map((a) => a.id) } },
+                ],
               },
-              select: { id: true, tableId:true, name:true, table: { select: { defaultCountry: true } } },
+              select: {
+                id: true,
+                tableId: true,
+                name: true,
+                table: { select: { defaultCountry: true } },
+              },
               take: 3,
             })
           : [];
@@ -496,15 +609,19 @@ async function receiptStep(
           (a) => a.table.defaultCountry === config.country,
         ),
         generic = aliases.filter((a) => !a.table.defaultCountry);
-      const pending=aliases.filter(a=>pendingAliases.some(p=>p.id===a.id));
-      const alias = pending.length===1 ? pending[0] :
-        aliases.length === 3
-          ? null
-          : exact.length === 1
-            ? exact[0]
-            : !exact.length && generic.length === 1
-              ? generic[0]
-              : null;
+      const pending = aliases.filter((a) =>
+        pendingAliases.some((p) => p.id === a.id),
+      );
+      const alias =
+        pending.length === 1
+          ? pending[0]
+          : aliases.length === 3
+            ? null
+            : exact.length === 1
+              ? exact[0]
+              : !exact.length && generic.length === 1
+                ? generic[0]
+                : null;
       const campaignId = steps.find(
         (s) => s.key === `campaign:${step.campaign}`,
       )?.receipt?.id;
@@ -551,8 +668,12 @@ async function receiptStep(
                 )?.receipt?.id,
               }
             : {}),
-          ...(level === "campaign" ? { objective: "OUTCOME_ENGAGEMENT" } : {}),
-          ...(level === "adset" ? { optimizationGoal: "CONVERSATIONS" } : {}),
+          ...(level === "campaign"
+            ? { objective: campaignObjective(config) }
+            : {}),
+          ...(level === "adset"
+            ? { optimizationGoal: campaignOptimization(config) }
+            : {}),
           ...(alias ? { aliasId: alias.id, aliasCountry: config.country } : {}),
         };
         await tx.metaAdObject.upsert({
@@ -561,13 +682,48 @@ async function receiptStep(
           update: data,
         });
       }
-      if(step.kind === "VERIFY_LIVE" && alias && result.confirmed.some((o:any)=>o.id===campaignId&&o.status==="ACTIVE") && item.source?.listId){
-        const listId=item.source.listId, access=await financialAccess(actor,tx);
-        if(scopePermission(access,"TAB:"+listId)==="EDIT"){
-          let cap:Awaited<ReturnType<typeof authorizeFinancialRequest>>|null=null;
-          try{cap=await authorizeFinancialRequest(actor,"inventory/sheet-activation","PATCH",new URLSearchParams(),{listId,tableId:alias.tableId},"TAB:"+listId)}catch{/* Publishing permission never grants financial editing. */}
-          const rows=await tx.$queryRaw<{task:string|null}[]>`SELECT jsonb_extract_path_text(config,'inventoryActivation','rows',${alias.id+"|"+config.country},'campaignTask') AS task FROM "MetaEffectivenessSheet" WHERE id=${listId}`;
-          if(cap && rows[0]?.task==="CREATE")await inventoryMetaStatusChange(tx,cap,{listId,tableId:alias.tableId,aliasId:alias.id,name:alias.name,country:config.country},{active:true,campaignTask:"NONE"});
+      if (
+        step.kind === "VERIFY_LIVE" &&
+        alias &&
+        result.confirmed.some(
+          (o: any) => o.id === campaignId && o.status === "ACTIVE",
+        ) &&
+        item.source?.listId
+      ) {
+        const listId = item.source.listId,
+          access = await financialAccess(actor, tx);
+        if (scopePermission(access, "TAB:" + listId) === "EDIT") {
+          let cap: Awaited<
+            ReturnType<typeof authorizeFinancialRequest>
+          > | null = null;
+          try {
+            cap = await authorizeFinancialRequest(
+              actor,
+              "inventory/sheet-activation",
+              "PATCH",
+              new URLSearchParams(),
+              { listId, tableId: alias.tableId },
+              "TAB:" + listId,
+            );
+          } catch {
+            /* Publishing permission never grants financial editing. */
+          }
+          const rows = await tx.$queryRaw<
+            { task: string | null }[]
+          >`SELECT jsonb_extract_path_text(config,'inventoryActivation','rows',${alias.id + "|" + config.country},'campaignTask') AS task FROM "MetaEffectivenessSheet" WHERE id=${listId}`;
+          if (cap && rows[0]?.task === "CREATE")
+            await inventoryMetaStatusChange(
+              tx,
+              cap,
+              {
+                listId,
+                tableId: alias.tableId,
+                aliasId: alias.id,
+                name: alias.name,
+                country: config.country,
+              },
+              { active: true, campaignTask: "NONE" },
+            );
         }
       }
     }
@@ -587,9 +743,13 @@ async function receiptStep(
   });
 }
 export async function tickLaunch(actor: Actor, id: string) {
-  await rateLimit("creative-meta:" + actor.id, 120);
   const { d, a } = await launchAccess(actor, id);
   if (d.status !== "PUBLISHING") return publicLaunch(d);
+  // A confirmed batch has a finite plan. Another batch must not exhaust its progress allowance.
+  await rateLimit(
+    "creative-meta:" + actor.id + ":" + id,
+    Math.max(120, (d.steps as unknown[]).length * 3),
+  );
   const steps = structuredClone(d.steps) as LaunchStep[],
     step = steps.find((s) => s.state !== "DONE");
   if (!step) return publicLaunch(d);
@@ -662,7 +822,7 @@ export async function tickLaunch(actor: Actor, id: string) {
       edge = "campaigns";
       body = {
         name: `${config.country} · ${item.name}`,
-        objective: "OUTCOME_ENGAGEMENT",
+        objective: campaignObjective(config),
         buying_type: "AUCTION",
         status: "PAUSED",
         daily_budget: config.minorBudget,
@@ -676,9 +836,16 @@ export async function tickLaunch(actor: Actor, id: string) {
         name: config.audiences[step.audience!].name,
         campaign_id: resolve(`campaign:${step.campaign}`).id,
         billing_event: "IMPRESSIONS",
-        optimization_goal: "CONVERSATIONS",
-        destination_type: "WHATSAPP",
-        promoted_object: whatsappPromotedObject(config),
+        optimization_goal: campaignOptimization(config),
+        destination_type: campaignDestination(config),
+        ...(config.objective !== "TRAFFIC"
+          ? {
+              promoted_object:
+                config.objective === "LEADS"
+                  ? { page_id: config.pageId }
+                  : whatsappPromotedObject(config),
+            }
+          : {}),
         targeting: audienceTargeting(
           config,
           step.audience!,
@@ -697,14 +864,14 @@ export async function tickLaunch(actor: Actor, id: string) {
           page_id: config.pageId,
           link_data: {
             image_hash: resolve(`image:${step.campaign}:${step.image}`).hash,
-            link: "https://api.whatsapp.com/send",
+            link:
+              config.objective === undefined || config.objective === "WHATSAPP"
+                ? "https://api.whatsapp.com/send"
+                : campaignLink(config),
             message: campaignText(config.body, item, config),
             name: campaignText(config.headline, item, config),
             description: campaignText(config.description, item, config),
-            call_to_action: {
-              type: "WHATSAPP_MESSAGE",
-              value: { app_destination: "WHATSAPP" },
-            },
+            call_to_action: campaignCTA(config),
           },
         },
       };
@@ -778,11 +945,31 @@ export async function tickLaunch(actor: Actor, id: string) {
       );
       demand(
         result.object_story_spec?.link_data?.call_to_action?.type ===
-          "WHATSAPP_MESSAGE",
-        "Meta no confirmó el botón de WhatsApp. Revisa el creativo antes de publicarlo.",
+          campaignCTA(config).type,
+        "Meta no confirmó el botón del objetivo elegido. Revisa el creativo antes de publicarlo.",
         409,
       );
-      receipt = { id: remoteId, whatsapp: true };
+      demand(
+        String(result.object_story_spec?.page_id) === config.pageId &&
+          result.object_story_spec?.link_data?.name ===
+            campaignText(config.headline, item, config),
+        "Meta no confirmó la página o el headline exacto. Revisa el creativo antes de activarlo.",
+        409,
+      );
+      if (config.objective === "LEADS")
+        demand(
+          String(
+            result.object_story_spec?.link_data?.call_to_action?.value
+              ?.lead_gen_form_id,
+          ) === config.leadFormId,
+          "Meta no confirmó el formulario seleccionado.",
+          409,
+        );
+      receipt = {
+        id: remoteId,
+        objective: config.objective ?? "WHATSAPP",
+        headlineVerified: true,
+      };
     } else {
       demand(
         String(result.id) === remoteId &&
@@ -791,7 +978,7 @@ export async function tickLaunch(actor: Actor, id: string) {
         502,
       );
       demand(
-        result.objective === "OUTCOME_ENGAGEMENT" &&
+        result.objective === campaignObjective(config) &&
           Number(result.daily_budget) === config.minorBudget &&
           result.status === (step.kind === "VERIFY_LIVE" ? "ACTIVE" : "PAUSED"),
         "Meta no confirmó el estado o presupuesto revisado.",
@@ -857,4 +1044,37 @@ export async function tickLaunch(actor: Actor, id: string) {
     });
   }
   return getLaunch(actor, id);
+}
+
+export async function campaignLeadForms(
+  actor: Actor,
+  accountId: string,
+  pageId: string,
+) {
+  studioAccess(actor);
+  const a = await primaryAccount(actor, accountId);
+  const directory = await launchResources(actor, accountId, "pages");
+  demand(
+    directory.pages.some((p: any) => p.id === pageId),
+    "La página no está autorizada.",
+    403,
+  );
+  const { reader: r } = await reader(a.connectionId, false, true);
+  const result = await r.launchRequest(
+    accountId,
+    "object",
+    undefined,
+    pageId,
+    "id,leadgen_forms.limit(100){id,name,status}",
+  );
+  demand(String(result.id) === pageId, "Meta no confirmó la página.", 502);
+  await primaryAccount(actor, accountId);
+  return {
+    forms: (result.leadgen_forms?.data ?? [])
+      .filter(
+        (f: any) => f.status === "ACTIVE" && /^\d{1,40}$/.test(String(f.id)),
+      )
+      .map((f: any) => ({ id: String(f.id), name: String(f.name ?? f.id) })),
+    partial: !!result.leadgen_forms?.paging?.next,
+  };
 }

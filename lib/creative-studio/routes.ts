@@ -19,6 +19,12 @@ export async function creativeStudioRoutes(
   studio.studioAccess(actor);
   const p = parts.slice(1),
     method = req.method;
+  if (p[0] === "campaign-suggestion" && p.length === 1 && method === "POST")
+    return send(
+      await (
+        await import("./campaign-suggestion")
+      ).suggestCampaign(actor, await body()),
+    );
   if (!p.length && method === "GET")
     return send(await studio.studioContext(actor));
   if (p[0] === "projects" && p.length === 1 && method === "POST")
@@ -77,9 +83,34 @@ export async function creativeStudioRoutes(
     return send(await studio.saveStudioImages(actor, await body()));
   if (p[0] === "upload" && p[1] && method === "POST")
     return send(await uploadReady(actor, p[1], req), 201);
-  if(p[0]==="page-whatsapp"&&p[1]&&p.length===2&&method==="GET"){
-    const q=z.object({pageId:z.string().regex(/^\d{1,40}$/),refresh:z.enum(["0","1"]).optional()}).strict().parse(Object.fromEntries(req.nextUrl.searchParams));
-    return send(await campaigns.campaignPageWhatsApp(actor,p[1],q.pageId,q.refresh==="1"));
+  if (
+    p[0] === "page-lead-forms" &&
+    p[1] &&
+    p.length === 2 &&
+    method === "GET"
+  ) {
+    const q = z
+      .object({ pageId: z.string().regex(/^\d{1,40}$/) })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(await campaigns.campaignLeadForms(actor, p[1], q.pageId));
+  }
+  if (p[0] === "page-whatsapp" && p[1] && p.length === 2 && method === "GET") {
+    const q = z
+      .object({
+        pageId: z.string().regex(/^\d{1,40}$/),
+        refresh: z.enum(["0", "1"]).optional(),
+      })
+      .strict()
+      .parse(Object.fromEntries(req.nextUrl.searchParams));
+    return send(
+      await campaigns.campaignPageWhatsApp(
+        actor,
+        p[1],
+        q.pageId,
+        q.refresh === "1",
+      ),
+    );
   }
   if (p[0] === "inventory" && p[1] && method === "GET")
     return send(await studio.studioInventory(actor, p[1]));
