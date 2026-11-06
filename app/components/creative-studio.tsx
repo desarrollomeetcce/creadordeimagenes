@@ -13,6 +13,7 @@ import {
   useProductionController,
 } from "./production-controls";
 import { orderRequest } from "./order-progress";
+import { StudioGenerationCard } from "./studio-generation-card";
 import { ImagePreviewModal } from "./image-preview-modal";
 import { countryName } from "../../lib/meta-ads/countries";
 import type { CampaignItem } from "../../lib/creative-studio/campaign-policy";
@@ -1202,9 +1203,10 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     </div>
                   </article>
                 ))}
+                {production.orders.filter(o=>o.scope?.subproduct===activeSub).map(o=><StudioGenerationCard key={o.id} order={o} refresh={production.refresh}/>)}
                 {Array.from(
                   {
-                    length: Math.max(
+                    length: production.orders.some(o=>o.scope?.subproduct===activeSub)?0:Math.max(
                       1,
                       Math.min(6, count) -
                         (gallery.items.length
@@ -1285,7 +1287,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 </div>
               )}
               <div className="studio-order-area">
-                <ProductionControls controller={production} />
+                <ProductionControls controller={{...production,orders:production.orders.filter(o=>o.scope?.subproduct!==activeSub)}} />
               </div>
               <div className="studio-composer">
                 <div className="studio-composer-heading">
