@@ -3,11 +3,13 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { createAiPausedCampaigns } from "../../lib/creative-studio/ai-campaign-flow";
 import { CurrentUserId } from "./role-guide";
 import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
+import { StudioCampaignHistory } from "./studio-campaign-history";
 import { StudioPagePicker } from "./studio-page-picker";
 import { StudioMaximize } from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   campaignText,
+  requiresMetaPayer,
   imageDistribution,
   launchSummary,
   type CampaignConfig,
@@ -18,6 +20,7 @@ import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 const initial: CampaignConfig = {
   planVersion: 2,
   campaignName: "{pais} · {diplomado}",
+  aiSuggestionJobId: undefined,
   objective: "WHATSAPP",
   website: "",
   leadFormId: "",
@@ -93,8 +96,7 @@ export function StudioCampaign({
     ),
     [leadError, setLeadError] = useState(""),
     [leadLoading, setLeadLoading] = useState(false);
-  const [variableKey, setVariableKey] = useState(""),
-    [variableValue, setVariableValue] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [accountPins, setAccountPins] = useState<string[]>([]);
   useEffect(() => {
     try {
@@ -244,6 +246,14 @@ export function StudioCampaign({
     items: items.map((i) => ({ id: i.subproductId, images: i.variationIds })),
     form: { ...form, whatsapp: "" },
   });
+  useEffect(() => {
+    setDraft(null);
+    setReview(false);
+    setError("");
+    setAiRequest(null);
+    setAiProposal(null);
+    setForm({ ...initial, ...onlyConfig(template ?? initial), country });
+  }, [categoryId]);
   const lastCountry = useRef(country);
   const pending = useRef(false),
     dialog = useRef<HTMLDialogElement>(null),
@@ -266,6 +276,13 @@ export function StudioCampaign({
   }, [country]);
   useEffect(() => {
     if (!latestLaunchId) return;
+    try {
+      const stored = localStorage.getItem(
+        "studio-campaign-dismissed:v1:" + userId + ":" + categoryId,
+      );
+      const ids = stored?.startsWith("[") ? JSON.parse(stored) : [stored];
+      if (Array.isArray(ids) && ids.includes(latestLaunchId)) return;
+    } catch {}
     const controller = new AbortController();
     void studioRequest(
       "/launches/" + latestLaunchId,
@@ -282,7 +299,7 @@ export function StudioCampaign({
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
-  }, [latestLaunchId]);
+  }, [latestLaunchId, userId, categoryId]);
   useEffect(() => {
     if (!form.accountId) return;
     setPageError("");
@@ -482,6 +499,85 @@ export function StudioCampaign({
       setAiBusy(false);
     }
   }
+  const leavingBlocked =
+    busy || aiBusy || (draft?.status === "PUBLISHING" && !halted);
+  function closeNotice() {
+    try {
+      const id = draft?.id ?? latestLaunchId;
+      if (id) {
+        const key = "studio-campaign-dismissed:v1:" + userId + ":" + categoryId,
+          stored = localStorage.getItem(key);
+        const prior = stored?.startsWith("[")
+          ? JSON.parse(stored)
+          : stored
+            ? [stored]
+            : [];
+        localStorage.setItem(
+          key,
+          JSON.stringify(
+            [...new Set([...(Array.isArray(prior) ? prior : []), id])].slice(
+              -20,
+            ),
+          ),
+        );
+      }
+    } catch {}
+    setDraft(null);
+    setReview(false);
+    setHalted(false);
+    setSpend(false);
+    setError("");
+  }
+  function newCampaign(saved?: CampaignConfig) {
+    closeNotice();
+    setAiRequest(null);
+    setAiProposal(null);
+    setAiConsent(false);
+    setAiPrompt("");
+    restore.current([]);
+    setForm((f) => {
+      const next = saved ? onlyConfig(saved) : f;
+      return {
+        ...next,
+        country,
+        targetStatus: "PAUSED",
+        body: saved ? next.body : initial.body,
+        description: saved ? next.description : "",
+        campaignName: saved ? next.campaignName : initial.campaignName,
+        aiSuggestionJobId: undefined,
+        audiences: next.audiences.map((a, i) => ({
+          ...a,
+          name: "Público " + (i + 1),
+          interests: undefined,
+        })),
+      };
+    });
+    setHistoryOpen(false);
+  }
+  async function authorizePageAccess() {
+    if (!resources.canAuthorizePages || !resources.connectionId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch(
+        "/api/meta-ads/connections/" +
+          encodeURIComponent(resources.connectionId) +
+          "/pages-oauth",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
+      );
+      const result = await r.json();
+      if (!r.ok) throw Error(result.error || "No se pudo autorizar la página.");
+      window.location.assign(result.url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo abrir Facebook.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function prepare(open: boolean) {
     if (pending.current) return;
     pending.current = true;
@@ -551,6 +647,30 @@ export function StudioCampaign({
               : "WhatsApp"}
         </span>
       </header>
+      <nav className="studio-campaign-navigation" aria-label="Campañas">
+        <button
+          type="button"
+          disabled={leavingBlocked}
+          onClick={() => newCampaign()}
+        >
+          ＋ Nueva campaña
+        </button>
+        <button
+          type="button"
+          disabled={leavingBlocked}
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((v) => !v)}
+        >
+          Bitácora
+        </button>
+      </nav>
+      {historyOpen && (
+        <StudioCampaignHistory
+          categoryId={categoryId}
+          onUse={(c) => newCampaign(c)}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
       <div className="studio-selected-summary">
         <span className="studio-orbit">↗</span>
         <strong>
@@ -928,67 +1048,6 @@ export function StudioCampaign({
           </label>
         </div>
         <small className="studio-template-help">{"{diplomado} · {pais}"}</small>
-        <details className="studio-custom-variables">
-          <summary>Variables del anuncio</summary>
-          <small>
-            Se reemplazan en texto, headline y descripción. El nombre del
-            inventario se conserva en {"{diplomado}"}.
-          </small>
-          {Object.entries(form.variables).map(([k, v]) => (
-            <div className="studio-variable-row" key={k}>
-              <code>{"{" + k + "}"}</code>
-              <span>{v}</span>
-              <button
-                type="button"
-                aria-label={"Quitar variable " + k}
-                onClick={() => {
-                  const next = { ...form.variables };
-                  delete next[k];
-                  update("variables", next);
-                }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <label>
-            Nombre de variable
-            <input
-              aria-label="Nombre de variable"
-              value={variableKey}
-              placeholder="institucion"
-              onChange={(e) => setVariableKey(e.target.value)}
-            />
-          </label>
-          <label>
-            Valor
-            <input
-              aria-label="Valor de variable"
-              value={variableValue}
-              onChange={(e) => setVariableValue(e.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            disabled={
-              !/^[a-z][a-z0-9_]{0,39}$/.test(variableKey) ||
-              ["diplomado", "producto", "pais", "codigo"].includes(
-                variableKey,
-              ) ||
-              Object.keys(form.variables).length >= 20
-            }
-            onClick={() => {
-              update("variables", {
-                ...form.variables,
-                [variableKey]: variableValue,
-              });
-              setVariableKey("");
-              setVariableValue("");
-            }}
-          >
-            Añadir variable
-          </button>
-        </details>
         <section className="studio-placements">
           <strong>Ubicaciones</strong>
           <small>
@@ -1066,9 +1125,9 @@ export function StudioCampaign({
               />
             </label>
             <small>
-              La IA completa texto, descripción y públicos. Conserva tu
-              headline, país, presupuesto y ubicaciones. Las campañas se crean
-              pausadas.
+              La IA completa texto, descripción y públicos con intereses
+              consultados a Meta. Conserva tu headline, país, presupuesto y
+              ubicaciones. Las campañas se crean pausadas.
             </small>
             <label>
               Descripción opcional
@@ -1095,9 +1154,9 @@ export function StudioCampaign({
         {mode === "TRADITIONAL" && (
           <>
             <label>
-              Texto del anuncio
+              Texto principal
               <textarea
-                aria-label="Texto del anuncio"
+                aria-label="Texto principal"
                 rows={4}
                 value={form.body}
                 onChange={(e) => update("body", e.target.value)}
@@ -1178,83 +1237,102 @@ export function StudioCampaign({
                           ))}
                         </select>
                       </label>
-                      <div className="studio-field-pair">
-                        <label>
-                          Edad desde
-                          <input
-                            type="number"
-                            min="18"
-                            max="65"
-                            value={a.ageMin}
-                            onChange={(e) =>
-                              update(
-                                "audiences",
-                                form.audiences.map((x, j) =>
-                                  j === i
-                                    ? { ...x, ageMin: Number(e.target.value) }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                        <label>
-                          Hasta
-                          <input
-                            type="number"
-                            min="18"
-                            max="65"
-                            value={a.ageMax}
-                            onChange={(e) =>
-                              update(
-                                "audiences",
-                                form.audiences.map((x, j) =>
-                                  j === i
-                                    ? { ...x, ageMax: Number(e.target.value) }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                      </div>
-                      <label>
-                        Género
-                        <select
-                          value={a.gender}
-                          onChange={(e) =>
-                            update(
-                              "audiences",
-                              form.audiences.map((x, j) =>
-                                j === i ? { ...x, gender: e.target.value } : x,
-                              ),
-                            )
-                          }
-                        >
-                          <option value="ALL">Todos</option>
-                          <option value="WOMEN">Mujeres</option>
-                          <option value="MEN">Hombres</option>
-                        </select>
-                      </label>
-                      <label className="studio-check">
-                        <input
-                          type="checkbox"
-                          checked={a.strictAge}
-                          onChange={(e) =>
-                            update(
-                              "audiences",
-                              form.audiences.map((x, j) =>
-                                j === i
-                                  ? { ...x, strictAge: e.target.checked }
-                                  : x,
-                              ),
-                            )
-                          }
-                        />
-                        Aplicar edades estrictas
-                      </label>
-                      {!a.strictAge && (
-                        <small>Edades sugeridas · Advantage+ Audience</small>
+                      {a.savedAudienceId ? (
+                        <small>
+                          Se conservarán la edad, género y segmentación del
+                          público guardado.
+                        </small>
+                      ) : (
+                        <>
+                          <div className="studio-field-pair">
+                            <label>
+                              Edad desde
+                              <input
+                                type="number"
+                                min="18"
+                                max="65"
+                                value={a.ageMin}
+                                onChange={(e) =>
+                                  update(
+                                    "audiences",
+                                    form.audiences.map((x, j) =>
+                                      j === i
+                                        ? {
+                                            ...x,
+                                            ageMin: Number(e.target.value),
+                                          }
+                                        : x,
+                                    ),
+                                  )
+                                }
+                              />
+                            </label>
+                            <label>
+                              Hasta
+                              <input
+                                type="number"
+                                min="18"
+                                max="65"
+                                value={a.ageMax}
+                                onChange={(e) =>
+                                  update(
+                                    "audiences",
+                                    form.audiences.map((x, j) =>
+                                      j === i
+                                        ? {
+                                            ...x,
+                                            ageMax: Number(e.target.value),
+                                          }
+                                        : x,
+                                    ),
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                          <label>
+                            Género
+                            <select
+                              value={a.gender}
+                              onChange={(e) =>
+                                update(
+                                  "audiences",
+                                  form.audiences.map((x, j) =>
+                                    j === i
+                                      ? { ...x, gender: e.target.value }
+                                      : x,
+                                  ),
+                                )
+                              }
+                            >
+                              <option value="ALL">Todos</option>
+                              <option value="WOMEN">Mujeres</option>
+                              <option value="MEN">Hombres</option>
+                            </select>
+                          </label>
+                          <label className="studio-check">
+                            <input
+                              type="checkbox"
+                              checked={a.strictAge}
+                              onChange={(e) =>
+                                update(
+                                  "audiences",
+                                  form.audiences.map((x, j) =>
+                                    j === i
+                                      ? { ...x, strictAge: e.target.checked }
+                                      : x,
+                                  ),
+                                )
+                              }
+                            />
+                            Aplicar edades estrictas
+                          </label>
+                          {!a.strictAge && (
+                            <small>
+                              Edades sugeridas · Advantage+ Audience
+                            </small>
+                          )}
+                        </>
                       )}
                     </section>
                   ))}
@@ -1282,20 +1360,24 @@ export function StudioCampaign({
                 </option>
               </select>
             </label>
-            <label>
-              Beneficiario
-              <input
-                value={form.beneficiary}
-                onChange={(e) => update("beneficiary", e.target.value)}
-              />
-            </label>
-            <label>
-              Pagador
-              <input
-                value={form.payor}
-                onChange={(e) => update("payor", e.target.value)}
-              />
-            </label>
+            {requiresMetaPayer(country) && (
+              <>
+                <label>
+                  Beneficiario
+                  <input
+                    value={form.beneficiary}
+                    onChange={(e) => update("beneficiary", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Pagador
+                  <input
+                    value={form.payor}
+                    onChange={(e) => update("payor", e.target.value)}
+                  />
+                </label>
+              </>
+            )}
           </div>
         )}
         {mode === "AI" ? (
@@ -1333,7 +1415,7 @@ export function StudioCampaign({
                   DRAFT: "Borrador guardado",
                   PUBLISHING: "Publicando en Meta…",
                   PUBLISHED: "✓ Publicación confirmada por Meta",
-                  NEEDS_REVIEW: "Requiere revisión",
+                  NEEDS_REVIEW: "Intento incompleto",
                 } as any
               )[draft.status]
             }
@@ -1345,7 +1427,40 @@ export function StudioCampaign({
             {Math.round((100 * draft.completed) / Math.max(1, draft.total))} %
             confirmado
           </small>
-          {draft.error && <p>{draft.error}</p>}
+          {draft.error && (
+            <details>
+              <summary>Ver motivo del intento</summary>
+              <p>{draft.error}</p>
+            </details>
+          )}
+          {(draft.status !== "PUBLISHING" || halted) && (
+            <div className="studio-campaign-recovery">
+              <button
+                type="button"
+                disabled={leavingBlocked}
+                onClick={closeNotice}
+              >
+                Cerrar aviso
+              </button>
+              <button
+                type="button"
+                disabled={leavingBlocked}
+                onClick={() => newCampaign()}
+              >
+                Nueva campaña
+              </button>
+            </div>
+          )}
+          {draft.status === "NEEDS_REVIEW" && resources.canAuthorizePages && (
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => void authorizePageAccess()}
+            >
+              Autorizar página y anuncios
+            </button>
+          )}
+
           {draft.createdCampaigns.map((c: any) => (
             <a
               key={c.id}

@@ -42,45 +42,91 @@ export function generationCardState(order: OrderProgress) {
     detail: "El siguiente afiche comenzará cuando llegue su turno.",
   };
 }
+export function generationSlots(
+  order: OrderProgress,
+  visibleImageIds: string[] = [],
+) {
+  const gate = !!order.sampleJobId && order.sample?.reviewStatus !== "APPROVED";
+  if (
+    gate &&
+    order.sample &&
+    !order.sample.deletedAt &&
+    visibleImageIds.includes(order.sample.id)
+  )
+    return [];
+  const jobs = (order.jobs ?? []).filter(
+    (j) =>
+      ["PENDING", "RUNNING", "FAILED", "UNCERTAIN"].includes(j.status) &&
+      (!gate || j.id === order.sampleJobId),
+  );
+  if (jobs.length)
+    return jobs
+      .slice(0, 12)
+      .map((j) => ({
+        key: j.id,
+        state: generationCardState({
+          ...order,
+          running: j.status === "RUNNING" ? 1 : 0,
+          pending: j.status === "PENDING" ? 1 : 0,
+          failed: j.status === "FAILED" ? 1 : 0,
+          uncertain: j.status === "UNCERTAIN" ? 1 : 0,
+        }),
+      }));
+  return [{ key: order.id + ":summary", state: generationCardState(order) }];
+}
 export function StudioGenerationCard({
   order,
   refresh,
+  visibleImageIds = [],
 }: {
   order: OrderProgress;
   refresh: () => Promise<void>;
+  visibleImageIds?: string[];
 }) {
-  const state = generationCardState(order);
+  const slots = generationSlots(order, visibleImageIds);
   return (
-    <article
-      className="studio-generation-card"
-      data-order-id={order.id}
-      data-generating={state.animated || undefined}
-    >
-      <div className="studio-generation-visual" aria-busy={state.animated}>
-        <span className="studio-generation-orbit" aria-hidden="true">
-          ✦
-        </span>
-        <strong role="status">{state.label}</strong>
-        <small>{state.detail}</small>
-        <div className="studio-generation-counts">
-          <span>{order.completed} listas</span>
-          {order.running > 0 && <span>{order.running} generando</span>}
-          {order.pending > 0 && <span>{order.pending} en espera</span>}
-        </div>
-        <progress
-          max={Math.max(1, order.target)}
-          value={order.completed}
-          aria-label="Afiches terminados"
-        />
-      </div>
-      <div className="studio-generation-actions">
-        <OrderProgressCard
-          order={order}
-          refresh={refresh}
-          inline
-          approvalInImage
-        />
-      </div>
-    </article>
+    <>
+      {slots.map((slot, index) => (
+        <article
+          key={slot.key}
+          className="studio-generation-card"
+          data-order-id={order.id}
+          data-generating={slot.state.animated || undefined}
+        >
+          <div
+            className="studio-generation-visual"
+            aria-busy={slot.state.animated}
+          >
+            <span className="studio-generation-orbit" aria-hidden="true">
+              ✦
+            </span>
+            <strong role="status">{slot.state.label}</strong>
+            <small>{slot.state.detail}</small>
+            <div className="studio-generation-counts">
+              <span>{order.completed} listas</span>
+              {order.running > 0 && <span>{order.running} generando</span>}
+              {order.pending > 0 && <span>{order.pending} en espera</span>}
+            </div>
+            <progress
+              max={Math.max(1, order.target)}
+              value={order.completed}
+              aria-label="Afiches terminados"
+            />
+          </div>
+          {index === 0 && (
+            <div className="studio-generation-actions">
+              <OrderProgressCard
+                order={order}
+                refresh={refresh}
+                inline
+                approvalInImage={
+                  !!order.sample && visibleImageIds.includes(order.sample.id)
+                }
+              />
+            </div>
+          )}
+        </article>
+      ))}
+    </>
   );
 }

@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { metaInterestSchema } from "./audience-interests";
 import { demand } from "../errors";
 import { countryName, isCountryCode } from "../meta-ads/countries";
 export const audienceSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
+    interests: z.array(metaInterestSchema).max(10).optional(),
     ageMin: z.number().int().min(18).max(65).default(18),
     ageMax: z.number().int().min(18).max(65).default(65),
     gender: z.enum(["ALL", "MEN", "WOMEN"]).default("ALL"),
@@ -19,6 +21,7 @@ export const campaignConfigSchema = z
   .object({
     planVersion: z.literal(2).optional(),
     campaignName: z.string().trim().max(250).optional(),
+    aiSuggestionJobId: z.string().min(1).max(100).optional(),
     objective: z.enum(["WHATSAPP", "LEADS", "TRAFFIC"]).default("WHATSAPP"),
     website: z.string().max(2000).default(""),
     leadFormId: z
@@ -96,14 +99,18 @@ export function campaignText(
   item: CampaignItem,
   c: CampaignConfig,
 ) {
-  return template.replace(/\{([a-z][a-z0-9_]{0,39})\}/g, (m, k) =>
-    k === "pais"
-      ? countryName(c.country)
-      : k === "codigo"
-        ? c.code
-        : ["diplomado", "producto"].includes(k)
-          ? item.name
-          : (c.variables?.[k] ?? m),
+  return template.replace(
+    /\{([a-z][a-z0-9_]{0,39})\}|\[([a-z][a-z0-9_]{0,39})\]/g,
+    (m, first, second) => {
+      const k = first ?? second;
+      return k === "pais"
+        ? countryName(c.country)
+        : k === "codigo"
+          ? (c.variables?.codigo ?? c.code)
+          : ["diplomado", "producto"].includes(k)
+            ? item.name
+            : (c.variables?.[k] ?? m);
+    },
   );
 }
 export function minorBudget(value: number, currency: string) {
@@ -130,6 +137,15 @@ export function audienceTargeting(
 ) {
   const a = config.audiences[index];
   const special = config.specialCategory && config.specialCategory !== "NONE";
+  const savedSelected = !!a.savedAudienceId && !!saved;
+  const genders =
+    savedSelected && Array.isArray(saved?.genders) ? saved.genders : undefined;
+  const automation =
+    savedSelected &&
+    saved?.targeting_automation &&
+    typeof saved.targeting_automation === "object"
+      ? (saved.targeting_automation as Record<string, unknown>)
+      : null;
   const {
     publisher_platforms: _p,
     facebook_positions: _f,
@@ -141,16 +157,55 @@ export function audienceTargeting(
     excluded_geo_locations: _eg,
     ...safeSaved
   } = saved ?? {};
+  for (const key of Object.keys(safeSaved))
+    if (
+      key.startsWith("effective_") ||
+      [
+        "page_types",
+        "dt_consolidation_state",
+        "targeting_optimization",
+      ].includes(key)
+    )
+      delete safeSaved[key];
+  if (a.interests?.length) {
+    delete safeSaved.interests;
+    delete safeSaved.flexible_spec;
+  }
   return {
     ...safeSaved,
     publisher_platforms: config.platforms ?? ["facebook", "instagram"],
     geo_locations: { countries: [config.country] },
-    ...(special ? {} : { age_min: a.ageMin, age_max: a.ageMax }),
-    ...(special || a.gender === "ALL"
+    ...(special
       ? {}
-      : { genders: [a.gender === "MEN" ? 1 : 2] }),
+      : {
+          age_min:
+            savedSelected && typeof saved?.age_min === "number"
+              ? saved.age_min
+              : a.ageMin,
+          age_max:
+            savedSelected && typeof saved?.age_max === "number"
+              ? saved.age_max
+              : a.ageMax,
+        }),
+    ...(a.interests?.length
+      ? { flexible_spec: [{ interests: a.interests }] }
+      : {}),
+    ...(savedSelected && !special
+      ? genders
+        ? { genders }
+        : {}
+      : special || a.gender === "ALL"
+        ? {}
+        : { genders: [a.gender === "MEN" ? 1 : 2] }),
     targeting_automation: {
-      advantage_audience: special || !a.strictAge ? 1 : 0,
+      ...(automation ?? {}),
+      advantage_audience: savedSelected
+        ? automation?.advantage_audience === 0
+          ? 0
+          : 1
+        : special || !a.strictAge
+          ? 1
+          : 0,
     },
   };
 }
@@ -184,6 +239,15 @@ export function launchPlan(
     });
     add(`verify:${i}`, "VERIFY", i);
   });
+  if (balanced) {
+    const prepared = steps.filter((s) =>
+      ["IMAGE", "CREATIVE", "VERIFY_CREATIVE"].includes(s.kind),
+    );
+    const objects = steps.filter(
+      (s) => !["IMAGE", "CREATIVE", "VERIFY_CREATIVE"].includes(s.kind),
+    );
+    steps.splice(0, steps.length, ...prepared, ...objects);
+  }
   if (active) {
     campaigns.forEach((c, i) => {
       for (let a = 0; a < count; a++)
@@ -322,9 +386,7 @@ export function validateCampaignDestination(c: CampaignConfig) {
   const keys = Object.keys(c.variables);
   demand(
     keys.length <= 20 &&
-      !keys.some((k) =>
-        ["diplomado", "producto", "pais", "codigo"].includes(k),
-      ),
+      !keys.some((k) => ["diplomado", "producto", "pais"].includes(k)),
     "Usa hasta 20 variables propias; los nombres predeterminados están reservados.",
   );
 }
@@ -343,8 +405,13 @@ export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
     ["description", 500],
   ] as const) {
     const value = c[key];
-    for (const match of value.matchAll(/\{([a-z][a-z0-9_]{0,39})\}/g))
-      demand(known.has(match[1]), `Falta definir la variable {${match[1]}}.`);
+    for (const match of value.matchAll(
+      /\{([a-z][a-z0-9_]{0,39})\}|\[([a-z][a-z0-9_]{0,39})\]/g,
+    ))
+      demand(
+        known.has(match[1] ?? match[2]),
+        `Falta definir la variable {${match[1] ?? match[2]}}.`,
+      );
     const rendered = campaignText(value, item, c);
     demand(
       rendered.length <= max &&
@@ -358,9 +425,12 @@ export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
     "El nombre de campaña supera 250 caracteres.",
   );
   for (const match of (c.campaignName ?? "").matchAll(
-    /\{([a-z][a-z0-9_]{0,39})\}/g,
+    /\{([a-z][a-z0-9_]{0,39})\}|\[([a-z][a-z0-9_]{0,39})\]/g,
   ))
-    demand(known.has(match[1]), `Falta definir la variable {${match[1]}}.`);
+    demand(
+      known.has(match[1] ?? match[2]),
+      `Falta definir la variable {${match[1] ?? match[2]}}.`,
+    );
 }
 
 export function campaignDisplayName(item: CampaignItem, c: CampaignConfig) {
@@ -369,4 +439,10 @@ export function campaignDisplayName(item: CampaignItem, c: CampaignConfig) {
     item,
     c,
   );
+}
+
+export function requiresMetaPayer(country: string) {
+  return "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE"
+    .split(" ")
+    .includes(country);
 }

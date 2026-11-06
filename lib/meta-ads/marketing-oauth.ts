@@ -156,7 +156,11 @@ export async function beginMarketingOAuth(
       connectionRevision: c.revision,
       browserHash: tokenHash(browser),
       verifier: encryptKey(
-        pages ? "marketing-pages-flow" : manage ? "marketing-manage-flow" : "marketing-code-flow",
+        pages
+          ? "marketing-pages-flow"
+          : manage
+            ? "marketing-manage-flow"
+            : "marketing-code-flow",
         "meta-marketing-oauth:" + key,
       ),
       clientId: c.appId,
@@ -173,7 +177,13 @@ export async function beginMarketingOAuth(
     state,
     ...(c.loginConfigId
       ? { config_id: c.loginConfigId, override_default_response_type: "true" }
-      : { scope: pages ? "ads_read,ads_management,pages_show_list" : manage ? "ads_read,ads_management" : "ads_read" }),
+      : {
+          scope: pages
+            ? "ads_read,ads_management,pages_show_list,pages_read_engagement,pages_manage_ads"
+            : manage
+              ? "ads_read,ads_management"
+              : "ads_read",
+        }),
     ...(pages ? { auth_type: "rerequest" } : {}),
   }).toString();
   const response = NextResponse.json(
@@ -285,7 +295,11 @@ export async function finishMarketingOAuth(req: NextRequest) {
     demand(
       row.tokenEndpoint ===
         `https://graph.facebook.com/${c.apiVersion}/oauth/access_token` &&
-        ["marketing-code-flow", "marketing-manage-flow", "marketing-pages-flow"].includes(flow),
+        [
+          "marketing-code-flow",
+          "marketing-manage-flow",
+          "marketing-pages-flow",
+        ].includes(flow),
       "El estado de autorización no es compatible.",
       400,
     );
@@ -386,7 +400,26 @@ export async function finishMarketingOAuth(req: NextRequest) {
         "Facebook no concedió ads_management. Habilita ese permiso en la app y autoriza nuevamente. Tu conexión anterior se conserva.",
         403,
       );
-    if (flow === "marketing-pages-flow") demand(permissions.data.some((r: any) => r.permission === "pages_show_list" && r.status === "granted"), "Facebook no concedió pages_show_list. Habilítalo en tu app o configuración de Facebook Login para empresas y vuelve a autorizar el acceso a las páginas. Tu credencial anterior se conserva.", 403);
+    if (flow === "marketing-pages-flow") {
+      const required = [
+        "pages_show_list",
+        "pages_read_engagement",
+        "pages_manage_ads",
+      ];
+      const missing = required.filter(
+        (p) =>
+          !permissions.data.some(
+            (r: any) => r.permission === p && r.status === "granted",
+          ),
+      );
+      demand(
+        !missing.length,
+        "Facebook no concedió " +
+          missing.join(", ") +
+          ". Habilita esos permisos de páginas y anuncios en la app o configuración empresarial y autoriza nuevamente. Tu credencial anterior se conserva.",
+        403,
+      );
+    }
     await activeSession(row.sessionId, row.ownerId);
     await new MetaReader(token, "API", c.apiVersion, secret).get("accounts", {
       accountView: "minimal",

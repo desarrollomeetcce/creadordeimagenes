@@ -1,5 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
+import {
+  readGenerationPreferences,
+  type GenerationPreferences,
+} from "../../lib/creative-studio/generation-preferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StudioColumns, StudioMaximize } from "./studio-columns";
 import { SheetSearchSelect } from "./sheet-search-select";
@@ -12,7 +16,7 @@ import {
   ProductionControls,
   useProductionController,
 } from "./production-controls";
-import { orderRequest } from "./order-progress";
+import { orderRequest, OrderProgressCard } from "./order-progress";
 import { StudioGenerationCard } from "./studio-generation-card";
 import { ImagePreviewModal } from "./image-preview-modal";
 import { countryName } from "../../lib/meta-ads/countries";
@@ -25,6 +29,7 @@ const modes = [
   { id: "Imagen + Texto", label: "Imagen + texto" },
   { id: "Texto", label: "Texto y logos" },
   { id: "Imagen", label: "Solo imagen" },
+  { id: "Aleatorio", label: "Aleatorio" },
 ];
 const baseSettings = {
   format: "1:1",
@@ -42,6 +47,10 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [productQuery, setProductQuery] = useState(""),
     [country, setCountry] = useState(""),
     [projectPrompt, setProjectPrompt] = useState(""),
+    [projectConfigOpen, setProjectConfigOpen] = useState(true),
+    [generationPreferences, setGenerationPreferences] = useState<
+      Record<string, GenerationPreferences>
+    >({}),
     [settings, setSettings] = useState<any>(baseSettings),
     [activeSub, setActiveSub] = useState(""),
     [prompts, setPrompts] = useState<Record<string, string>>({}),
@@ -55,7 +64,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [notice, setNotice] = useState(""),
     [zone, setZone] = useState("canvas"),
     [inventoryId, setInventoryId] = useState(""),
-    [inventoryFocusRequest,setInventoryFocusRequest]=useState(0),
+    [inventoryFocusRequest, setInventoryFocusRequest] = useState(0),
     [pendingSelection, setPendingSelection] = useState<any>(null),
     [manualName, setManualName] = useState(""),
     [web, setWeb] = useState(""),
@@ -67,14 +76,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [mode, setMode] = useState("Imagen + Texto"),
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
-  const handoffCountry=useRef("");
+  const handoffCountry = useRef("");
   const draftProducts = useRef(new Map<string, Record<string, string>>());
   const mounted = useRef(true),
     projectSeq = useRef(0),
     productSeq = useRef(0),
     gallerySeq = useRef(0),
     action = useRef(false),
-
     draftProjects = useRef(new Map<string, any>()),
     activeRef = useRef(activeSub),
     pageRef = useRef(page),
@@ -165,12 +173,23 @@ export function CreativeStudio({ userId }: { userId: string }) {
         ...draft?.settings,
       };
       setProjectPrompt(draft?.prompt ?? p.prompt);
+      setProjectConfigOpen(!!draft || !p.prompt?.trim());
       setSettings(s);
       setCount(s.count);
       setMode(s.mode);
       setReferencesOpen(false);
-      const compatible=handoffCountry.current ? p.categories.filter((c:any)=>c.studio?.country===handoffCountry.current) : p.categories;
-      const next = compatible.find((c:any)=>c.id===initialProduct) ?? (handoffCountry.current ? compatible[0] : compatible.length===1 ? compatible[0] : null);
+      const compatible = handoffCountry.current
+        ? p.categories.filter(
+            (c: any) => c.studio?.country === handoffCountry.current,
+          )
+        : p.categories;
+      const next =
+        compatible.find((c: any) => c.id === initialProduct) ??
+        (handoffCountry.current
+          ? compatible[0]
+          : compatible.length === 1
+            ? compatible[0]
+            : null);
       if (next) await chooseProduct(next.id, initialSub);
     } finally {
       if (seq === projectSeq.current) setLoading(false);
@@ -279,9 +298,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
         const query = new URLSearchParams(location.search);
         const selectionId = query.get("selection");
         if (selectionId) {
-          const selection=await studioRequest("/selections/"+selectionId);
-          if(!alive)return;
-          handoffCountry.current=selection.country;
+          const selection = await studioRequest("/selections/" + selectionId);
+          if (!alive) return;
+          handoffCountry.current = selection.country;
           setPendingSelection(selection);
           setZone("project");
           setInventoryId(selection.listId);
@@ -374,7 +393,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
     });
     setProject((p: any) => ({ ...p, prompt: r.prompt, studio: r.studio }));
     draftProjects.current.delete(project.id);
-    setNotice("✓ Proyecto guardado");
+    setNotice("✓ Configuración guardada");
+    setProjectConfigOpen(false);
   }
   async function createProject() {
     const p = await studioRequest("/projects", "POST", {
@@ -441,8 +461,15 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   async function addItems(ids: string[], value: string) {
     if (!product) return;
-    if(pendingSelection && (product.studio?.country !== pendingSelection.country || inventoryId !== pendingSelection.listId))throw Error(`Elige o crea una carpeta de ${countryName(pendingSelection.country)} y conserva el Inventario de la selección.`);
-    if(product.studio?.country !== value)await changeCountry(value);
+    if (
+      pendingSelection &&
+      (product.studio?.country !== pendingSelection.country ||
+        inventoryId !== pendingSelection.listId)
+    )
+      throw Error(
+        `Elige o crea una carpeta de ${countryName(pendingSelection.country)} y conserva el Inventario de la selección.`,
+      );
+    if (product.studio?.country !== value) await changeCountry(value);
     const added = await studioRequest(
       "/products/" + product.id + "/items",
       "POST",
@@ -463,13 +490,20 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setActiveSub(added[0].id);
       setTargetSubs(added.map((s: any) => s.id));
     }
-    handoffCountry.current="";
+    handoffCountry.current = "";
     setPendingSelection(null);
     setZone("canvas");
     setNotice("✓ " + added.length + " elementos listos en esta carpeta");
   }
-  const loadInventoryDirectory=useCallback((id:string)=>readGroupDirectory(userId,id,()=>studioRequest("/inventory/"+id)),[userId]);
-  function focusInventorySelector(){setZone("project");setInventoryFocusRequest(n=>n+1)}
+  const loadInventoryDirectory = useCallback(
+    (id: string) =>
+      readGroupDirectory(userId, id, () => studioRequest("/inventory/" + id)),
+    [userId],
+  );
+  function focusInventorySelector() {
+    setZone("project");
+    setInventoryFocusRequest((n) => n + 1);
+  }
   async function addName() {
     const added = await studioRequest(
       "/products/" + product.id + "/items",
@@ -488,9 +522,26 @@ export function CreativeStudio({ userId }: { userId: string }) {
     } catch {}
     await reloadProduct();
     setActiveSub(added[0].id);
-    setTargetSubs(ids=>[...new Set([...ids,added[0].id])]);
+    setTargetSubs((ids) => [...new Set([...ids, added[0].id])]);
     setManualName("");
     setZone("canvas");
+  }
+  function generationFor(id: string) {
+    return (
+      generationPreferences[id] ??
+      readGenerationPreferences(
+        product?.subproducts.find((s: any) => s.id === id)?.studio
+          ?.generationPreferences,
+        { count, mode },
+      )
+    );
+  }
+  function changeGeneration(value: Partial<GenerationPreferences>) {
+    if (!activeSub) return;
+    setGenerationPreferences((p) => ({
+      ...p,
+      [activeSub]: { ...(p[activeSub] ?? generationFor(activeSub)), ...value },
+    }));
   }
   async function generate(ids: string[]) {
     if (!product || !ids.length) return;
@@ -505,6 +556,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
         requestId: crypto.randomUUID(),
         subproductIds: ids,
         prompts: values,
+        options: Object.fromEntries(ids.map((id) => [id, generationFor(id)])),
         count,
         mode,
         format: settings.format,
@@ -593,7 +645,18 @@ export function CreativeStudio({ userId }: { userId: string }) {
     );
   return (
     <section className="creative-studio">
-      {pendingSelection&&<aside className="notice studio-replacement-handoff" role="status"><strong>Para anuncios · {countryName(pendingSelection.country)}</strong><p>{pendingSelection.items.map((i:any)=>i.name).join(" · ")}</p><small>Elige o crea una carpeta de este país. La selección se añadirá sin generar ni publicar anuncios.</small></aside>}
+      {pendingSelection && (
+        <aside className="notice studio-replacement-handoff" role="status">
+          <strong>
+            Para anuncios · {countryName(pendingSelection.country)}
+          </strong>
+          <p>{pendingSelection.items.map((i: any) => i.name).join(" · ")}</p>
+          <small>
+            Elige o crea una carpeta de este país. La selección se añadirá sin
+            generar ni publicar anuncios.
+          </small>
+        </aside>
+      )}
       <nav className="studio-mobile-tabs" aria-label="Áreas del estudio">
         {[
           ["project", "01 Proyecto"],
@@ -662,159 +725,175 @@ export function CreativeStudio({ userId }: { userId: string }) {
           )}
           {project ? (
             <>
-              <label className="studio-prompt-label">
-                Prompt / comportamiento
-                <textarea
-                  aria-label="Prompt del proyecto"
-                  rows={7}
-                  maxLength={30000}
-                  value={projectPrompt}
-                  disabled={!project.canEdit}
-                  placeholder="Define el estilo, los textos y las reglas que compartirán tus afiches…"
-                  onChange={(e) => {
-                    setProjectPrompt(e.target.value);
-                    draftProject(e.target.value, settings);
-                  }}
-                />
-                <span>
-                  {projectPrompt.length.toLocaleString("es-PE")} caracteres
-                </span>
-              </label>
               <details
-                className="studio-reference-details"
+                className="studio-project-config"
+                key={project.id}
+                open={projectConfigOpen}
                 onToggle={(e) => {
-                  if (e.currentTarget.open) setReferencesOpen(true);
+                  if (e.currentTarget.open !== projectConfigOpen)
+                    setProjectConfigOpen(e.currentTarget.open);
                 }}
               >
-                <summary>
-                  ⌁ Referencias opcionales <span>＋</span>
-                </summary>
-                {referencesOpen && (
-                  <div className="studio-reference-content">
-                    <label>
-                      Enlace web
-                      <input
-                        type="url"
-                        placeholder="https://…"
-                        value={web}
-                        onChange={(e) => setWeb(e.target.value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={busy || !web.trim()}
-                      onClick={() =>
-                        void run(async () => {
-                          await studioRequest(
-                            "/projects/" + project.id + "/web",
-                            "POST",
-                            { url: web },
-                          );
-                          setWeb("");
-                          setAttachmentsRevision((x) => x + 1);
-                          setNotice("✓ Referencia web añadida");
-                        })
-                      }
-                    >
-                      Añadir enlace
-                    </button>
-                    <Attachments
-                      key={project.id + ":" + attachmentsRevision}
-                      scope="project"
-                      id={project.id}
+                <summary>Configuración</summary>
+                <div className="studio-project-config-content">
+                  <label className="studio-prompt-label">
+                    Instrucciones del proyecto
+                    <textarea
+                      aria-label="Configuración del proyecto"
+                      rows={7}
+                      maxLength={30000}
+                      value={projectPrompt}
+                      disabled={!project.canEdit}
+                      placeholder="Define el estilo, los textos y las reglas que compartirán tus afiches…"
+                      onChange={(e) => {
+                        setProjectPrompt(e.target.value);
+                        draftProject(e.target.value, settings);
+                      }}
                     />
-                  </div>
-                )}
-              </details>
-              <details className="studio-settings">
-                <summary>◈ Formato y acabado</summary>
-                <div className="studio-field-pair">
-                  <label>
-                    Formato
-                    <select
-                      value={settings.format}
-                      onChange={(e) => {
-                        const s = { ...settings, format: e.target.value };
-                        setSettings(s);
-                        draftProject(projectPrompt, s);
-                      }}
-                    >
-                      <option value="1:1">Cuadrado · 1:1</option>
-                      <option value="4:5">Vertical · 4:5</option>
-                      <option value="9:16">Historia · 9:16</option>
-                      <option value="16:9">Horizontal · 16:9</option>
-                    </select>
+                    <span>
+                      {projectPrompt.length.toLocaleString("es-PE")} caracteres
+                    </span>
                   </label>
-                  <label>
-                    Calidad
-                    <select
-                      value={settings.quality}
-                      onChange={(e) => {
-                        const s = { ...settings, quality: e.target.value };
-                        setSettings(s);
-                        draftProject(projectPrompt, s);
-                      }}
-                    >
-                      {context.qualities.length ? (
-                        context.qualities.map((x: string) => (
-                          <option key={x} value={x}>
-                            {(
-                              {
-                                low: "Baja",
-                                medium: "Media",
-                                high: "Alta",
-                                xhigh: "Muy alta",
-                                max: "Máxima",
-                                default: "Predeterminada",
-                              } as any
-                            )[x] ?? x}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">Configurar IA</option>
-                      )}
-                    </select>
-                  </label>
-                </div>
-                <label>
-                  Resolución
-                  <select
-                    value={settings.resolution}
-                    onChange={(e) => {
-                      const s = { ...settings, resolution: e.target.value };
-                      setSettings(s);
-                      draftProject(projectPrompt, s);
+                  <details
+                    className="studio-reference-details"
+                    onToggle={(e) => {
+                      if (e.currentTarget.open) setReferencesOpen(true);
                     }}
                   >
-                    {context.resolutions.map((x: string) => (
-                      <option key={x}>{x}</option>
-                    ))}
-                  </select>
-                </label>
-                <small className="studio-model-label">
-                  {context.model ?? "Selecciona un modelo en Ajustes IA"}
-                </small>
-                <label className="studio-check">
-                  <input
-                    type="checkbox"
-                    checked={settings.previewFirst}
-                    onChange={(e) => {
-                      const s = { ...settings, previewFirst: e.target.checked };
-                      setSettings(s);
-                      draftProject(projectPrompt, s);
-                    }}
-                  />
-                  Aprobar la primera muestra antes del resto
-                </label>
+                    <summary>
+                      ⌁ Referencias opcionales <span>＋</span>
+                    </summary>
+                    {referencesOpen && (
+                      <div className="studio-reference-content">
+                        <label>
+                          Enlace web
+                          <input
+                            type="url"
+                            placeholder="https://…"
+                            value={web}
+                            onChange={(e) => setWeb(e.target.value)}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={busy || !web.trim()}
+                          onClick={() =>
+                            void run(async () => {
+                              await studioRequest(
+                                "/projects/" + project.id + "/web",
+                                "POST",
+                                { url: web },
+                              );
+                              setWeb("");
+                              setAttachmentsRevision((x) => x + 1);
+                              setNotice("✓ Referencia web añadida");
+                            })
+                          }
+                        >
+                          Añadir enlace
+                        </button>
+                        <Attachments
+                          key={project.id + ":" + attachmentsRevision}
+                          scope="project"
+                          id={project.id}
+                        />
+                      </div>
+                    )}
+                  </details>
+                  <details className="studio-settings">
+                    <summary>◈ Formato y acabado</summary>
+                    <div className="studio-field-pair">
+                      <label>
+                        Formato
+                        <select
+                          value={settings.format}
+                          onChange={(e) => {
+                            const s = { ...settings, format: e.target.value };
+                            setSettings(s);
+                            draftProject(projectPrompt, s);
+                          }}
+                        >
+                          <option value="1:1">Cuadrado · 1:1</option>
+                          <option value="4:5">Vertical · 4:5</option>
+                          <option value="9:16">Historia · 9:16</option>
+                          <option value="16:9">Horizontal · 16:9</option>
+                        </select>
+                      </label>
+                      <label>
+                        Calidad
+                        <select
+                          value={settings.quality}
+                          onChange={(e) => {
+                            const s = { ...settings, quality: e.target.value };
+                            setSettings(s);
+                            draftProject(projectPrompt, s);
+                          }}
+                        >
+                          {context.qualities.length ? (
+                            context.qualities.map((x: string) => (
+                              <option key={x} value={x}>
+                                {(
+                                  {
+                                    low: "Baja",
+                                    medium: "Media",
+                                    high: "Alta",
+                                    xhigh: "Muy alta",
+                                    max: "Máxima",
+                                    default: "Predeterminada",
+                                  } as any
+                                )[x] ?? x}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="">Configurar IA</option>
+                          )}
+                        </select>
+                      </label>
+                    </div>
+                    <label>
+                      Resolución
+                      <select
+                        value={settings.resolution}
+                        onChange={(e) => {
+                          const s = { ...settings, resolution: e.target.value };
+                          setSettings(s);
+                          draftProject(projectPrompt, s);
+                        }}
+                      >
+                        {context.resolutions.map((x: string) => (
+                          <option key={x}>{x}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <small className="studio-model-label">
+                      {context.model ?? "Selecciona un modelo en Ajustes IA"}
+                    </small>
+                    <label className="studio-check">
+                      <input
+                        type="checkbox"
+                        checked={settings.previewFirst}
+                        onChange={(e) => {
+                          const s = {
+                            ...settings,
+                            previewFirst: e.target.checked,
+                          };
+                          setSettings(s);
+                          draftProject(projectPrompt, s);
+                        }}
+                      />
+                      Aprobar la primera muestra antes del resto
+                    </label>
+                  </details>
+                  <button
+                    type="button"
+                    className="studio-save-project"
+                    disabled={busy || !project.canEdit}
+                    onClick={() => void run(saveProject)}
+                  >
+                    ✓ Guardar configuración
+                  </button>
+                </div>
               </details>
-              <button
-                type="button"
-                className="studio-save-project"
-                disabled={busy || !project.canEdit}
-                onClick={() => void run(saveProject)}
-              >
-                ✓ Guardar proyecto
-              </button>
               <div className="studio-section-divider" />
 
               <div className="studio-project-picker studio-product-picker">
@@ -828,7 +907,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     if (product && value !== product.name) {
                       setProduct(null);
                       setActiveSub("");
-                      setCountry(pendingSelection?.country??"");
+                      setCountry(pendingSelection?.country ?? "");
                       setTargetSubs([]);
                       setSelected({});
                     }
@@ -887,7 +966,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       Inventario
                       <select
                         aria-label="Inventario de productos"
-                        disabled={busy||!!pendingSelection}
+                        disabled={busy || !!pendingSelection}
                         value={inventoryId}
                         onChange={(e) => setInventoryId(e.target.value)}
                       >
@@ -899,13 +978,29 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         ))}
                       </select>
                     </label>
-                    <StudioInventorySlots key={product.id+":"+inventoryId+":"+country} listId={inventoryId} country={country} existingNames={product.subproducts.map((s:any)=>s.name)} predefined={!!pendingSelection||targetSubs.length>0} disabled={busy||!!pendingSelection} focusRequest={inventoryFocusRequest} loadDirectory={loadInventoryDirectory} onChoose={ids=>run(()=>addItems(ids,country))}/>
+                    <StudioInventorySlots
+                      key={product.id + ":" + inventoryId + ":" + country}
+                      listId={inventoryId}
+                      country={country}
+                      existingNames={product.subproducts.map(
+                        (s: any) => s.name,
+                      )}
+                      predefined={!!pendingSelection || targetSubs.length > 0}
+                      disabled={busy || !!pendingSelection}
+                      focusRequest={inventoryFocusRequest}
+                      loadDirectory={loadInventoryDirectory}
+                      onChoose={(ids) => run(() => addItems(ids, country))}
+                    />
                   </div>
                   {pendingSelection && (
                     <button
                       type="button"
                       className="primary"
-                      disabled={busy || product.studio?.country !== pendingSelection.country || inventoryId !== pendingSelection.listId}
+                      disabled={
+                        busy ||
+                        product.studio?.country !== pendingSelection.country ||
+                        inventoryId !== pendingSelection.listId
+                      }
                       onClick={() =>
                         void run(() =>
                           addItems(
@@ -995,7 +1090,15 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       {targetSubs.length
                         ? targetSubs.length + " seleccionados"
                         : "Todos los elementos"}{" "}
-                      · {count} variaciones cada uno
+                      ·{" "}
+                      {(targetSubs.length
+                        ? targetSubs
+                        : product.subproducts.map((s: any) => s.id)
+                      ).reduce(
+                        (n: number, id: string) => n + generationFor(id).count,
+                        0,
+                      )}{" "}
+                      variaciones en total
                     </span>
                     <button
                       type="button"
@@ -1065,6 +1168,27 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     }}
                   >
                     {s.name}
+                    {production.orders.some(
+                      (o) =>
+                        o.scope?.subproduct === s.id &&
+                        (o.running > 0 || o.pending > 0),
+                    ) && (
+                      <small
+                        className="studio-tab-generation"
+                        data-running={
+                          production.orders.some(
+                            (o) =>
+                              o.scope?.subproduct === s.id && o.running > 0,
+                          ) || undefined
+                        }
+                      >
+                        {production.orders.some(
+                          (o) => o.scope?.subproduct === s.id && o.running > 0,
+                        )
+                          ? "● Generando"
+                          : "En espera"}
+                      </small>
+                    )}
                     {selected[s.id]?.length ? (
                       <span>{selected[s.id].length} ✓</span>
                     ) : null}
@@ -1200,19 +1324,48 @@ export function CreativeStudio({ userId }: { userId: string }) {
                           Aprobar muestra
                         </button>
                       )}
+                      {i.isSample &&
+                        i.reviewStatus !== "APPROVED" &&
+                        production.orders
+                          .filter((o) => o.sample?.id === i.id)
+                          .map((o) => (
+                            <OrderProgressCard
+                              key={o.id}
+                              order={o}
+                              refresh={production.refresh}
+                              inline
+                              approvalInImage
+                            />
+                          ))}
                     </div>
                   </article>
                 ))}
-                {production.orders.filter(o=>o.scope?.subproduct===activeSub).map(o=><StudioGenerationCard key={o.id} order={o} refresh={production.refresh}/>)}
+                {production.orders
+                  .filter((o) => o.scope?.subproduct === activeSub)
+                  .map((o) => (
+                    <StudioGenerationCard
+                      key={o.id}
+                      order={o}
+                      refresh={production.refresh}
+                      visibleImageIds={gallery.items.map((i: any) => i.id)}
+                    />
+                  ))}
                 {Array.from(
                   {
-                    length: production.orders.some(o=>o.scope?.subproduct===activeSub)?0:Math.max(
-                      1,
-                      Math.min(6, count) -
-                        (gallery.items.length
-                          ? Math.min(gallery.items.length, Math.min(6, count))
-                          : 0),
-                    ),
+                    length: production.orders.some(
+                      (o) => o.scope?.subproduct === activeSub,
+                    )
+                      ? 0
+                      : Math.max(
+                          1,
+                          Math.min(6, generationFor(activeSub).count) -
+                            (gallery.items.length
+                              ? Math.min(
+                                  gallery.items.length,
+                                  Math.min(6, generationFor(activeSub).count),
+                                )
+                              : 0),
+                        ),
                   },
                   (_, i) => (
                     <button
@@ -1287,7 +1440,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 </div>
               )}
               <div className="studio-order-area">
-                <ProductionControls controller={{...production,orders:production.orders.filter(o=>o.scope?.subproduct!==activeSub)}} />
+                <ProductionControls
+                  controller={{
+                    ...production,
+                    orders: [],
+                  }}
+                />
               </div>
               <div className="studio-composer">
                 <div className="studio-composer-heading">
@@ -1318,6 +1476,24 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         }))
                   }
                 />
+                <label className="studio-price-field">
+                  Precio · opcional
+                  <input
+                    aria-label="Precio de este diplomado"
+                    type="text"
+                    maxLength={160}
+                    placeholder="Sin precio · ej. 40 USD, 90 mil pesos, 30 soles"
+                    value={generationFor(activeSub).priceText}
+                    onChange={(e) =>
+                      changeGeneration({ priceText: e.target.value })
+                    }
+                  />
+                  <small>
+                    {generationFor(activeSub).priceText.trim()
+                      ? "Se incluirá tal como está escrito, junto con las condiciones del prompt."
+                      : "Sin precio adicional: se respeta lo indicado en el prompt."}
+                  </small>
+                </label>
                 <div className="studio-composer-tools">
                   <label className="studio-upload-button">
                     ↑ Subir afiches
@@ -1340,21 +1516,25 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       type="number"
                       min="1"
                       max="100"
-                      value={count}
+                      value={generationFor(activeSub).count}
                       onChange={(e) =>
-                        setCount(
-                          Math.max(
+                        changeGeneration({
+                          count: Math.max(
                             1,
                             Math.min(100, Number(e.target.value) || 1),
                           ),
-                        )
+                        })
                       }
                     />
                   </label>
                   <select
                     aria-label="Tipo de afiche"
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}
+                    value={generationFor(activeSub).mode}
+                    onChange={(e) =>
+                      changeGeneration({
+                        mode: e.target.value as GenerationPreferences["mode"],
+                      })
+                    }
                   >
                     {modes.map((m) => (
                       <option key={m.id} value={m.id}>
@@ -1380,8 +1560,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     {busy
                       ? "Preparando…"
                       : "Generar " +
-                        count +
-                        (allPrompt ? " por diplomado" : "")}
+                        (allPrompt
+                          ? product.subproducts.reduce(
+                              (n: number, s: any) =>
+                                n + generationFor(s.id).count,
+                              0,
+                            )
+                          : generationFor(activeSub).count)}
                   </button>
                 </div>
                 <label className="studio-check studio-charge">
@@ -1427,7 +1612,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
             categoryId={product.id}
             country={country}
             countryBusy={busy}
-            onCountryChange={value=>run(()=>changeCountry(value))}
+            onCountryChange={(value) => run(() => changeCountry(value))}
             accounts={context.accounts}
             items={campaignItems}
             template={project?.studio?.campaignTemplates?.[country]}

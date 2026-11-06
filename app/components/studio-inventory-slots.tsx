@@ -1,5 +1,6 @@
 "use client";
 import "./studio-inventory-slots.css";
+import { groupAvailabilityLabels } from "../../lib/meta-ads/inventory-group-availability";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
@@ -127,12 +128,24 @@ export function StudioInventorySlots({
     ready =
       valid && selected.length === count && new Set(selected).size === count;
   const unpicked = candidates.filter((i) => !selected.includes(i.id));
-  const blocked = disabled || loading || usageLoading || saving;
-  async function changeUsage(value: ReplacementUsageFilter) {
+  const groupLabels = useMemo(
+    () =>
+      directory
+        ? groupAvailabilityLabels(directory, country)
+        : new Map<string, string>(),
+    [directory, country],
+  );
+  useEffect(() => {
+    if (directory?.usageReady === false && isCountryCode(country))
+      void changeUsage(usage, true);
+  }, [directory, listId, country]);
+  const blocked =
+    disabled || loading || (usageLoading && usage !== "ALL") || saving;
+  async function changeUsage(value: ReplacementUsageFilter, forCounts = false) {
     setUsage(value);
     setError("");
     if (
-      value === "ALL" ||
+      (value === "ALL" && !forCounts) ||
       !directory ||
       directory.usageReady !== false ||
       usagePending.current
@@ -223,8 +236,8 @@ export function StudioInventorySlots({
             min="1"
             max="100"
             step="1"
-            onFocus={e=>e.currentTarget.select()}
-          inputMode="numeric"
+            onFocus={(e) => e.currentTarget.select()}
+            inputMode="numeric"
             placeholder="Ej. 4"
             value={quantity}
             disabled={disabled || saving || !listId}
@@ -271,7 +284,7 @@ export function StudioInventorySlots({
               <option value="">Todos los grupos</option>
               {directory?.groups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.name} ({g.members.length})
+                  {groupLabels.get(g.id) ?? g.name}
                 </option>
               ))}
             </select>

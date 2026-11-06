@@ -3077,7 +3077,10 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
                       {!needsAuth && quotaWait && (
                         <p className="notice" role="status">
                           <strong>Meta limitó las consultas.</strong> Los datos
-                          pueden estar atrasados; se conserva el avance.{" "}
+                          pueden estar atrasados; se conserva el avance. La
+                          conexión no necesita volver a autorizarse por este
+                          aviso. Comprobar acceso permite revisar la espera sin
+                          reiniciar el histórico.{" "}
                           {retryAt
                             ? `Reintento previsto: ${displayTime(retryAt)}.`
                             : "Es el último aviso guardado de la conexión."}
@@ -3213,7 +3216,7 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
                                   "POST",
                                   {},
                                 ),
-                              "Conexión verificada con Meta. Se conservaron las cuentas y los datos; no se importaron anuncios.",
+                              "Acceso confirmado con Meta. Puedes volver a Rendimiento y pulsar Actualizar vista. El catálogo y el histórico se conservan.",
                             )
                           }
                         >

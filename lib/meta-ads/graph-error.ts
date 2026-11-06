@@ -1,9 +1,12 @@
 import { AppError } from "../errors";
 export type GraphDiagnostic = {
   httpStatus: number;
+  method?: "GET" | "POST";
   code: number | null;
   subcode: number | null;
   message: string;
+  userTitle?: string;
+  userMessage?: string;
   version: string;
   endpoint: string;
   fields: string;
@@ -72,7 +75,12 @@ export class MetaGraphError extends AppError {
     status: number,
     payload: unknown,
     token: string,
-    context: { version: string; endpoint: string; fields: string },
+    context: {
+      version: string;
+      endpoint: string;
+      fields: string;
+      method?: "GET" | "POST";
+    },
   ) {
     const raw =
       payload && typeof payload === "object"
@@ -87,10 +95,16 @@ export class MetaGraphError extends AppError {
       code: integer(error.code),
       subcode: integer(error.error_subcode),
       message: redactGraphMessage(error.message, token),
+      ...(typeof error.error_user_title === "string"
+        ? { userTitle: redactGraphMessage(error.error_user_title, token) }
+        : {}),
+      ...(typeof error.error_user_msg === "string"
+        ? { userMessage: redactGraphMessage(error.error_user_msg, token) }
+        : {}),
       ...context,
     };
     super(
-      `Meta Graph ${context.version} · GET /${context.endpoint} · campos ${context.fields} · HTTP ${status}${diagnostic.code !== null ? ` · código ${diagnostic.code}` : ""}${diagnostic.subcode !== null ? ` / subcódigo ${diagnostic.subcode}` : ""}: ${diagnostic.message}`,
+      `Meta Graph ${context.version} · ${context.method ?? "GET"} /${context.endpoint} · campos ${context.fields} · HTTP ${status}${diagnostic.code !== null ? ` · código ${diagnostic.code}` : ""}${diagnostic.subcode !== null ? ` / subcódigo ${diagnostic.subcode}` : ""}: ${diagnostic.message}${diagnostic.userTitle ? " · " + diagnostic.userTitle : ""}${diagnostic.userMessage ? " · " + diagnostic.userMessage : ""}`,
       isGraphQuota(status, diagnostic.code) ? 429 : 502,
     );
     this.name = "MetaGraphError";

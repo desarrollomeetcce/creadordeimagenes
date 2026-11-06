@@ -40,7 +40,7 @@ import {
   type CampaignConfig,
 } from "./campaign-policy";
 const id = z.string().min(1).max(100);
-async function primaryAccount(actor: Actor, accountId: string) {
+export async function primaryAccount(actor: Actor, accountId: string) {
   await metaEditorOnly(actor);
   const rights = await workspaceAccess(actor);
   demand(
@@ -319,6 +319,34 @@ export async function createLaunch(actor: Actor, input: unknown) {
       },
     };
   });
+  if (b.config.audiences.some((a) => a.interests?.length)) {
+    const proof = b.config.aiSuggestionJobId
+      ? await db.generationJob.findUnique({
+          where: { id: b.config.aiSuggestionJobId },
+        })
+      : null;
+    const snapshot = object(proof?.snapshot);
+    demand(
+      proof?.actorId === actor.id &&
+        proof.projectId === c.projectId &&
+        proof.status === "COMPLETED" &&
+        Date.now() - proof.createdAt.getTime() < 3600000 &&
+        snapshot.categoryId === c.id &&
+        JSON.stringify([...(snapshot.subproductIds ?? [])].sort()) ===
+          JSON.stringify(b.items.map((i) => i.subproductId).sort()) &&
+        snapshot.accountId === a.id &&
+        snapshot.country === b.config.country &&
+        snapshot.connectionRevision === a.connection.revision,
+      "Los intereses requieren una selección reciente de Meta para esta cuenta y país.",
+      409,
+    );
+    const { verifiedAudienceInterests } = await import("./audience-interests");
+    b.config.audiences = verifiedAudienceInterests(
+      b.config.audiences,
+      snapshot.interestCatalog ?? [],
+      b.config.specialCategory !== "NONE",
+    );
+  }
   const { reader: r } = await reader(a.connectionId, false, true);
   const pages = await discoverCampaignPages((edge, after) =>
     r.launchRequest(a.id, edge, undefined, undefined, undefined, after),
@@ -1080,5 +1108,50 @@ export async function campaignLeadForms(
       )
       .map((f: any) => ({ id: String(f.id), name: String(f.name ?? f.id) })),
     partial: !!result.leadgen_forms?.paging?.next,
+  };
+}
+
+export async function launchHistory(actor: Actor, categoryId: string) {
+  studioAccess(actor);
+  await metaEditorOnly(actor);
+  await resourceAccess(actor, "category", categoryId, "EDIT");
+  const rows = await db.$queryRaw<
+    {
+      id: string;
+      status: string;
+      createdAt: Date;
+      updatedAt: Date;
+      accountId: string;
+      error: string | null;
+      config: unknown;
+    }[]
+  >`SELECT "id","status","createdAt","updatedAt","accountId","error",("config" - ARRAY['variationRevisions','savedTargeting']) AS "config" FROM "CreativeMetaLaunch" WHERE "categoryId"=${categoryId} AND (${actor.role}='OWNER' OR "actorId"=${actor.id}) ORDER BY "createdAt" DESC LIMIT 20`;
+  const accessCache = new Map<string, Promise<boolean>>();
+  for (const row of rows)
+    if (!accessCache.has(row.accountId))
+      accessCache.set(
+        row.accountId,
+        primaryAccount(actor, row.accountId)
+          .then(() => true)
+          .catch(() => false),
+      );
+  const allowed = await Promise.all(
+    [...accessCache.entries()].map(async ([id, p]) => [id, await p] as const),
+  );
+  const ids = new Set(allowed.filter(([, ok]) => ok).map(([id]) => id));
+  return {
+    items: rows
+      .filter((r) => ids.has(r.accountId))
+      .map((r) => {
+        const c = campaignConfigSchema.strip().safeParse(r.config);
+        return {
+          id: r.id,
+          status: r.status,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          error: r.error,
+          config: c.success ? c.data : null,
+        };
+      }),
   };
 }

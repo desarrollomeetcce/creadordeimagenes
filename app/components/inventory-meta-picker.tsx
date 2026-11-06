@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { groupAvailabilityLabels } from "../../lib/meta-ads/inventory-group-availability";
+import { financialRequest } from "./financial-request";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import { countryOptions } from "../../lib/meta-ads/countries";
 import { matchesSearchWords } from "../../lib/search";
@@ -24,7 +26,7 @@ export async function studioRequest(
   return b;
 }
 export function InventoryMetaPicker({
-  directory,
+  directory: sourceDirectory,
   initialCountry = "",
   onClose,
   onChoose,
@@ -46,6 +48,48 @@ export function InventoryMetaPicker({
     [selectionId, setSelectionId] = useState(""),
     [expanded, setExpanded] = useState(false),
     [page, setPage] = useState(1);
+  const [enriched, setEnriched] = useState<{
+    base: TrialDirectory;
+    value: TrialDirectory;
+  } | null>(null);
+  const directory =
+    enriched?.base === sourceDirectory ? enriched.value : sourceDirectory;
+  const labels = useMemo(
+    () => groupAvailabilityLabels(directory, country),
+    [directory, country],
+  );
+  useEffect(() => {
+    if (
+      !country ||
+      sourceDirectory.usageReady !== false ||
+      enriched?.base === sourceDirectory
+    )
+      return;
+    let alive = true;
+    void financialRequest(
+      "meta-ads/inventory/trials?" +
+        new URLSearchParams({ listId: sourceDirectory.listId, mode: "usage" }),
+    )
+      .then((data: TrialDirectory) => {
+        if (alive)
+          setEnriched({
+            base: sourceDirectory,
+            value: {
+              ...sourceDirectory,
+              usage: data.usage,
+              countries: data.countries,
+              campaignStates: data.campaignStates,
+              usageReady: true,
+            },
+          });
+      })
+      .catch((e) => {
+        if (alive) setError(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sourceDirectory, !!country]);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -170,7 +214,7 @@ export function InventoryMetaPicker({
           <option value="">Todos los grupos</option>
           {directory.groups.map((g) => (
             <option key={g.id} value={g.id}>
-              {g.name} ({g.members.length})
+              {labels.get(g.id) ?? g.name}
             </option>
           ))}
         </select>

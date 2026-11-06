@@ -179,6 +179,13 @@ test("AI suggestion requires consent, records one charge reservation, keeps prot
   const a = adapter("openai"),
     old = a.direct,
     fetch = globalThis.fetch;
+  const previousLaunch = MetaReader.prototype.launchRequest;
+  const preparedIds: string[] = [];
+  MetaReader.prototype.launchRequest = async (_account, edge, body) => {
+    assert.equal(body, undefined);
+    assert.equal(edge, "promote_pages");
+    return { data: [{ id: q.pageId, name: "QA page" }] };
+  };
   let calls = 0,
     fail = false;
   const proposal = {
@@ -191,14 +198,24 @@ test("AI suggestion requires consent, records one charge reservation, keeps prot
         ageMax: 65,
         gender: "ALL",
         strictAge: false,
+        interests: [{ id: "700001", name: "Colorimetría" }],
       },
     ],
   };
-  a.direct = async () => {
+  const oldInterests = MetaReader.prototype.targetingInterests;
+  MetaReader.prototype.targetingInterests = async () => [
+    { id: "700001", name: "Colorimetría" },
+    { id: "700002", name: "Peluquería" },
+  ];
+  a.direct = async (_key, _model, prompt) => {
     calls++;
     if (fail) throw Error("Lost reply");
     return {
-      text: JSON.stringify(proposal),
+      text: JSON.stringify(
+        prompt.includes("queries")
+          ? { queries: ["Colorimetry", "Hair coloring"] }
+          : proposal,
+      ),
       usage: { input_tokens: 2, output_tokens: 3 },
     };
   };
@@ -229,29 +246,56 @@ test("AI suggestion requires consent, records one charge reservation, keeps prot
     );
     assert.equal(calls, 0);
     const r = await suggestCampaign(owner, payload());
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     assert.deepEqual(Object.keys(r.proposal!).sort(), [
       "audiences",
       "body",
       "description",
     ]);
     await suggestCampaign(owner, payload());
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     const ledger = await db.usageLedger.findUniqueOrThrow({
       where: { jobId: r.jobId },
     });
     assert.equal(ledger.status, "CONSUMED_ESTIMATE");
+    const prepare = (audiences: any, proof?: string) =>
+      createLaunch(owner, {
+        requestId: randomUUID(),
+        categoryId: q.productId,
+        config: { ...config, audiences, aiSuggestionJobId: proof },
+        items: [
+          { subproductId: q.images[0].subId, variationIds: [q.images[0].id] },
+        ],
+      });
+    await assert.rejects(() => prepare(r.proposal.audiences), /requieren/);
+    await assert.rejects(
+      () =>
+        prepare(
+          [
+            {
+              ...r.proposal.audiences[0],
+              interests: [{ id: "999999", name: "Unverified" }],
+            },
+          ],
+          r.jobId,
+        ),
+      /no confirmó/,
+    );
+    const prepared = await prepare(r.proposal.audiences, r.jobId);
+    preparedIds.push(prepared.id);
+    assert.equal(prepared.config.audiences[0].interests?.[0]?.id, "700001");
+
     fail = true;
     await assert.rejects(
       () => suggestCampaign(owner, payload(1)),
       /no se confirmó/i,
     );
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     await assert.rejects(
       () => suggestCampaign(owner, payload(1)),
       /ya fue iniciada/i,
     );
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     const uncertain = await db.generationJob.findUniqueOrThrow({
       where: {
         idempotencyKey: "campaign-suggestion:" + owner.id + ":" + ids[1],
@@ -268,6 +312,11 @@ test("AI suggestion requires consent, records one charge reservation, keeps prot
     );
   } finally {
     a.direct = old;
+    MetaReader.prototype.launchRequest = previousLaunch;
+    await db.creativeMetaLaunch.deleteMany({
+      where: { id: { in: preparedIds } },
+    });
+    MetaReader.prototype.targetingInterests = oldInterests;
     globalThis.fetch = fetch;
     const jobs = await db.generationJob.findMany({
       where: {

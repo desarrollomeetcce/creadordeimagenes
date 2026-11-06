@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { generationPreferenceSchema } from "./generation-preferences";
 import { randomUUID, createHash } from "node:crypto";
 import { db } from "../db";
 import { demand } from "../errors";
@@ -483,6 +484,7 @@ export async function studioGenerate(
       requestId: z.uuid(),
       subproductIds: z.array(id).min(1).max(100),
       prompts: z.record(id, z.string().max(30000)).default({}),
+      options: z.record(id, generationPreferenceSchema).default({}),
       count: z.number().int().min(1).max(100),
       mode: z.enum(["Imagen + Texto", "Texto", "Imagen"]),
       previewFirst: z.boolean().default(true),
@@ -491,6 +493,10 @@ export async function studioGenerate(
     })
     .strict()
     .parse(input);
+  demand(
+    Object.keys(b.options).every((key) => b.subproductIds.includes(key)),
+    "Las opciones deben pertenecer a los diplomados seleccionados.",
+  );
   const subs = await db.subproduct.findMany({
     where: { id: { in: b.subproductIds }, categoryId, deletedAt: null },
     select: { id: true, prompt: true },
@@ -503,6 +509,22 @@ export async function studioGenerate(
   await db.$transaction(async (tx) => {
     for (const sub of subs) {
       const prompt = b.prompts[sub.id];
+      const options = b.options[sub.id];
+      if (options) {
+        const current = await tx.subproduct.findUniqueOrThrow({
+          where: { id: sub.id },
+          select: { studio: true },
+        });
+        await tx.subproduct.update({
+          where: { id: sub.id },
+          data: {
+            studio: json({
+              ...object(current.studio),
+              generationPreferences: options,
+            }),
+          },
+        });
+      }
       if (prompt !== undefined && prompt !== sub.prompt) {
         await tx.subproduct.update({ where: { id: sub.id }, data: { prompt } });
         await tx.promptVersion.create({
@@ -531,6 +553,7 @@ export async function studioGenerate(
     "ai",
     {
       projectOnly: true,
+      perSubproduct: b.options,
       count: b.count,
       mode: b.mode,
       format: b.format,

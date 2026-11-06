@@ -8,7 +8,13 @@ Tener un permiso disponible en la app de Meta no significa que la credencial gua
 2. En la conexión de Meta Ads guarda el ID y la clave secreta de la app en sus campos seguros. El ID de configuración de Login es opcional: no lo inventes. Debe ser uno existente de tu app si lo utilizas.
 3. Registra en Facebook Login la URL de retorno mostrada por la plataforma: `https://TU-DOMINIO/api/meta/marketing/oauth/callback`. APP_ORIGIN debe coincidir con ese dominio; no uses un retorno de otra instalación.
 4. Junto al selector de página, cuando no hay resultados, pulsa Autorizar páginas con Facebook. También está en Conexiones, en permisos avanzados de administración. Inicia sesión con el usuario que administra la página y permite las páginas requeridas.
-5. El flujo de páginas solicita ads_read, ads_management y pages_show_list. Si se usa un ID de configuración empresarial, Meta toma sus permisos de esa configuración: actualízala allí antes de autorizar. La credencial anterior no se reemplaza si falta consentimiento, cambia la conexión o falla la verificación.
+5. El flujo de páginas solicita ads_read, ads_management, pages_show_list, pages_read_engagement y pages_manage_ads. Si se usa un ID de configuración empresarial, Meta toma sus permisos de esa configuración: actualízala allí antes de autorizar. La credencial anterior no se reemplaza si falta consentimiento, cambia la conexión o falla la verificación.
+
+## Después de reconectar
+
+En Meta Developers → Casos de uso → Crear y administrar anuncios → Permisos y funciones, «Listo para la prueba» no acredita que el token guardado tenga el permiso. Para pruebas, el usuario necesita un rol aceptado en la app y acceso a la página y cuenta publicitaria. Para usuarios externos, prepara acceso avanzado, revisión de la app, verificación empresarial y publicación cuando Meta los requiera. Agregar un permiso a revisión no lo concede automáticamente.
+
+«Conexión verificada» confirma acceso a Meta, no la importación de anuncios. Un límite de consultas no exige volver a autorizar. Comprobar acceso permite una comprobación explícita y acotada de una pausa interna: conserva el avance, respeta Retry-After de Meta y limita la recuperación compartida a una cada quince minutos, tras al menos un minuto desde el último límite. Después vuelve a Rendimiento → Actualizar vista. No borrar conexiones, cambiar tokens repetidamente ni reiniciar el catálogo para intentar saltar la cuota.
 
 ## Token manual
 

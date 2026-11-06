@@ -11,7 +11,7 @@ import {
   metaCanSync,
   metaActor,
 } from "./workspace-access";
-import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait, carryMetaQuota } from "./quota";
+import { metaQuotaScope, quotaHooks, quotaUntil, MetaQuotaWait, carryMetaQuota, recoverMetaQuota } from "./quota";
 import { focusedReportDay } from "./focused-labels";
 import { focusedSyncStep, type FocusState } from "./focused-sync";
 import { writeSyncPage } from "./bulk-sync";
@@ -159,12 +159,39 @@ function date(v: unknown) {
 export async function refreshConnection(actor: Actor, id: string) {
   await metaEditorOnly(actor);
   await rateLimit("meta:refresh:" + actor.id, 15);
-  const { connection: c, reader: r } = await reader(id, true);
+  const { connection: c, reader: r, quotaScope } = await reader(id, true);
   demand(
     c.transport === "API",
     "Esta comprobación requiere Marketing API.",
     409,
   );
+  // This endpoint is an explicit check, never a background credential refresh.
+  // Reuse the bounded recovery already used by the visible report. Rotating a
+  // token must preserve cooldowns, but a saved local pause must remain checkable.
+  const retryAt = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    await metaEditorOnly(actor, tx);
+    demand(
+      await tx.metaConnection.findFirst({
+        where: {
+          id,
+          revision: c.revision,
+          disconnectedAt: null,
+        },
+      }),
+      "La conexión cambió. Vuelve a comprobarla.",
+      409,
+    );
+    demand(
+      await tx.user.findFirst({
+        where: { id: c.ownerId, role: "OWNER", status: "APPROVED" },
+      }),
+      "El propietario de la conexión ya no está autorizado.",
+      403,
+    );
+    return recoverMetaQuota(tx, quotaScope!);
+  });
+  if (retryAt) throw new MetaQuotaWait(retryAt);
   const page = await r.get("accounts", { accountView: "minimal" });
   const ids = page.data.map((row) => digits(row.id));
   await db.$transaction(async (tx) => {

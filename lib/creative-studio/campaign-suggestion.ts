@@ -9,6 +9,13 @@ import { adapter } from "../providers";
 import { checkReservationBudget } from "../reservation-budget";
 import { startJobHeartbeat } from "../job-lease";
 import { demand, AppError } from "../errors";
+import { primaryAccount } from "./campaigns";
+import { reader } from "../meta-ads/service";
+import {
+  interestQueries,
+  verifiedAudienceInterests,
+  type MetaInterest,
+} from "./audience-interests";
 import { studioAccess, json, type Actor } from "./service";
 import {
   audienceSchema,
@@ -80,6 +87,7 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
   const fingerprint = createHash("sha256")
     .update(
       JSON.stringify({
+        audienceVersion: 2,
         categoryId: b.categoryId,
         prompt: b.prompt,
         config: b.config,
@@ -106,11 +114,17 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
   });
   if (existing) return existingResult(existing);
   await rateLimit("campaign-suggestion:" + actor.id, 10);
+  const meta = await primaryAccount(actor, b.config.accountId);
   const c = await configured(true),
     creative = await creativeConnection(c),
     token = randomUUID();
   const snapshot = {
     kind: "CAMPAIGN_SUGGESTION",
+    categoryId: b.categoryId,
+    subproductIds: subs.map((s) => s.id),
+    accountId: b.config.accountId,
+    country: b.config.country,
+    connectionRevision: meta.connection.revision,
     fingerprint,
     provider: creative.provider,
     model: creative.model.id,
@@ -181,6 +195,8 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
   const job = result.job!;
   const heartbeat = startJobHeartbeat(job.id, token);
   let called = false;
+  let interestCatalog: MetaInterest[] = [];
+  const usages: unknown[] = [];
   try {
     await resourceAccess(actor, "category", b.categoryId, "EDIT");
     await heartbeat.check();
@@ -192,33 +208,81 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
         b.config,
       ),
     }));
+    const secret = decryptKey(creative.encryptedKey),
+      signal = AbortSignal.any([heartbeat.signal, AbortSignal.timeout(240000)]);
+    if (b.config.specialCategory === "NONE") {
+      called = true;
+      const seed = await adapter(creative.provider).direct(
+        secret,
+        creative.model.id,
+        'Devuelve SOLO JSON {"queries":["término"]}, de 2 a 4 consultas breves en español o inglés para encontrar intereses de publicidad REALES relacionados con estos diplomados. No IDs ni edades ni intereses sensibles. Usa sectores distintos y relevantes. Contexto: ' +
+          JSON.stringify({
+            names: subs.map((s) => s.name),
+            country: b.config.country,
+            instructions: b.prompt,
+          }),
+        true,
+        signal,
+        undefined,
+        500,
+      );
+      usages.push(seed.usage);
+      demand(!seed.incomplete, "La IA no terminó la selección de temas.", 502);
+      const queries = interestQueries(seed.text),
+        { reader: r } = await reader(meta.connectionId, false, true);
+      const map = new Map<string, MetaInterest>();
+      for (const query of [...new Set(queries)]) {
+        await heartbeat.check();
+        for (const interest of await r.targetingInterests(meta.id, query))
+          map.set(interest.id, interest);
+      }
+      interestCatalog = [...map.values()];
+      demand(
+        interestCatalog.length > 0,
+        "Meta no devolvió intereses válidos para estos temas. No se publicará una segmentación genérica.",
+        409,
+      );
+    }
     const prompt =
-      'Devuelve SOLO JSON: {"body":"texto con {diplomado} para reutilizar por campaña","description":"descripción breve","audiences":[{"name":"nombre","ageMin":18,"ageMax":65,"gender":"ALL","strictAge":false}]}. Exactamente ' +
+      'Devuelve SOLO JSON: {"body":"texto reutilizable con {diplomado}","description":"descripción breve","audiences":[{"name":"perfil concreto","ageMin":18,"ageMax":65,"gender":"ALL","strictAge":false,"interests":[{"id":"ID del catálogo","name":"nombre del catálogo"}]}]}. Exactamente ' +
       b.config.audiences.length +
-      " públicos. No inventes IDs, intereses, credenciales, resultados ni garantías. Solo segmentación demográfica permitida. Para categorías especiales no restrinjas edad ni género. No devuelvas headline, país, presupuesto ni ubicaciones. Esos campos los controla el usuario. Contexto JSON: " +
+      " públicos. Elige perfiles e intereses diferentes por conjunto del catálogo consultado a Meta. Como máximo un conjunto puede ser amplio (interests vacío); los demás requieren intereses relevantes del catálogo, sin repetir la misma combinación. No inventes IDs, beneficios ni acreditaciones. Para categorías especiales usa interests vacío, edades18–65 y géneroALL. Conserva headline, país, presupuesto y ubicaciones: no los devuelvas. Contexto JSON: " +
       JSON.stringify({
         country: b.config.country,
         objective: b.config.objective,
         specialCategory: b.config.specialCategory,
         tasks,
+        metaInterestCatalog: interestCatalog,
       });
-    const secret = decryptKey(creative.encryptedKey);
     called = true;
     const response = await adapter(creative.provider).direct(
       secret,
       creative.model.id,
       prompt,
       true,
-      AbortSignal.any([heartbeat.signal, AbortSignal.timeout(120000)]),
+      signal,
       undefined,
-      2500,
+      4500,
     );
+    usages.push(response.usage);
     demand(!response.incomplete, "La IA no terminó su propuesta.", 502);
     const proposal = parseCampaignSuggestion(
       response.text,
       b.config.audiences.length,
     );
+    proposal.audiences = verifiedAudienceInterests(
+      proposal.audiences,
+      interestCatalog,
+      b.config.specialCategory !== "NONE",
+    );
     await heartbeat.check();
+    const freshMeta = await primaryAccount(actor, b.config.accountId);
+    demand(
+      freshMeta.connectionId === meta.connectionId &&
+        freshMeta.connection.revision === meta.connection.revision,
+      "La conexión de Meta cambió durante la selección.",
+      409,
+    );
     const currentUser = await db.user.findUnique({
       where: { id: actor.id },
       select: { status: true, role: true },
@@ -234,7 +298,7 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
         where: { id: job.id, status: "RUNNING", leaseToken: token },
         data: {
           status: "COMPLETED",
-          snapshot: json({ ...snapshot, proposal }),
+          snapshot: json({ ...snapshot, proposal, interestCatalog }),
           completedAt: new Date(),
           leaseToken: null,
           heartbeatAt: null,
@@ -245,12 +309,12 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
         where: { jobId: job.id },
         data: {
           status: "CONSUMED_ESTIMATE",
-          usage: json({ creative: response.usage }),
+          usage: json({ creative: usages }),
         },
       });
     });
     return { jobId: job.id, proposal };
-  } catch {
+  } catch (e) {
     await db.$transaction(async (tx) => {
       const changed = await tx.generationJob.updateMany({
         where: { id: job.id, status: "RUNNING", leaseToken: token },
@@ -274,7 +338,9 @@ export async function suggestCampaign(actor: Actor, input: unknown) {
     });
     throw new AppError(
       called
-        ? "No se confirmó la propuesta de IA. La consulta no se repetirá automáticamente; revisa su consumo."
+        ? "No se confirmó la propuesta de IA. " +
+            (e instanceof AppError ? e.message + " " : "") +
+            "La consulta no se repetirá automáticamente; revisa su consumo."
         : "No se pudo iniciar la consulta de IA.",
       409,
     );

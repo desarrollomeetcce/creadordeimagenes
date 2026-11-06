@@ -69,20 +69,20 @@ export async function createAiPausedCampaigns(options: {
   onProposal: (proposal: any) => void;
 }) {
   const c = aiCampaignConfig(options.config, options.items);
-  const proposal =
-    options.proposal ??
-    (
-      await options.request("/campaign-suggestion", "POST", {
-        requestId: options.requestId,
-        categoryId: options.categoryId,
-        confirmAi: true,
-        prompt:
-          options.prompt.trim() ||
-          "Redacta el texto y la descripción del anuncio para {diplomado} en {pais} y elige públicos demográficos apropiados. No inventes beneficios ni acreditaciones.",
-        config: c,
-        subproductIds: options.items.map((i) => i.subproductId),
-      })
-    ).proposal;
+  let proposal = options.proposal;
+  if (!proposal) {
+    const result = await options.request("/campaign-suggestion", "POST", {
+      requestId: options.requestId,
+      categoryId: options.categoryId,
+      confirmAi: true,
+      prompt:
+        options.prompt.trim() ||
+        "Redacta el texto y descripción para {diplomado} en {pais} y elige públicos distintos con intereses reales de Meta. No inventes beneficios ni acreditaciones.",
+      config: c,
+      subproductIds: options.items.map((i) => i.subproductId),
+    });
+    proposal = { ...result.proposal, sourceJobId: result.jobId };
+  }
   if (!options.isCurrent())
     throw Error(
       "Cambió la selección o configuración. Revisa los datos antes de crear las campañas.",
@@ -93,6 +93,7 @@ export async function createAiPausedCampaigns(options: {
     body: proposal.body,
     description: options.config.description.trim() || proposal.description,
     audiences: proposal.audiences,
+    aiSuggestionJobId: proposal.sourceJobId,
     targetStatus: "PAUSED",
   });
   validateCampaignDestination(config);

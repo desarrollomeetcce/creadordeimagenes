@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { groupAvailabilityLabels } from "../../lib/meta-ads/inventory-group-availability";
 import { financialRequest as api } from "./financial-request";
 import { SheetSearchSelect } from "./sheet-search-select";
 import type {
@@ -50,6 +51,16 @@ export function InventoryGroupReplacements({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [committed, setCommitted] = useState(false);
+  const groupLabels = useMemo(
+    () =>
+      groupAvailabilityLabels(
+        snapshot.directory,
+        snapshot.group.countries.length === 1
+          ? snapshot.group.countries[0]
+          : "",
+      ),
+    [snapshot],
+  );
   const source = snapshot.group,
     catalog = snapshot.directory.catalog;
   const sources = snapshot.itemIds.flatMap((id) => {
@@ -261,7 +272,7 @@ export function InventoryGroupReplacements({
               .filter((group) => group.id !== source.id)
               .map((group) => (
                 <option key={group.id} value={group.id}>
-                  {group.name} ({group.members.length})
+                  {groupLabels.get(group.id) ?? group.name}
                 </option>
               ))}
           </select>

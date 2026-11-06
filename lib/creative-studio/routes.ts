@@ -25,6 +25,13 @@ export async function creativeStudioRoutes(
         await import("./campaign-suggestion")
       ).suggestCampaign(actor, await body()),
     );
+  if (p[0] === "launch-history" && p[1] && p.length === 2 && method === "GET")
+    return send(
+      await campaigns.launchHistory(
+        actor,
+        z.string().min(1).max(100).parse(p[1]),
+      ),
+    );
   if (!p.length && method === "GET")
     return send(await studio.studioContext(actor));
   if (p[0] === "projects" && p.length === 1 && method === "POST")

@@ -1,4 +1,5 @@
 "use client";
+import {groupAvailabilityLabels} from "../../lib/meta-ads/inventory-group-availability";
 import { countryOptions as advertisingCountries } from "../../lib/meta-ads/countries";
 import { studioRequest } from "./inventory-meta-picker";
 import { InventoryGroupCategoryAdditions } from "./inventory-group-category-additions";
@@ -87,12 +88,13 @@ export function InventoryGroupEditor({
   onUsageBatchChange?: (updates: Record<string, GroupUsageCell>) => void;
 }) {
   const [enrichment,setEnrichment] = useState<{base:TrialDirectory;data:TrialDirectory}|null>(null);
-  const directory = enrichment?.base === sourceDirectory ? {...sourceDirectory,...enrichment.data,catalog:sourceDirectory.catalog,groups:sourceDirectory.groups} : sourceDirectory;
+  const directory = useMemo(()=>enrichment?.base === sourceDirectory ? {...sourceDirectory,...enrichment.data,catalog:sourceDirectory.catalog,groups:sourceDirectory.groups} : sourceDirectory,[enrichment,sourceDirectory]);
   const [usageRetry,setUsageRetry] = useState(0);
   const usageRequests = useRef(new WeakMap<TrialDirectory,Promise<TrialDirectory>>());
   const dialog = useRef<HTMLDialogElement>(null);
   const [adsCountry, setAdsCountry] = useState(initialCountry || (selectedGroup?.countries.length === 1 ? selectedGroup.countries[0] : ""));
   useEffect(() => { if (selectedGroup?.countries.length === 1) setAdsCountry(selectedGroup.countries[0]); }, [selectedGroup?.id]);
+  const groupLabels=useMemo(()=>groupAvailabilityLabels(directory,adsCountry||initialCountry),[directory,adsCountry,initialCountry]);
   const userId = useContext(CurrentUserId);
   const pinKey = `inventory-group-pins:v1:${userId}:${directory.listId}`;
   const [groupAction, setGroupAction] = useState<{
@@ -110,14 +112,14 @@ export function InventoryGroupEditor({
     initialTab ?? (selectedGroup ? "edit" : "create"),
   );
   useEffect(() => {
-    if (directory.usageReady !== false || (!(["create","edit"].includes(managementTab)) && !(managementTab === "top" && topContent))) return;
+    if (directory.usageReady !== false || (!(["create","edit"].includes(managementTab)) && !(managementTab === "top" && topContent) && !(managementTab === "ads"&&adsCountry))) return;
     let alive=true;
     setError("");
     let request=usageRequests.current.get(sourceDirectory);
     if (!request) { request=api("meta-ads/inventory/trials?"+new URLSearchParams({listId:directory.listId,mode:"usage"})); usageRequests.current.set(sourceDirectory,request); }
     void request.then(value=>{if(alive){setEnrichment({base:sourceDirectory,data:value});onUsageLoaded?.({usage:value.usage,countries:value.countries,campaignStates:value.campaignStates,usageReady:true});}}).catch(e=>{if(alive)setError(e.message);usageRequests.current.delete(sourceDirectory);});
     return ()=>{alive=false;};
-  },[managementTab,sourceDirectory,directory.usageReady,usageRetry]);
+  },[managementTab,sourceDirectory,directory.usageReady,usageRetry,adsCountry]);
   const group = managementTab === "edit" ? selectedGroup : undefined;
   const draftKey = managementTab === "ads" ? "ads" : group ? "edit:" + group.id : "create";
   function changeTab(tab: "create" | "edit" | "top" | "ads") {
@@ -1186,7 +1188,7 @@ export function InventoryGroupEditor({
                     : []),
                   ...directory.groups.map((entry) => ({
                     value: entry.id,
-                    label: entry.name,
+                    label: groupLabels.get(entry.id)??entry.name,
                     group: "Guardados",
                   })),
                 ]}
@@ -1349,7 +1351,7 @@ export function InventoryGroupEditor({
           <div className="row inventory-group-proposal">
             <label>Buscar diplomado<input type="search" aria-label="Buscar diplomados para anuncios" value={query} onChange={e => setQuery(e.target.value)}/></label>
             <label>País<select aria-label="País para anuncios Meta" value={adsCountry} disabled={busy || externalBusy} onChange={e => setAdsCountry(e.target.value)}><option value="">Selecciona el país</option>{advertisingCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
-            <label>Grupo<select aria-label="Grupo para anuncios" value={browsedGroupId} onChange={e => setBrowsedGroupId(e.target.value)}><option value="">Todos los grupos</option>{directory.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
+            <label>Grupo<select aria-label="Grupo para anuncios" value={browsedGroupId} onChange={e => setBrowsedGroupId(e.target.value)}><option value="">Todos los grupos</option>{directory.groups.map(g => <option key={g.id} value={g.id}>{groupLabels.get(g.id)??g.name}</option>)}</select></label>
             <label>Categoría<select aria-label="Categoría para anuncios" value={primary[0] || ""} onChange={e => setPrimary(e.target.value ? [e.target.value] : [])}><option value="">Todas las categorías</option>{primaryOptions.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
             <label>Cantidad<input type="number" min={1} max={100} aria-label="Cantidad de anuncios al azar" value={count} onChange={e => setCount(Number(e.target.value))}/></label>
             <button type="button" disabled={busy || !Number.isInteger(count) || count < 1 || count > 100} onClick={() => setIds(randomInventoryAdditions(matching, count, []).map(i => i.id))}>Azar según filtros</button>
@@ -1395,7 +1397,7 @@ export function InventoryGroupEditor({
                       : []),
                     ...directory.groups.map((entry) => ({
                       value: entry.id,
-                      label: `${entry.name} (${entry.members.length})`,
+                      label: groupLabels.get(entry.id)??entry.name,
                     })),
                   ]}
                   onSelect={(id) => {
@@ -2099,7 +2101,7 @@ export function InventoryGroupEditor({
                                       : []),
                                     ...directory.groups.map((entry) => ({
                                       value: entry.id,
-                                      label: entry.name,
+                                      label: groupLabels.get(entry.id)??entry.name,
                                       group: "Guardados",
                                     })),
                                   ]}

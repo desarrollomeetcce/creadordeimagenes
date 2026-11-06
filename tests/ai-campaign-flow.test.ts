@@ -143,3 +143,21 @@ test("Uneven or insufficient image distribution is rejected before AI", () => {
     aiCampaignConfig(c(), [{ ...items[0], variationIds: ["v1"] }]),
   );
 });
+
+test("Verified Meta interest selection carries the server job proof into the launch", async () => {
+  const { calls, options } = setup();
+  const prior = options.request;
+  await createAiPausedCampaigns({
+    ...options,
+    request: async (...args: Parameters<typeof prior>) => {
+      const r = await prior(...args);
+      if (args[0] === "/campaign-suggestion")
+        return { ...r, jobId: "verified-source-job" };
+      return r;
+    },
+  });
+  assert.equal(
+    calls.find((c) => c.path === "/launches").body.config.aiSuggestionJobId,
+    "verified-source-job",
+  );
+});
