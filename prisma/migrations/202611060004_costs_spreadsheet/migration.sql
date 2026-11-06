@@ -1,0 +1,3 @@
+ALTER TABLE "FixedCostEntry" ADD COLUMN "entryType" TEXT NOT NULL DEFAULT 'EXPENSE' CHECK("entryType" IN ('EXPENSE','INCOME')), ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity>=0), ADD COLUMN "unitPrice" DECIMAL(14,2);
+CREATE TABLE "FixedCostCategory" (id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX "FixedCostEntry_type_date_idx" ON "FixedCostEntry"("entryType",date);

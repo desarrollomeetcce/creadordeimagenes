@@ -1572,6 +1572,9 @@ model FixedCostSheet {
   entries FixedCostEntry[]
 }
 model FixedCostEntry {
+  entryType String @default("EXPENSE")
+  quantity Int @default(1)
+  unitPrice Decimal? @db.Decimal(14,2)
   id String @id @default(cuid())
   sheetId String
   sheet FixedCostSheet @relation(fields:[sheetId],references:[id],onDelete:Restrict)
@@ -1602,4 +1605,10 @@ model FixedCostGrant {
   permission String
   createdById String
   createdAt DateTime @default(now())
+}
+
+model FixedCostCategory {
+ id String @id @default(cuid())
+ name String @unique
+ createdAt DateTime @default(now())
 }

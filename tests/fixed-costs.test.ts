@@ -39,3 +39,31 @@ test("cost entry rejects rounding loss, negative money and invalid fields", () =
     false,
   );
 });
+
+test("income quantity times price is calculated exactly by the server, not trusted from amount", () => {
+  const e = {
+    sheetId: "s",
+    date: "2026-11-06",
+    kind: "VARIABLE",
+    entryType: "INCOME",
+    concept: "Diplomado",
+    quantity: 3,
+    unitPrice: "0.10",
+    amount: "999",
+    currency: "PEN",
+    paid: true,
+  };
+  assert.equal(costEntrySchema.parse(e).amount, "0.30");
+  assert.equal(
+    costEntrySchema.safeParse({
+      ...e,
+      quantity: 2,
+      unitPrice: "999999999999.99",
+    }).success,
+    false,
+  );
+  assert.equal(
+    costEntrySchema.safeParse({ ...e, quantity: 1.5 }).success,
+    false,
+  );
+});

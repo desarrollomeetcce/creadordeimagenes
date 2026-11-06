@@ -2735,3 +2735,7 @@ Chromium verifica cinco flujos: Crear campaña primero y fichas CO2/PE1/PY1 en l
 ## Advantage+ edades · 06/11/2026
 
 `tests/advantage-age.test.ts`: rango25–45 y35–45 como age_range con controles Meta válidos; opt-out mantiene límite estricto; público nativo conserva sugerencia/individual_setting, no muta fuente; categorías especiales sin edades. Integración workbench publica tres modos pausados únicamente con transporte simulado; exige age_range35–45/min25/max65 en cada conjunto nuevo y conserva padres existentes. Chromium valida entradas35–45 sin invalidación, Advantage activo, alternancia sin reset a65, nota breve y390px. Guardado de conversaciones dice en plataforma; no se prueba sincronización nativa inexistente. Sin Meta o IA reales.
+
+## Costos como hoja e ingresos · 06/11/2026
+
+`tests/cost-grid.integration.test.ts`: total servidor cantidad×precio, rechazo de importe falso, monedas separadas, períodos, ingresos dentrodelmódulo, bulk atómico, conflicto en unafila revierte lote, respuesta perdida no duplica, categorías persistentes, copia mensual solo gastos y permiso de consulta. Unitarias incluyen precisión0.10×3, cantidadentera yoverflow. Chromium valida tecla a tecla en fila virtual sin perder foco/texto, TSV envariasfilas con totales derivados, únicoPOST de tresfilas, recarga persistente, cuadrícula arriba<225px, hojas abajo, categorías nuevas yMetaDateRange con fechas futuras exclusivasdeCostos,390px sin overflowexterno. No llamadas de Efectividad, Graph ni IA por calendario/celdas.

@@ -21,6 +21,7 @@ export function MetaDateRange({
   to,
   onChange,
   maxDays = 31,
+  allowFuture = false,
   triggerLabel,
   triggerAriaLabel,
   applyLabel = "Actualizar",
@@ -38,6 +39,7 @@ export function MetaDateRange({
   triggerAriaLabel?: string;
   applyLabel?: string;
   maxDays?: number;
+  allowFuture?: boolean;
 }) {
   const today = limaToday(),
     id = useId(),
@@ -140,7 +142,7 @@ export function MetaDateRange({
     Number.isFinite(Date.parse(start)) &&
     Number.isFinite(Date.parse(end)) &&
     start <= end &&
-    end <= today &&
+    (allowFuture || end <= today) &&
     (Date.parse(end) - Date.parse(start)) / 86400000 < maxDays;
   const human = (day: string) =>
     new Date(day + "T12:00:00Z").toLocaleDateString("es-PE", {
@@ -208,7 +210,7 @@ export function MetaDateRange({
                 key={day}
                 aria-label={day}
                 aria-pressed={day === start || day === end}
-                disabled={day > today}
+                disabled={!allowFuture && day > today}
                 className={
                   day === start || day === end
                     ? "meta-range-edge"
@@ -390,7 +392,7 @@ export function MetaDateRange({
                 type="date"
                 aria-label="Desde"
                 value={start}
-                max={today}
+                max={allowFuture ? "2199-12-31" : today}
                 onChange={(e) => {
                   setStart(e.target.value);
                   setChosen("custom");
@@ -401,7 +403,7 @@ export function MetaDateRange({
                 type="date"
                 aria-label="Hasta"
                 value={end}
-                max={today}
+                max={allowFuture ? "2199-12-31" : today}
                 min={start}
                 onChange={(e) => {
                   setEnd(e.target.value);
@@ -413,7 +415,7 @@ export function MetaDateRange({
               <small>
                 {valid
                   ? "Las fechas se muestran en la hora de Lima"
-                  : `Elige hasta ${maxDays} días, sin fechas futuras`}
+                  : `Elige hasta ${maxDays} días${allowFuture ? "" : ", sin fechas futuras"}`}
               </small>
               <button type="button" onClick={close}>
                 Cancelar

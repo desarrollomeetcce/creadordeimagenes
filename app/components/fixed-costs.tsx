@@ -1,7 +1,17 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+} from "react";
+import { MetaDateRange } from "./meta-date-range";
+import { limaToday } from "./date-range";
 import "./fixed-costs.css";
 type Entry = {
+  entryType: "EXPENSE" | "INCOME";
   sheetId: string;
   date: string;
   kind: "FIXED" | "VARIABLE";
@@ -10,12 +20,20 @@ type Entry = {
   country: string;
   location: string;
   person: string;
+  quantity: number;
+  unitPrice: string;
   amount: string;
   currency: string;
   paid: boolean;
   notes: string;
 };
 type Row = Entry & { id: string; version: number };
+type Dirty = {
+  id?: string;
+  version?: number;
+  requestId?: string;
+  entry: Entry;
+};
 type Data = {
   owner: boolean;
   canEdit: boolean;
@@ -26,41 +44,88 @@ type Data = {
   categories: string[];
   groups: {
     currency: string;
+    entryType: string;
     paid: boolean;
     kind: string;
     _sum: { amount: string | null };
   }[];
 };
-const today = () =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Lima",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-const blank = (sheetId: string): Entry => ({
-  sheetId,
-  date: today(),
-  kind: "FIXED",
-  concept: "",
-  category: "",
-  country: "",
-  location: "",
-  person: "",
-  amount: "",
-  currency: "PEN",
-  paid: false,
-  notes: "",
-});
-const cents = (s: string) =>
-  BigInt(
-    (s.split(".")[0] || "0") +
-      (s.split(".")[1] || "").padEnd(2, "0").slice(0, 2),
+type Column = { key: keyof Entry; name: string; width: number };
+const expenseColumns: Column[] = [
+  { key: "date", name: "Fecha", width: 110 },
+  { key: "concept", name: "Concepto", width: 220 },
+  { key: "person", name: "Persona", width: 150 },
+  { key: "country", name: "País", width: 110 },
+  { key: "category", name: "Categoría", width: 140 },
+  { key: "location", name: "Propiedad / lugar", width: 160 },
+  { key: "quantity", name: "Cantidad", width: 80 },
+  { key: "unitPrice", name: "Precio unitario", width: 110 },
+  { key: "amount", name: "Total", width: 110 },
+  { key: "currency", name: "Moneda", width: 75 },
+  { key: "paid", name: "Pago", width: 110 },
+  { key: "kind", name: "Tipo", width: 100 },
+  { key: "notes", name: "Nota", width: 200 },
+];
+const incomeColumns = expenseColumns
+  .filter((c) => !["person", "location", "kind"].includes(c.key))
+  .map((c) => ({
+    ...c,
+    name:
+      c.key === "concept"
+        ? "Producto / concepto"
+        : c.key === "quantity"
+          ? "Unidades vendidas"
+          : c.key === "paid"
+            ? "Cobro"
+            : c.name,
+    width: c.key === "quantity" ? 125 : c.width,
+  }));
+const minor = (v: string) =>
+  /^\d+(\.\d{0,2})?$/.test(v)
+    ? BigInt(v.split(".")[0]) * 100n +
+      BigInt((v.split(".")[1] ?? "").padEnd(2, "0"))
+    : null;
+const money = (n: bigint) => {
+  const sign = n < 0n ? "-" : "",
+    v = n < 0n ? -n : n;
+  return (
+    sign +
+    new Intl.NumberFormat("es-PE").format(v / 100n) +
+    "." +
+    String(v % 100n).padStart(2, "0")
   );
-const money = (n: bigint) =>
-  new Intl.NumberFormat("es-PE").format(n / 100n) +
-  "." +
-  String(n % 100n).padStart(2, "0");
+};
+const rawMoney = (n: bigint) =>
+  String(n / 100n) + "." + String(n % 100n).padStart(2, "0");
+function computed(e: Entry): Entry {
+  const price = minor(e.unitPrice.replace(",", "."));
+  return {
+    ...e,
+    amount:
+      price !== null && Number.isInteger(e.quantity) && e.quantity >= 0
+        ? rawMoney(price * BigInt(e.quantity))
+        : "0.00",
+  };
+}
+function fields(r: Entry): Entry {
+  return {
+    entryType: r.entryType ?? "EXPENSE",
+    sheetId: r.sheetId,
+    date: r.date,
+    kind: r.kind,
+    concept: r.concept,
+    category: r.category,
+    country: r.country,
+    location: r.location,
+    person: r.person,
+    quantity: r.quantity ?? 1,
+    unitPrice: r.unitPrice ?? r.amount,
+    amount: r.amount,
+    currency: r.currency,
+    paid: r.paid,
+    notes: r.notes,
+  };
+}
 async function request(
   path: string,
   method = "GET",
@@ -78,29 +143,21 @@ async function request(
   if (!r.ok) throw Error(b.error || "No se pudo guardar.");
   return b;
 }
-function fields(row: Entry): Entry {
-  return {
-    sheetId: row.sheetId,
-    date: row.date,
-    kind: row.kind,
-    concept: row.concept,
-    category: row.category,
-    country: row.country,
-    location: row.location,
-    person: row.person,
-    amount: row.amount,
-    currency: row.currency,
-    paid: row.paid,
-    notes: row.notes,
-  };
-}
 export function FixedCosts() {
   const [data, setData] = useState<Data | null>(null),
-    [month, setMonth] = useState(today().slice(0, 7)),
+    [type, setType] = useState<Entry["entryType"]>("EXPENSE"),
+    [from, setFrom] = useState(() => limaToday().slice(0, 7) + "-01"),
+    [to, setTo] = useState(() => {
+      const d = limaToday();
+      return new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7), 0))
+        .toISOString()
+        .slice(0, 10);
+    }),
     [sheet, setSheet] = useState(""),
     [country, setCountry] = useState(""),
+    [countryText, setCountryText] = useState(""),
     [category, setCategory] = useState(""),
-    [kind, setKind] = useState(""),
+    [categoryText, setCategoryText] = useState(""),
     [paid, setPaid] = useState(""),
     [page, setPage] = useState(1),
     [revision, setRevision] = useState(0),
@@ -108,50 +165,63 @@ export function FixedCosts() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const [edit, setEdit] = useState<{
-      id: string;
-      version: number;
-      entry: Entry;
-    } | null>(null),
-    [draft, setDraft] = useState<Entry | null>(null),
+  const [dirty, setDirty] = useState<Record<string, Dirty>>({}),
+    [extras, setExtras] = useState<string[]>([]),
+    [ghost, setGhost] = useState(0),
+    [remove, setRemove] = useState(""),
     [sheetName, setSheetName] = useState(""),
     [rename, setRename] = useState(false),
-    [remove, setRemove] = useState(""),
     [share, setShare] = useState(false),
     [members, setMembers] = useState<any[]>([]),
     [email, setEmail] = useState(""),
     [permission, setPermission] = useState("VIEW");
   const lock = useRef(false),
-    requestId = useRef(""),
-    epoch = useRef(0);
+    grid = useRef<HTMLDivElement>(null),
+    epoch = useRef(0),
+    dirtyCount = Object.keys(dirty).length,
+    columns = type === "INCOME" ? incomeColumns : expenseColumns;
   const query = new URLSearchParams({
-    month,
+    from,
+    to,
     page: String(page),
+    entryType: type,
     ...(sheet ? { sheet } : {}),
     ...(country ? { country } : {}),
     ...(category ? { category } : {}),
-    ...(kind ? { kind } : {}),
     ...(paid ? { paid } : {}),
   }).toString();
   useEffect(() => {
-    const controller = new AbortController();
-    const version = ++epoch.current;
+    const controller = new AbortController(),
+      version = ++epoch.current;
     setLoading(true);
     setError("");
-    setData(null);
     void request("?" + query, "GET", undefined, controller.signal)
       .then((b) => {
         if (version === epoch.current) setData(b);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted) {
+          setData(null);
+          setError(e.message);
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [query, revision]);
-  async function mutate(fn: () => Promise<unknown>, message = "Guardado.") {
+  const changeView = (fn: () => void) => {
+    if (dirtyCount) {
+      setError("Guarda o descarta los cambios antes de cambiar de vista.");
+      return;
+    }
+    setData(null);
+    setPage(1);
+    setNotice("");
+    setRemove("");
+    fn();
+  };
+  async function mutate(fn: () => Promise<void>, message = "Guardado.") {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
@@ -168,149 +238,359 @@ export function FixedCosts() {
       setBusy(false);
     }
   }
-  function resetFilters(action: () => void) {
-    if (edit || draft) {
-      setError(
-        "Guarda o cancela la fila que estás editando antes de cambiar de vista.",
+  function empty(): Entry {
+    return {
+      entryType: type,
+      sheetId: sheet || data?.sheets[0]?.id || "",
+      date: limaToday() >= from && limaToday() <= to ? limaToday() : from,
+      kind: type === "INCOME" ? "VARIABLE" : "FIXED",
+      concept: "",
+      category,
+      country,
+      location: "",
+      person: "",
+      quantity: 1,
+      unitPrice: "",
+      amount: "0.00",
+      currency: "PEN",
+      paid: type === "INCOME",
+      notes: "",
+    };
+  }
+  function add(focus = true) {
+    if (!data?.sheets.length || !data.canEdit || busy) return;
+    const key = crypto.randomUUID();
+    setExtras((v) => [...v, key]);
+    setDirty((v) => ({ ...v, [key]: { requestId: key, entry: empty() } }));
+    if (focus)
+      requestAnimationFrame(() =>
+        grid.current
+          ?.querySelector<HTMLInputElement>(
+            '[data-row="' + key + '"][data-col="1"]',
+          )
+          ?.focus(),
       );
+  }
+  const rows: { key: string; row: Row | undefined; entry: Entry }[] = [
+    ...(data?.rows ?? []).map((row) => ({
+      key: row.id,
+      row,
+      entry: dirty[row.id]?.entry ?? fields(row),
+    })),
+    ...extras.map((key) => ({
+      key,
+      row: undefined,
+      entry: dirty[key]?.entry ?? empty(),
+    })),
+    ...(data?.canEdit && data.sheets.length
+      ? [{ key: "ghost:" + ghost, row: undefined, entry: empty() }]
+      : []),
+  ];
+  function edit(
+    key: string,
+    col: keyof Entry,
+    value: string | number | boolean,
+  ) {
+    const current = rows.find((r) => r.key === key);
+    if (!current) return;
+    if (key === "ghost:" + ghost) {
+      setExtras((v) => (v.includes(key) ? v : [...v, key]));
+      setGhost((v) => v + 1);
+    }
+    setDirty((previous) => {
+      const baseline =
+        previous[key] ??
+        (current.row
+          ? {
+              id: key,
+              version: current.row.version,
+              entry: fields(current.row),
+            }
+          : {
+              requestId: key.startsWith("ghost:") ? crypto.randomUUID() : key,
+              entry: current.entry,
+            });
+      const entry = computed({ ...baseline.entry, [col]: value });
+      return { ...previous, [key]: { ...baseline, entry } };
+    });
+    setNotice("");
+  }
+  async function save() {
+    await mutate(async () => {
+      if (
+        Object.values(dirty).some(
+          (r) =>
+            !r.entry.concept.trim() ||
+            minor(r.entry.unitPrice.replace(",", ".")) === null,
+        )
+      )
+        throw Error("Completa el concepto y un precio válido en cada fila.");
+      await request("/grid", "POST", {
+        rows: Object.values(dirty).map((row) => ({
+          ...row,
+          entry: {
+            ...computed(row.entry),
+            unitPrice: row.entry.unitPrice.replace(",", "."),
+          },
+        })),
+      });
+      setDirty({});
+      setExtras([]);
+    }, "Cambios guardados.");
+  }
+  function keyboard(
+    e: KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    r: number,
+    c: number,
+  ) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (dirtyCount && !busy) void save();
       return;
     }
-    setPage(1);
-    setNotice("");
-    setRemove("");
-    action();
+    if (!["ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
+    e.preventDefault();
+    const next =
+      r + (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey) ? -1 : 1);
+    const target = rows[next];
+    if (target)
+      grid.current
+        ?.querySelector<HTMLInputElement>(
+          '[data-row="' + target.key + '"][data-col="' + c + '"]',
+        )
+        ?.focus();
+    else if (next === rows.length) add();
   }
-  function editor(entry: Entry, change: (v: Entry) => void) {
-    const input = (
-      key: keyof Entry,
-      label: string,
-      type = "text",
-      width?: string,
-    ) => (
-      <input
-        style={width ? { width } : undefined}
-        aria-label={label}
-        type={type}
-        value={String(entry[key])}
-        onChange={(e) =>
-          change({
-            ...entry,
-            [key]:
-              key === "currency"
-                ? e.target.value.toUpperCase()
-                : e.target.value,
-          })
-        }
-        maxLength={key === "notes" ? 2000 : 160}
-        step={key === "amount" ? "0.01" : undefined}
-        min={key === "amount" ? "0" : undefined}
-      />
-    );
-    return (
-      <>
-        <td>{input("date", "Fecha", "date")}</td>
-        <td>{input("concept", "Concepto")}</td>
-        <td>
-          <select
-            aria-label="Hoja del gasto"
-            value={entry.sheetId}
-            onChange={(e) => change({ ...entry, sheetId: e.target.value })}
-          >
-            {data?.sheets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </td>
-        <td>{input("category", "Categoría")}</td>
-        <td>{input("country", "País")}</td>
-        <td>{input("location", "Lugar")}</td>
-        <td>{input("person", "Persona")}</td>
-        <td>{input("amount", "Importe", "number", "110px")}</td>
-        <td>{input("currency", "Moneda", "text", "66px")}</td>
-        <td>
-          <select
-            aria-label="Tipo de gasto"
-            value={entry.kind}
-            onChange={(e) =>
-              change({ ...entry, kind: e.target.value as Entry["kind"] })
-            }
-          >
-            <option value="FIXED">Fijo</option>
-            <option value="VARIABLE">Variable</option>
-          </select>
-        </td>
-        <td>
-          <input
-            aria-label="Pagado"
-            type="checkbox"
-            checked={entry.paid}
-            onChange={(e) => change({ ...entry, paid: e.target.checked })}
-          />
-        </td>
-        <td>{input("notes", "Nota")}</td>
-      </>
-    );
+  function paste(e: ClipboardEvent<HTMLInputElement>, r: number, c: number) {
+    const text = e.clipboardData.getData("text/plain");
+    if (!text.includes("\t") && !text.includes("\n")) return;
+    e.preventDefault();
+    const lines = text.replace(/\r/g, "").replace(/\n$/, "").split("\n");
+    if (lines.length > 100) {
+      setError("Pega como máximo100 filas por guardado.");
+      return;
+    }
+    const updates: Record<string, Dirty> = {},
+      newKeys: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const current = rows[r + i],
+        key = current?.key ?? crypto.randomUUID(),
+        baseline =
+          dirty[key] ??
+          (current?.row
+            ? {
+                id: key,
+                version: current.row.version,
+                entry: fields(current.row),
+              }
+            : {
+                requestId: key.startsWith("ghost:") ? crypto.randomUUID() : key,
+                entry: empty(),
+              });
+      let entry = { ...baseline.entry };
+      const cells = lines[i].split("\t");
+      for (let j = 0; j < cells.length && c + j < columns.length; j++) {
+        const field = columns[c + j].key,
+          value = cells[j].trim();
+        if (field === "amount") continue;
+        if (field === "quantity") entry.quantity = Number(value);
+        else if (field === "paid")
+          entry.paid = /^(sí|si|true|1|pagado|cobrado)$/i.test(value);
+        else if (field === "kind")
+          entry.kind = /^(variable|VARIABLE)$/.test(value)
+            ? "VARIABLE"
+            : "FIXED";
+        else
+          (entry as any)[field] =
+            field === "currency" ? value.toUpperCase() : value;
+      }
+      updates[key] = { ...baseline, entry: computed(entry) };
+      if (!current || key === "ghost:" + ghost) newKeys.push(key);
+    }
+    setDirty((v) => ({ ...v, ...updates }));
+    setExtras((v) => [...v, ...newKeys.filter((k) => !v.includes(k))]);
+    if (newKeys.includes("ghost:" + ghost)) setGhost((v) => v + 1);
+    setNotice("");
   }
   const totals = new Map<
     string,
-    { total: bigint; paid: bigint; fixed: bigint; variable: bigint }
+    { income: bigint; expense: bigint; collected: bigint; spent: bigint }
   >();
   for (const g of data?.groups ?? []) {
     const t = totals.get(g.currency) ?? {
-        total: 0n,
-        paid: 0n,
-        fixed: 0n,
-        variable: 0n,
+        income: 0n,
+        expense: 0n,
+        collected: 0n,
+        spent: 0n,
       },
-      n = cents(g._sum.amount ?? "0");
-    t.total += n;
-    if (g.paid) t.paid += n;
-    if (g.kind === "FIXED") t.fixed += n;
-    else t.variable += n;
+      n = minor(g._sum.amount ?? "0") ?? 0n;
+    if (g.entryType === "INCOME") {
+      t.income += n;
+      if (g.paid) t.collected += n;
+    } else {
+      t.expense += n;
+      if (g.paid) t.spent += n;
+    }
     totals.set(g.currency, t);
   }
-  const disabled = busy || loading,
-    canEdit = data?.canEdit && !disabled;
+  const canEdit = data?.canEdit && !loading && !busy;
   return (
-    <section className="fixed-costs stack" aria-label="Control de costos fijos">
-      <header className="fc-heading">
-        <div>
-          <span className="eyebrow">ORDENA TUS GASTOS</span>
-          <h1>Costos fijos</h1>
-          <small className="muted">
-            Fijos y variables · un solo control mensual
-          </small>
+    <section
+      className="fixed-costs fc-workbook"
+      aria-label="Hoja de costos e ingresos"
+    >
+      <header className="fc-bar">
+        <h1 className="sr-only">Costos fijos</h1>
+        <div className="fc-modes" role="group" aria-label="Gastos e ingresos">
+          <button
+            aria-pressed={type === "EXPENSE"}
+            onClick={() => changeView(() => setType("EXPENSE"))}
+          >
+            Gastos
+          </button>
+          <button
+            aria-pressed={type === "INCOME"}
+            onClick={() => changeView(() => setType("INCOME"))}
+          >
+            Ingresos
+          </button>
         </div>
-        <div className="row">
-          <span className="badge">
-            {data?.owner
-              ? "Privado · OWNER"
-              : data?.canEdit
-                ? "Acceso de edición"
-                : "Solo consulta"}
-          </span>
-          {data?.owner && (
+        <MetaDateRange
+          from={from}
+          to={to}
+          maxDays={366}
+          allowFuture
+          triggerAriaLabel="Período de costos e ingresos"
+          applyLabel="Aplicar período"
+          onChange={(a, b) =>
+            changeView(() => {
+              setFrom(a);
+              setTo(b);
+            })
+          }
+        />
+        <label className="fc-inline-label">
+          País
+          <input
+            aria-label="Filtrar país"
+            list="fc-countries"
+            placeholder="Todos"
+            value={countryText}
+            title="Escribe el país y pulsa Enter"
+            disabled={busy || !!dirtyCount}
+            onChange={(e) => setCountryText(e.target.value)}
+            onBlur={() => {
+              if (countryText.trim() !== country)
+                changeView(() => setCountry(countryText.trim()));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                changeView(() => setCountry(countryText.trim()));
+              }
+            }}
+          />
+        </label>
+        <form
+          className="fc-category-filter"
+          onSubmit={(e) => {
+            e.preventDefault();
+            changeView(() => setCategory(categoryText.trim()));
+          }}
+        >
+          <label className="fc-inline-label">
+            Categoría
+            <input
+              aria-label="Filtrar o crear categoría"
+              placeholder="Todas · escribe una"
+              list="fc-categories"
+              value={categoryText}
+              disabled={busy || !!dirtyCount}
+              onChange={(e) => setCategoryText(e.target.value)}
+            />
+          </label>
+          <button title="Aplicar categoría" disabled={busy || !!dirtyCount}>
+            ↵
+          </button>
+          {canEdit &&
+            categoryText.trim() &&
+            !data.categories.some(
+              (c) => c.toLowerCase() === categoryText.trim().toLowerCase(),
+            ) && (
+              <button
+                type="button"
+                title="Crear categoría"
+                aria-label="Crear categoría"
+                onClick={() =>
+                  void mutate(async () => {
+                    await request("/categories", "POST", {
+                      name: categoryText.trim(),
+                    });
+                    setCategory(categoryText.trim());
+                    setPage(1);
+                  }, "Categoría creada.")
+                }
+              >
+                ＋
+              </button>
+            )}
+          {category && (
             <button
               type="button"
-              aria-expanded={share}
-              onClick={() => {
-                setShare(!share);
-                if (!share)
-                  void request("/sharing")
-                    .then((b) => setMembers(b.members))
-                    .catch((e) => setError(e.message));
-              }}
+              aria-label="Quitar filtro categoría"
+              onClick={() =>
+                changeView(() => {
+                  setCategory("");
+                  setCategoryText("");
+                })
+              }
             >
-              Compartir
+              ×
             </button>
           )}
-        </div>
+        </form>
+        <label className="fc-inline-label">
+          {type === "INCOME" ? "Cobro" : "Pago"}
+          <select
+            aria-label="Filtrar estado de pago"
+            value={paid}
+            disabled={busy || !!dirtyCount}
+            onChange={(e) => changeView(() => setPaid(e.target.value))}
+          >
+            <option value="">Todos</option>
+            <option value="no">Pendiente</option>
+            <option value="yes">
+              {type === "INCOME" ? "Cobrado" : "Pagado"}
+            </option>
+          </select>
+        </label>
+        {data?.owner && (
+          <button
+            onClick={() => {
+              setShare(!share);
+              if (!share)
+                void request("/sharing")
+                  .then((b) => setMembers(b.members))
+                  .catch((e) => setError(e.message));
+            }}
+          >
+            Compartir
+          </button>
+        )}
       </header>
+      <datalist id="fc-countries">
+        {data?.countries.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <datalist id="fc-categories">
+        {data?.categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       {share && data?.owner && (
-        <section className="panel fc-share" aria-label="Compartir costos">
-          <strong>Los OWNER siempre tienen acceso</strong>
+        <section className="fc-share">
+          <strong>OWNER siempre tiene acceso</strong>
           <form
             className="row"
             onSubmit={(e) => {
@@ -320,8 +600,7 @@ export function FixedCosts() {
                   email: email.trim(),
                   permission,
                 });
-                const b = await request("/sharing");
-                setMembers(b.members);
+                setMembers((await request("/sharing")).members);
                 setEmail("");
               }, "Acceso actualizado.");
             }}
@@ -368,525 +647,538 @@ export function FixedCosts() {
           ))}
         </section>
       )}
-      <div className="fc-toolbar">
-        <label>
-          Mes
-          <input
-            aria-label="Mes de costos"
-            type="month"
-            value={month}
-            min="2000-01"
-            max="2199-12"
-            disabled={busy}
-            onChange={(e) => resetFilters(() => setMonth(e.target.value))}
-          />
-        </label>
-        <label>
-          País
-          <select
-            value={country}
-            disabled={disabled}
-            onChange={(e) => resetFilters(() => setCountry(e.target.value))}
-          >
-            <option value="">Todos</option>
-            {data?.countries.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Categoría
-          <select
-            value={category}
-            disabled={disabled}
-            onChange={(e) => resetFilters(() => setCategory(e.target.value))}
-          >
-            <option value="">Todas</option>
-            {data?.categories.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Tipo
-          <select
-            value={kind}
-            disabled={disabled}
-            onChange={(e) => resetFilters(() => setKind(e.target.value))}
-          >
-            <option value="">Todos</option>
-            <option value="FIXED">Fijos</option>
-            <option value="VARIABLE">Variables</option>
-          </select>
-        </label>
-        <label>
-          Pago
-          <select
-            value={paid}
-            disabled={disabled}
-            onChange={(e) => resetFilters(() => setPaid(e.target.value))}
-          >
-            <option value="">Todos</option>
-            <option value="yes">Pagados</option>
-            <option value="no">Pendientes</option>
-          </select>
-        </label>
+      <div className="fc-command-bar">
+        <span>
+          {data?.total ?? 0} registros
+          {dirtyCount ? ` · ${dirtyCount} por guardar` : ""}
+        </span>
+        {canEdit && (
+          <>
+            <button onClick={() => add()}>＋ Fila</button>
+            {dirtyCount > 0 && (
+              <>
+                <button className="primary" onClick={() => void save()}>
+                  Guardar cambios ({dirtyCount})
+                </button>
+                <button
+                  onClick={() => {
+                    setDirty({});
+                    setExtras([]);
+                    setError("");
+                  }}
+                >
+                  Descartar
+                </button>
+              </>
+            )}
+          </>
+        )}
         <button
-          type="button"
-          disabled={disabled || !!edit || !!draft}
+          aria-label="Actualizar tabla"
+          disabled={loading || busy || !!dirtyCount}
           onClick={() => setRevision((v) => v + 1)}
         >
-          Actualizar
+          ↻
         </button>
-      </div>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className="success">
-          {notice}
-        </p>
-      )}
-      <div className="fc-totals">
-        {[...totals].map(([currency, t]) => (
-          <article key={currency}>
-            <span className="badge">{currency}</span>
-            <strong>{money(t.total)}</strong>
-            <small>
-              Registrado · Fijos {money(t.fixed)} + Variables{" "}
-              {money(t.variable)}
-            </small>
-            <div>
-              <span className="fc-paid">Pagado {money(t.paid)}</span>
-              <span className="fc-pending">
-                Pendiente {money(t.total - t.paid)}
-              </span>
-            </div>
-          </article>
-        ))}
-      </div>
-      <nav className="fc-sheets" aria-label="Hojas de costos">
-        <button
-          type="button"
-          aria-pressed={!sheet}
-          disabled={busy}
-          onClick={() => resetFilters(() => setSheet(""))}
-        >
-          Todas las hojas
-        </button>
-        {data?.sheets.map((s) => (
-          <button
-            type="button"
-            key={s.id}
-            aria-pressed={sheet === s.id}
-            disabled={busy}
-            onClick={() =>
-              resetFilters(() => {
-                setSheet(s.id);
-                setRename(false);
-              })
-            }
-          >
-            {s.name}
-          </button>
-        ))}
-        {canEdit && (
-          <details>
-            <summary>+ Hoja</summary>
+        <span className="fc-save-status" role="status">
+          {loading
+            ? "Cargando…"
+            : busy
+              ? "Guardando…"
+              : notice ||
+                (!data?.canEdit
+                  ? "Solo consulta"
+                  : dirtyCount
+                    ? "Sin guardar"
+                    : "Guardado")}
+        </span>
+        <details className="fc-options">
+          <summary>Más</summary>
+          <div>
             <form
               className="row"
               onSubmit={(e) => {
                 e.preventDefault();
                 void mutate(async () => {
-                  const b = await request("/sheets", "POST", {
-                    name: sheetName.trim(),
+                  const s = await request("/sheets", "POST", {
+                    name: sheetName,
                   });
-                  setSheet(b.id);
+                  setSheet(s.id);
                   setSheetName("");
                 }, "Hoja creada.");
               }}
             >
               <input
                 aria-label="Nombre de nueva hoja"
-                placeholder="Nombre de hoja"
+                placeholder="Nueva hoja"
                 value={sheetName}
                 onChange={(e) => setSheetName(e.target.value)}
                 maxLength={160}
                 required
               />
-              <button disabled={busy}>Crear</button>
+              <button disabled={!canEdit || !!dirtyCount}>Crear hoja</button>
             </form>
+            {sheet && (
+              <button
+                disabled={!canEdit || !!dirtyCount}
+                onClick={() => {
+                  setRename(!rename);
+                  setSheetName(
+                    data?.sheets.find((s) => s.id === sheet)?.name ?? "",
+                  );
+                }}
+              >
+                Editar hoja
+              </button>
+            )}
+            {type === "EXPENSE" && (
+              <details>
+                <summary>Traer fijos del mes anterior</summary>
+                <p>
+                  Se crearán pendientes en {from.slice(0, 7)}, sin duplicarlos.
+                  No incluye ingresos.
+                </p>
+                <button
+                  disabled={!canEdit || !!dirtyCount}
+                  onClick={() =>
+                    void mutate(async () => {
+                      await request("/carry", "POST", {
+                        month: from.slice(0, 7),
+                      });
+                    }, "Fijos trasladados; los nuevos quedan pendientes.")
+                  }
+                >
+                  Confirmar traslado
+                </button>
+              </details>
+            )}
+          </div>
+        </details>
+      </div>
+      {error && (
+        <p role="alert" className="fc-error">
+          {error}
+        </p>
+      )}
+      {rename && sheet && (
+        <form
+          className="fc-rename row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void mutate(async () => {
+              await request("/sheets/" + sheet, "PATCH", { name: sheetName });
+              setRename(false);
+            }, "Hoja actualizada.");
+          }}
+        >
+          <input
+            aria-label="Renombrar hoja"
+            value={sheetName}
+            onChange={(e) => setSheetName(e.target.value)}
+            required
+          />
+          <button disabled={busy}>Guardar nombre</button>
+          <button type="button" onClick={() => setRename(false)}>
+            Cancelar
+          </button>
+          <details>
+            <summary>Eliminar hoja vacía</summary>
+            <button
+              type="button"
+              onClick={() =>
+                void mutate(async () => {
+                  await request("/sheets/" + sheet, "DELETE");
+                  setSheet("");
+                  setRename(false);
+                }, "Hoja vacía eliminada.")
+              }
+            >
+              Confirmar eliminación
+            </button>
           </details>
-        )}
-      </nav>
-      {loading ? (
-        <p role="status">Cargando gastos…</p>
-      ) : data && !data.sheets.length ? (
-        <div className="panel fc-empty">
-          <h2>Tu control mensual empieza aquí</h2>
-          <p>Crea tus hojas y registra únicamente tus gastos reales.</p>
+        </form>
+      )}
+      {data && !data.sheets.length ? (
+        <div className="fc-start">
+          <span>Sin registros. Prepara las hojas o crea una desde «Más».</span>
           {data.owner && (
             <button
               className="primary"
               disabled={busy}
               onClick={() =>
-                void mutate(
-                  () => request("/sheets/initialize", "POST", {}),
-                  "Hojas listas. Ya puedes registrar tus gastos.",
-                )
+                void mutate(async () => {
+                  await request("/sheets/initialize", "POST", {});
+                }, "Hojas listas, sin datos de ejemplo.")
               }
             >
-              Preparar hojas sugeridas
+              Preparar hojas
             </button>
           )}
         </div>
       ) : (
-        data && (
-          <>
-            <div className="fc-actions">
-              <span>
-                {data.total} gastos · {month}
-              </span>
-              <div className="row">
-                {canEdit && sheet && (
-                  <button
-                    onClick={() => {
-                      setRename(!rename);
-                      setSheetName(
-                        data.sheets.find((s) => s.id === sheet)?.name ?? "",
-                      );
-                    }}
-                  >
-                    Editar hoja
-                  </button>
-                )}
-                {canEdit && (
-                  <>
-                    <button
-                      disabled={!!edit || !!draft}
-                      onClick={() => {
-                        requestId.current = crypto.randomUUID();
-                        const next = blank(sheet || data.sheets[0].id);
-                        if (next.date.slice(0, 7) !== month)
-                          next.date = month + "-01";
-                        setDraft(next);
-                      }}
-                    >
-                      + Gasto fijo
-                    </button>
-                    <button
-                      className="primary"
-                      disabled={!!edit || !!draft}
-                      onClick={() => {
-                        requestId.current = crypto.randomUUID();
-                        const next = blank(
-                          sheet ||
-                            data.sheets.find((s) => s.name === "Variables")
-                              ?.id ||
-                            data.sheets[0].id,
-                        );
-                        next.kind = "VARIABLE";
-                        next.paid = true;
-                        if (next.date.slice(0, 7) !== month)
-                          next.date = month + "-01";
-                        setDraft(next);
-                      }}
-                    >
-                      + Gasto del día
-                    </button>
-                    <details>
-                      <summary>Traer fijos del mes anterior</summary>
-                      <p>
-                        Se crearán pendientes en {month}, en todas las hojas. No
-                        duplica los ya trasladados.
-                      </p>
-                      <button
-                        disabled={busy || !!edit || !!draft}
-                        onClick={() =>
-                          void mutate(async () => {
-                            const b = await request("/carry", "POST", {
-                              month,
-                            });
-                            setNotice(`${b.copied} gastos trasladados.`);
-                          }, "Fijos del mes anterior revisados; los nuevos quedan pendientes.")
-                        }
-                      >
-                        Confirmar traslado
-                      </button>
-                    </details>
-                  </>
-                )}
-              </div>
-            </div>
-            {rename && canEdit && sheet && (
-              <form
-                className="row panel"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void mutate(async () => {
-                    await request("/sheets/" + sheet, "PATCH", {
-                      name: sheetName,
-                    });
-                    setRename(false);
-                  }, "Nombre actualizado.");
-                }}
-              >
-                <input
-                  aria-label="Renombrar hoja"
-                  value={sheetName}
-                  onChange={(e) => setSheetName(e.target.value)}
-                  required
-                  maxLength={160}
-                />
-                <button>Guardar nombre</button>
-                <button type="button" onClick={() => setRename(false)}>
-                  Cancelar
-                </button>
-                <details>
-                  <summary>Eliminar hoja vacía</summary>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void mutate(async () => {
-                        await request("/sheets/" + sheet, "DELETE");
-                        setSheet("");
-                        setRename(false);
-                      }, "Hoja vacía eliminada.")
-                    }
-                  >
-                    Confirmar eliminación
-                  </button>
-                </details>
-              </form>
-            )}
-            <div
-              className="fc-table-wrap"
-              tabIndex={0}
-              aria-label="Tabla de gastos, desplazamiento horizontal"
-            >
-              <table className="fc-table">
-                <thead>
-                  <tr>
-                    {[
-                      "Fecha",
-                      "Concepto",
-                      "Hoja",
-                      "Categoría",
-                      "País",
-                      "Lugar",
-                      "Persona",
-                      "Importe",
-                      "Moneda",
-                      "Tipo",
-                      "Pagado",
-                      "Nota",
-                      "Acciones",
-                    ].map((v) => (
-                      <th key={v} scope="col">
-                        {v}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {draft && (
-                    <tr className="fc-edit">
-                      {editor(draft, setDraft)}
-                      <td>
-                        <button
-                          className="primary"
-                          disabled={
-                            busy || !draft.concept.trim() || !draft.amount
-                          }
-                          onClick={() =>
-                            void mutate(async () => {
-                              await request("/entries", "POST", {
-                                requestId: requestId.current,
-                                entry: draft,
-                              });
-                              setDraft(null);
-                            }, "Gasto registrado.")
+        <div
+          ref={grid}
+          className="fc-grid"
+          tabIndex={0}
+          aria-label={
+            type === "INCOME"
+              ? "Tabla de ingresos editable"
+              : "Tabla de gastos editable"
+          }
+          aria-busy={loading || busy}
+        >
+          <table>
+            <colgroup>
+              <col style={{ width: 38 }} />
+              {columns.map((c) => (
+                <col key={c.key} style={{ width: c.width }} />
+              ))}
+              {data?.canEdit && <col style={{ width: 44 }} />}
+            </colgroup>
+            <thead>
+              <tr className="fc-letters">
+                <th />
+                <>
+                  {columns.map((c, i) => (
+                    <th key={c.key} scope="col">
+                      {String.fromCharCode(65 + i)}
+                    </th>
+                  ))}
+                </>
+                {data?.canEdit && <th />}
+              </tr>
+              <tr>
+                <th scope="col">#</th>
+                {columns.map((c) => (
+                  <th scope="col" key={c.key}>
+                    {c.name}
+                  </th>
+                ))}
+                {data?.canEdit && <th scope="col" aria-label="Eliminar fila" />}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ key, row, entry }, r) => {
+                const group = [
+                    entry.country || "Sin país",
+                    entry.category ||
+                      data?.sheets.find((s) => s.id === entry.sheetId)?.name ||
+                      "",
+                    entry.location,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  previous = rows[r - 1]?.entry,
+                  previousGroup = previous
+                    ? [
+                        previous.country || "Sin país",
+                        previous.category ||
+                          data?.sheets.find((s) => s.id === previous.sheetId)
+                            ?.name ||
+                          "",
+                        previous.location,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : "";
+                return (
+                  <Fragment key={key}>
+                    {group !== previousGroup &&
+                      (row || dirty[key] || entry.concept) && (
+                        <tr
+                          className={
+                            "fc-country-group tone-" +
+                            ((entry.country.length + entry.category.length) % 4)
                           }
                         >
-                          Guardar
-                        </button>
-                        <button disabled={busy} onClick={() => setDraft(null)}>
-                          Cancelar
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                  {data.rows.map((row) =>
-                    edit?.id === row.id ? (
-                      <tr className="fc-edit" key={row.id}>
-                        {editor(edit.entry, (v) =>
-                          setEdit({ ...edit, entry: v }),
-                        )}
-                        <td>
-                          <button
-                            className="primary"
-                            disabled={busy}
-                            onClick={() =>
-                              void mutate(async () => {
-                                await request("/entries/" + row.id, "PATCH", {
-                                  version: edit.version,
-                                  entry: edit.entry,
-                                });
-                                setEdit(null);
-                              }, "Gasto actualizado.")
+                          <th
+                            colSpan={
+                              columns.length + 1 + (data?.canEdit ? 1 : 0)
                             }
                           >
-                            Guardar
-                          </button>
-                          <button disabled={busy} onClick={() => setEdit(null)}>
-                            Cancelar
-                          </button>
-                        </td>
-                      </tr>
-                    ) : (
-                      <tr key={row.id}>
-                        <td>{row.date}</td>
-                        <th scope="row">{row.concept}</th>
-                        <td>
-                          {data.sheets.find((s) => s.id === row.sheetId)?.name}
-                        </td>
-                        <td>{row.category || "—"}</td>
-                        <td>{row.country || "—"}</td>
-                        <td>{row.location || "—"}</td>
-                        <td>{row.person || "—"}</td>
-                        <td className="fc-number">
-                          {money(cents(row.amount))}
-                        </td>
-                        <td>{row.currency}</td>
-                        <td>
-                          <span
-                            className={
-                              "badge " +
-                              (row.kind === "FIXED"
-                                ? "fc-fixed"
-                                : "fc-variable")
-                            }
-                          >
-                            {row.kind === "FIXED" ? "Fijo" : "Variable"}
-                          </span>
-                        </td>
-                        <td>
-                          {data.canEdit ? (
-                            <button
-                              disabled={disabled || !!edit || !!draft}
-                              className={row.paid ? "fc-paid" : "fc-pending"}
-                              onClick={() =>
-                                void mutate(() =>
-                                  request("/entries/" + row.id, "PATCH", {
-                                    version: row.version,
-                                    entry: { ...fields(row), paid: !row.paid },
-                                  }),
+                            {group}
+                          </th>
+                        </tr>
+                      )}
+                    <tr className={dirty[key] ? "fc-dirty" : ""}>
+                      <th scope="row" className="fc-row-number">
+                        {(page - 1) * 50 + r + 1}
+                      </th>
+                      {columns.map((c, i) => (
+                        <td
+                          key={c.key}
+                          className={c.key === "amount" ? "fc-computed" : ""}
+                        >
+                          {c.key === "paid" ? (
+                            <select
+                              data-row={key}
+                              data-col={i}
+                              aria-label={`${c.name} fila ${r + 1}`}
+                              value={entry.paid ? "yes" : "no"}
+                              disabled={!canEdit}
+                              onKeyDown={(e) => keyboard(e, r, i)}
+                              onChange={(e) =>
+                                edit(key, c.key, e.target.value === "yes")
+                              }
+                              className={entry.paid ? "fc-paid" : "fc-pending"}
+                            >
+                              <option value="no">Pendiente</option>
+                              <option value="yes">
+                                {type === "INCOME" ? "Cobrado" : "Pagado"}
+                              </option>
+                            </select>
+                          ) : c.key === "kind" ? (
+                            <select
+                              data-row={key}
+                              data-col={i}
+                              aria-label={`Tipo fila ${r + 1}`}
+                              value={entry.kind}
+                              disabled={!canEdit}
+                              onChange={(e) => edit(key, c.key, e.target.value)}
+                              onKeyDown={(e) => keyboard(e, r, i)}
+                            >
+                              <option value="FIXED">Fijo</option>
+                              <option value="VARIABLE">Variable</option>
+                            </select>
+                          ) : (
+                            <input
+                              data-row={key}
+                              data-col={i}
+                              aria-label={`${c.name} fila ${r + 1}`}
+                              type={
+                                c.key === "date"
+                                  ? "date"
+                                  : c.key === "quantity"
+                                    ? "number"
+                                    : "text"
+                              }
+                              inputMode={
+                                ["unitPrice", "amount"].includes(c.key)
+                                  ? "decimal"
+                                  : undefined
+                              }
+                              list={
+                                c.key === "category"
+                                  ? "fc-categories"
+                                  : c.key === "country"
+                                    ? "fc-countries"
+                                    : undefined
+                              }
+                              value={
+                                c.key === "amount"
+                                  ? money(minor(computed(entry).amount) ?? 0n)
+                                  : String(entry[c.key])
+                              }
+                              readOnly={!canEdit || c.key === "amount"}
+                              tabIndex={c.key === "amount" ? -1 : undefined}
+                              maxLength={c.key === "notes" ? 2000 : 160}
+                              min={c.key === "quantity" ? 0 : undefined}
+                              step={c.key === "quantity" ? 1 : undefined}
+                              title={
+                                c.key === "unitPrice"
+                                  ? "Precio sin separadores de miles"
+                                  : undefined
+                              }
+                              onChange={(e) =>
+                                edit(
+                                  key,
+                                  c.key,
+                                  c.key === "quantity"
+                                    ? Number(e.target.value)
+                                    : c.key === "currency"
+                                      ? e.target.value.toUpperCase()
+                                      : e.target.value,
                                 )
                               }
-                            >
-                              {row.paid ? "✓ Pagado" : "Pendiente"}
-                            </button>
-                          ) : row.paid ? (
-                            "Pagado"
-                          ) : (
-                            "Pendiente"
+                              onPaste={
+                                canEdit && c.key !== "amount"
+                                  ? (e) => paste(e, r, i)
+                                  : undefined
+                              }
+                              onKeyDown={(e) => keyboard(e, r, i)}
+                            />
                           )}
                         </td>
-                        <td className="fc-note">{row.notes || "—"}</td>
-                        <td>
-                          {data.canEdit && (
-                            <>
+                      ))}
+                      {data?.canEdit && (
+                        <td className="fc-remove">
+                          {remove === key ? (
+                            <span>
                               <button
-                                disabled={disabled || !!edit || !!draft}
+                                title="Confirmar eliminación"
+                                disabled={busy}
                                 onClick={() => {
-                                  setEdit({
-                                    id: row.id,
-                                    version: row.version,
-                                    entry: fields(row),
-                                  });
-                                  setRemove("");
+                                  if (!row) {
+                                    setExtras((v) =>
+                                      v.filter((x) => x !== key),
+                                    );
+                                    setDirty((v) => {
+                                      const n = { ...v };
+                                      delete n[key];
+                                      return n;
+                                    });
+                                    setRemove("");
+                                  } else
+                                    void mutate(async () => {
+                                      await request(
+                                        "/entries/" + row.id,
+                                        "DELETE",
+                                        { version: row.version },
+                                      );
+                                      setDirty((v) => {
+                                        const n = { ...v };
+                                        delete n[key];
+                                        return n;
+                                      });
+                                      setRemove("");
+                                    }, "Fila eliminada.");
                                 }}
                               >
-                                Editar
+                                ✓
                               </button>
-                              {remove === row.id ? (
-                                <>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void mutate(async () => {
-                                        await request(
-                                          "/entries/" + row.id,
-                                          "DELETE",
-                                          { version: row.version },
-                                        );
-                                        setRemove("");
-                                      }, "Gasto eliminado.")
-                                    }
-                                  >
-                                    Confirmar eliminación
-                                  </button>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => setRemove("")}
-                                  >
-                                    Cancelar
-                                  </button>
-                                </>
-                              ) : (
-                                <button
-                                  disabled={disabled || !!edit || !!draft}
-                                  aria-label={"Eliminar " + row.concept}
-                                  onClick={() => setRemove(row.id)}
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </>
+                              <button
+                                title="Cancelar eliminación"
+                                onClick={() => setRemove("")}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              disabled={busy || loading}
+                              aria-label={`Eliminar fila ${r + 1}`}
+                              onClick={() => setRemove(key)}
+                            >
+                              ×
+                            </button>
                           )}
                         </td>
-                      </tr>
-                    ),
-                  )}
-                  {!data.rows.length && !draft && (
-                    <tr>
-                      <td colSpan={13} className="fc-empty">
-                        Sin gastos en esta vista. Registra un gasto fijo o un
-                        gasto del día.
-                      </td>
+                      )}
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <footer className="row">
-              <button
-                disabled={disabled || page === 1 || !!edit || !!draft}
-                onClick={() => setPage((v) => v - 1)}
-              >
-                Anterior
-              </button>
-              <span>
-                Página {page} de {Math.max(1, Math.ceil(data.total / 50))} · 50
-                por página
-              </span>
-              <button
-                disabled={
-                  disabled || page * 50 >= data.total || !!edit || !!draft
-                }
-                onClick={() => setPage((v) => v + 1)}
-              >
-                Siguiente
-              </button>
-              <small className="muted">
-                Totales de toda la vista · monedas separadas
-              </small>
-            </footer>
-          </>
-        )
+                  </Fragment>
+                );
+              })}
+              {!rows.length && (
+                <tr className="fc-empty-row">
+                  <th>1</th>
+                  <td colSpan={columns.length + (data?.canEdit ? 1 : 0)}>
+                    {loading ? (
+                      "Cargando…"
+                    ) : data?.canEdit ? (
+                      <button onClick={() => add()}>
+                        ＋ Escribe tu primer{" "}
+                        {type === "INCOME" ? "ingreso" : "gasto"}
+                      </button>
+                    ) : (
+                      "Sin registros en este período."
+                    )}
+                  </td>
+                </tr>
+              )}
+              {Array.from({ length: Math.max(0, 18 - rows.length) }, (_, i) => (
+                <tr className="fc-blank-grid-row" key={"blank" + i}>
+                  <th scope="row">{(page - 1) * 50 + rows.length + i + 1}</th>
+                  {columns.map((c, j) => (
+                    <td
+                      key={c.key}
+                      onClick={() => {
+                        if (canEdit)
+                          grid.current
+                            ?.querySelector<HTMLInputElement>(
+                              '[data-row="ghost:' +
+                                ghost +
+                                '"][data-col="' +
+                                j +
+                                '"]',
+                            )
+                            ?.focus();
+                      }}
+                    />
+                  ))}
+                  {data?.canEdit && <td />}
+                </tr>
+              ))}
+              {rows.length > 0 && canEdit && (
+                <tr className="fc-append-row">
+                  <th>＋</th>
+                  <td colSpan={columns.length + 1}>
+                    <button onClick={() => add()}>Añadir fila</button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
+      <footer className="fc-workbook-footer">
+        <nav className="fc-sheet-tabs" aria-label="Hojas de costos">
+          <button
+            aria-pressed={!sheet}
+            disabled={busy || !!dirtyCount}
+            onClick={() => changeView(() => setSheet(""))}
+          >
+            Todas
+          </button>
+          {data?.sheets.map((s) => (
+            <button
+              key={s.id}
+              aria-pressed={sheet === s.id}
+              disabled={busy || !!dirtyCount}
+              onClick={() => changeView(() => setSheet(s.id))}
+            >
+              {s.name}
+            </button>
+          ))}
+          {canEdit && (
+            <button
+              title="Crear hoja desde Más"
+              onClick={() =>
+                grid.current?.parentElement
+                  ?.querySelector<HTMLDetailsElement>(".fc-options")
+                  ?.setAttribute("open", "")
+              }
+            >
+              ＋
+            </button>
+          )}
+        </nav>
+        <span className="fc-pagination">
+          <button
+            aria-label="Página anterior"
+            disabled={loading || busy || !!dirtyCount || page === 1}
+            onClick={() => setPage((v) => v - 1)}
+          >
+            ‹
+          </button>
+          {page}/{Math.max(1, Math.ceil((data?.total ?? 0) / 50))}
+          <button
+            aria-label="Página siguiente"
+            disabled={
+              loading || busy || !!dirtyCount || page * 50 >= (data?.total ?? 0)
+            }
+            onClick={() => setPage((v) => v + 1)}
+          >
+            ›
+          </button>
+        </span>
+      </footer>
+      <div className="fc-summary-line" aria-label="Totales del período">
+        {[...totals].map(([currency, t]) => (
+          <span key={currency}>
+            <b>{currency}</b> Ingresos <strong>{money(t.income)}</strong> ·
+            Gastos <strong>{money(t.expense)}</strong> · Saldo{" "}
+            <strong
+              className={t.income - t.expense < 0n ? "fc-pending" : "fc-paid"}
+            >
+              {money(t.income - t.expense)}
+            </strong>
+            <small title="Dinero efectivamente cobrado y pagado">
+              {" "}
+              · Cobrado {money(t.collected)} · Pagado {money(t.spent)}
+            </small>
+          </span>
+        ))}
+      </div>
     </section>
   );
 }

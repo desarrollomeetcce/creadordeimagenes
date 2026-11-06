@@ -1,243 +1,423 @@
-.fixed-costs {
-  max-width: 100%;
-  min-width: 0;
-  gap: 14px;
-}
-.fc-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.fc-heading h1 {
-  margin: 3px 0;
-}
-.fc-toolbar {
-  display: flex;
-  gap: 10px;
-  align-items: end;
-  flex-wrap: wrap;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
-.fc-toolbar label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  min-width: 125px;
-}
-.fc-toolbar input,
-.fc-toolbar select {
-  min-height: 35px;
-  padding: 6px 9px;
-}
-.fc-totals {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.fc-totals article {
-  border: 1px solid var(--line);
-  border-top: 3px solid #58c6b1;
-  border-radius: 10px;
-  padding: 12px 16px;
-  display: grid;
-  gap: 6px;
-  min-width: 240px;
-  background: var(--surface);
-}
-.fc-totals strong {
-  font-size: 25px;
-}
-.fc-totals small {
-  color: var(--muted);
-}
-.fc-totals article > div {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-}
-.fc-paid {
-  color: #4cc8ab;
-}
-.fc-pending {
-  color: #e9b55e;
-}
-.fixed-costs .fc-sheets {
-  flex-direction:row;
-  justify-content:flex-start;
-  flex-wrap:nowrap;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  overflow-x: auto;
-  padding: 3px 0 8px;
-}
-.fixed-costs .fc-sheets button {
-  border:1px solid var(--line);
-  background:var(--surface);
-  white-space: nowrap;
-  font-size: 12px;
+.workspace > main:has(.fc-workbook) {
   padding: 8px 12px;
-  border-radius: 8px;
+  display: block;
 }
-.fixed-costs .fc-sheets button[aria-pressed="true"] {
-  background: #563679;
-  color: white;
-  border-color: #a17ac5;
+.workspace > .topbar:has(+ main .fc-workbook) {
+  min-height: 42px;
+  height: 42px;
+  padding: 5px 12px;
 }
-.fc-sheets details {
-  min-width: 70px;
-}
-.fc-sheets details[open] {
-  min-width: 260px;
-}
-.fc-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.fc-actions summary {
-  font-size: 12px;
-  cursor: pointer;
-}
-.fc-actions details {
-  max-width: 280px;
-}
-.fc-table-wrap {
-  overflow: auto;
+.fc-workbook {
+  min-width: 0;
   max-width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  max-height: 65vh;
-}
-.fc-table {
-  width: 100%;
-  border-collapse: collapse;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   font-size: 12px;
-  min-width: 1280px;
 }
-.fc-table th,
-.fc-table td {
+.fc-workbook h1 {
+  margin: 0;
+  font-size: 18px;
+}
+.fc-bar,
+.fc-command-bar,
+.fc-workbook-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  min-height: 35px;
+}
+.fc-bar {
   border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
-  padding: 7px 9px;
-  text-align: left;
-  vertical-align: middle;
+  padding: 0 0 5px;
 }
-.fc-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
+.fc-bar button,
+.fc-bar input,
+.fc-bar select,
+.fc-command-bar button,
+.fc-options summary,
+.fc-workbook-footer button {
+  min-height: 28px;
+  font-size: 12px;
+  padding: 4px 7px;
+  border-radius: 4px;
+}
+.fc-bar .meta-range > button {
+  min-width: 180px;
+}
+.fc-inline-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
   white-space: nowrap;
 }
-.fc-table tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--surface) 75%, transparent);
+.fc-inline-label input {
+  width: 110px;
+  min-width: 0;
 }
-.fc-table tbody th {
-  min-width: 170px;
-  max-width: 260px;
+.fc-inline-label select {
+  min-width: 95px;
 }
-.fc-table td button {
-  padding: 5px 7px;
+.fc-category-filter,
+.fc-modes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+}
+.fc-category-filter input {
+  width: 150px;
+}
+.fc-modes button[aria-pressed="true"] {
+  background: var(--soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fc-command-bar {
+  border-bottom: 1px solid var(--line);
+  padding: 3px 0;
+  color: var(--muted);
   font-size: 11px;
 }
-.fc-table .fc-number {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.fc-command-bar > span:first-child {
+  margin-right: 5px;
 }
-.fc-table .fc-note {
-  max-width: 230px;
-  overflow-wrap: anywhere;
+.fc-save-status {
+  margin-left: auto;
 }
-.fc-edit {
-  outline: 2px solid #58c6b1;
-  outline-offset: -2px;
+.fc-options {
+  position: relative;
 }
-.fc-edit input,
-.fc-edit select {
-  width: 140px;
-  min-height: 32px;
-  padding: 5px;
+.fc-options > summary {
+  cursor: pointer;
+}
+.fc-options[open] > div {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 15;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 5px 20px #0003;
+}
+.fc-options form,
+.fc-rename {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.fc-options input {
+  min-width: 0;
+  width: 180px;
+}
+.fc-options p {
+  font-size: 11px;
+}
+.fc-grid {
+  overflow: auto;
+  max-width: 100%;
+  max-height: calc(100dvh - 235px);
+  min-height: 100px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+.fc-grid table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
   font-size: 12px;
+  width: max-content;
+  min-width: 100%;
 }
-.fc-edit input[type="checkbox"] {
-  width: auto;
-  min-height: 0;
-  accent-color: #229f89;
+.fc-grid th,
+.fc-grid td {
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  height: 30px;
+  white-space: nowrap;
+  text-align: left;
 }
-.fc-fixed {
-  background: #223f52;
-  color: #91d8f6;
+.fc-grid thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
 }
-.fc-variable {
-  background: #493858;
-  color: #d8b8f5;
+.fc-grid thead th {
+  padding: 4px 6px;
+  font-weight: 600;
+  background: var(--soft);
+  color: var(--label);
+  height: 28px;
 }
-.fc-empty {
-  padding: 30px !important;
-  text-align: center !important;
+.fc-grid .fc-letters th {
+  height: 20px;
+  font-weight: 400;
+  font-size: 10px;
+  text-align: center;
+  padding: 0;
+  background: var(--paper);
   color: var(--muted);
 }
-.fc-share {
-  display: grid;
-  gap: 10px;
+.fc-grid .fc-row-number,
+.fc-grid tbody > tr > th:first-child:not([colspan]) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: center;
+  font-weight: 400;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 10px;
 }
-.fc-share form input {
-  min-width: 200px;
+.fc-grid input,
+.fc-grid select {
+  display: block;
+  width: 100%;
+  max-width: none;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent !important;
+  color: var(--ink);
+  font: inherit;
+  padding: 5px 6px;
+  min-height: 29px;
+  height: 29px;
+  outline: none;
+  line-height: 19px;
 }
-.fixed-costs footer {
+.fc-grid input:focus,
+.fc-grid select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--soft) !important;
+}
+.fc-grid input[readonly] {
+  cursor: default;
+}
+.fc-grid .fc-computed {
+  background: color-mix(in srgb, var(--soft) 60%, var(--surface));
+  font-variant-numeric: tabular-nums;
+}
+.fc-grid .fc-computed input {
+  text-align: right;
+  font-weight: 600;
+}
+.fc-grid .fc-country-group th {
+  height: 25px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 650;
+  position: static;
+  color: var(--ink);
+}
+.fc-country-group.tone-0 {
+  background: color-mix(in srgb, #31a992 17%, var(--surface));
+}
+.fc-country-group.tone-1 {
+  background: color-mix(in srgb, #8c62bd 17%, var(--surface));
+}
+.fc-country-group.tone-2 {
+  background: color-mix(in srgb, #429ac3 16%, var(--surface));
+}
+.fc-country-group.tone-3 {
+  background: color-mix(in srgb, #d19c40 17%, var(--surface));
+}
+.fc-grid .fc-dirty > .fc-row-number {
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: inset 3px 0 var(--accent);
+}
+.fc-grid .fc-remove {
+  text-align: center;
+}
+.fc-grid .fc-remove button {
+  padding: 0 5px;
+  min-width: 18px;
+  height: 24px;
+  border: 0;
+  background: transparent;
   font-size: 12px;
-  flex-wrap: wrap;
 }
-.fixed-costs .row {
-  flex-wrap: wrap;
+.fc-grid .fc-remove span {
+  display: flex;
+  justify-content: center;
 }
-.fixed-costs .error,
-.fixed-costs .success {
+.fc-empty-row td,
+.fc-append-row td {
+  padding: 0;
+}
+.fc-empty-row button,
+.fc-append-row button {
+  border: 0;
+  background: transparent;
+  padding: 5px 9px;
+  font-size: 12px;
+  text-align: left;
+}
+.fc-empty-row td {
+  height: 32px;
+}
+.fc-workbook-footer {
+  border: 1px solid var(--line);
+  border-top: 0;
+  flex-wrap: nowrap;
+  min-height: 32px;
+  background: var(--surface);
+}
+.fc-workbook .fc-sheet-tabs {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow-x: auto;
+  min-width: 0;
+  flex: 1;
+}
+.fc-workbook .fc-sheet-tabs button {
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  white-space: nowrap;
+  font-size: 11px;
+  border-radius: 0;
+  padding: 6px 12px;
   margin: 0;
-  padding: 10px;
-  border-radius: 7px;
 }
-.fixed-costs input:focus-visible,
-.fixed-costs button:focus-visible,
-.fixed-costs select:focus-visible,
-.fixed-costs summary:focus-visible {
-  outline: 2px solid #a98cdb;
-  outline-offset: 2px;
+.fc-workbook .fc-sheet-tabs button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--soft);
+  box-shadow: inset 0 -2px var(--accent);
 }
-:root:not([data-theme="dark"]) .fc-paid {
-  color: #08785d;
+.fc-pagination {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  padding: 0 3px;
 }
-:root:not([data-theme="dark"]) .fc-pending {
-  color: #92600a;
+.fc-summary-line {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 26px;
+  font-size: 11px;
+  padding: 4px 1px;
 }
-@media (max-width: 600px) {
-  .fc-toolbar {
-    gap: 7px;
+.fc-summary-line b {
+  margin-right: 6px;
+  color: var(--accent);
+}
+.fc-summary-line strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fc-summary-line small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.fc-paid {
+  color: var(--accent) !important;
+}
+.fc-pending {
+  color: #b47b25 !important;
+}
+.fc-error {
+  margin: 4px 0;
+  padding: 5px 8px;
+  background: color-mix(in srgb, #d55 12%, var(--surface));
+  color: var(--ink);
+  font-size: 12px;
+  border: 1px solid #c77;
+  border-radius: 4px;
+}
+.fc-share,
+.fc-start,
+.fc-rename {
+  padding: 7px;
+  border: 1px solid var(--line);
+  margin: 4px 0;
+  background: var(--surface);
+}
+.fc-share form,
+.fc-share .row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.fc-share input,
+.fc-share select,
+.fc-share button,
+.fc-start button {
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.fc-start {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.fc-workbook button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (max-width: 650px) {
+  .workspace > main:has(.fc-workbook) {
+    padding: 5px;
   }
-  .fc-toolbar label {
-    min-width: 110px;
-    flex: 1;
+  .fc-bar {
+    gap: 5px;
   }
-  .fc-totals article {
-    width: 100%;
-    min-width: 0;
+  .fc-bar .meta-range > button {
+    min-width: 160px;
+    font-size: 11px;
   }
-  .fc-actions > .row {
-    width: 100%;
+  .fc-grid {
+    max-height: calc(100dvh - 285px);
   }
-  .fc-heading h1 {
-    font-size: 23px;
+  .fc-inline-label {
+    font-size: 10px;
   }
-  .fc-table-wrap {
-    max-height: 60vh;
+  .fc-inline-label input {
+    width: 100px;
+  }
+  .fc-category-filter input {
+    width: 120px;
+  }
+  .fc-save-status {
+    margin-left: 0;
+  }
+  .fc-summary-line {
+    font-size: 10px;
+    gap: 5px;
+  }
+  .fc-summary-line > span {
+    display: block;
+  }
+  .fc-summary-line small {
+    display: block;
+    margin-top: 2px;
+  }
+  .fc-options[open] > div {
+    position: fixed;
+    right: 8px;
+    top: 180px;
   }
 }
