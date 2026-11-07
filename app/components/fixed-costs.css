@@ -421,3 +421,251 @@
     top: 180px;
   }
 }
+/* The workbook owns scrolling, like the sales sheet. */
+body:has(.fc-workbook) {
+  overflow: hidden;
+}
+.shell:has(.fc-workbook) {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.workspace:has(.fc-workbook) {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.workspace:has(.fc-workbook) > .topbar {
+  flex-shrink: 0;
+}
+.workspace > main:has(.fc-workbook) {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+.fc-workbook {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.fc-workbook > :not(.fc-grid) {
+  flex-shrink: 0;
+}
+.fc-workbook .fc-grid {
+  flex: 1;
+  min-height: 80px;
+  max-height: none;
+  overscroll-behavior: contain;
+}
+.fc-bar,
+.fc-command-bar {
+  padding: 4px 8px;
+}
+.fc-bar h1 {
+  font-size: 15px;
+  margin-right: 8px;
+  letter-spacing: -0.2px;
+}
+.fc-grid thead th {
+  position: relative;
+}
+.fc-grid .fc-item-head {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+}
+.fc-grid input[type="checkbox"] {
+  appearance: auto;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  min-height: 0;
+  padding: 0;
+  margin: 0 4px 0 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+.fc-row-number label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 10px;
+}
+.fc-resize {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 6;
+}
+.fc-resize:hover,
+.fc-resize:focus-visible {
+  background: var(--accent);
+}
+.fc-choice {
+  position: relative;
+  min-width: 0;
+}
+.fc-inline-label .fc-choice {
+  width: 130px;
+}
+.fc-choice-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  max-height: 200px;
+  overflow: auto;
+  z-index: 25;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 5px 14px #0003;
+  border-radius: 4px;
+}
+.fc-choice-options button {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  text-align: left;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+}
+.fc-choice-options button[aria-selected="true"] {
+  background: var(--soft);
+  color: var(--accent);
+}
+.fc-choice-options span {
+  display: block;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.fc-grid td:has(.fc-choice:focus-within) {
+  position: relative;
+  z-index: 7;
+}
+.fc-conversion {
+  display: flex;
+  flex-direction: column;
+  height: 39px;
+}
+.fc-grid .fc-conversion input {
+  height: 18px;
+  min-height: 18px;
+  line-height: 14px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+.fc-conversion output {
+  padding: 1px 6px 3px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 11px;
+}
+.fc-catalog {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+.fc-catalog > div {
+  max-width: 260px;
+  font-size: 11px;
+}
+.fc-catalog strong,
+.fc-catalog span {
+  display: block;
+}
+.fc-catalog span {
+  max-height: 60px;
+  overflow: auto;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.fc-catalog textarea {
+  width: 300px;
+  max-width: 50vw;
+  min-height: 45px;
+  padding: 5px;
+  font-size: 12px;
+}
+.fc-catalog button {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.fc-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--paper);
+}
+.fc-summary-line {
+  padding: 4px 8px;
+}
+@media (max-width: 650px) {
+  .workspace > main:has(.fc-workbook) {
+    padding: 0;
+  }
+  .fc-bar,
+  .fc-command-bar {
+    gap: 3px;
+    padding: 3px 5px;
+  }
+  .fc-bar h1 {
+    font-size: 14px;
+  }
+  .fc-catalog {
+    flex-wrap: wrap;
+  }
+  .fc-catalog > div {
+    width: 100%;
+    max-width: none;
+  }
+  .fc-catalog textarea {
+    max-width: none;
+    flex: 1;
+    min-width: 150px;
+  }
+  .fc-workbook-footer {
+    flex-wrap: wrap;
+  }
+  .fc-workbook .fc-sheet-tabs {
+    flex-basis: 100%;
+  }
+}
+.fc-grid tr.fc-selected td {
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+.fc-conversion {
+  height: 29px;
+}
+.fc-grid .fc-conversion input {
+  height: 13px;
+  min-height: 13px;
+  font-size: 9px;
+  line-height: 11px;
+  padding: 1px 6px;
+}
+.fc-conversion output {
+  line-height: 14px;
+  font-size: 10px;
+  padding: 0 6px 2px;
+}

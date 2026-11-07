@@ -1,3 +1,4 @@
+import { costKey } from "./cost-ledger";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -22,6 +23,22 @@ export const costDate = z
   );
 export const costEntrySchema = z
   .object({
+    project: text.default(""),
+    unit: text.default(""),
+    bonus: z
+      .string()
+      .regex(/^\d{1,12}(\.\d{1,2})?$/)
+      .default("0.00"),
+    conversionRate: z
+      .string()
+      .regex(/^\d{1,12}(\.\d{1,6})?$/)
+      .refine((v) => Number(v) > 0, "La tasa debe ser mayor que cero.")
+      .nullable()
+      .default(null),
+    targetCurrency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .default("PEN"),
     entryType: z.enum(["EXPENSE", "INCOME"]).default("EXPENSE"),
     quantity: z.number().int().min(0).max(1000000).default(1),
     unitPrice: z
@@ -90,10 +107,36 @@ function sameCost(
   entry: z.output<typeof costEntrySchema>,
 ) {
   return Object.entries(entry).every(([key, value]) =>
-    ["amount", "unitPrice"].includes(key)
-      ? new Prisma.Decimal(row[key] ?? row.amount).equals(String(value))
+    ["amount", "unitPrice", "bonus", "conversionRate"].includes(key) &&
+    value !== null
+      ? new Prisma.Decimal(
+          row[key] ?? (key === "unitPrice" ? row.amount : "0"),
+        ).equals(String(value))
       : row[key] === value,
   );
+}
+async function canonicalCostOptions(
+  tx: Client,
+  entry: z.output<typeof costEntrySchema>,
+  options?: { kind: string; key: string; name: string }[],
+) {
+  for (const [field, kind] of [
+    ["project", "PROJECT"],
+    ["unit", "UNIT"],
+  ] as const) {
+    if (!entry[field]) continue;
+    const key = costKey(entry[field]);
+    const option = options
+      ? options.find((o) => o.kind === kind && o.key === key)
+      : await tx.fixedCostOption.findUnique({
+          where: { kind_key: { kind, key } },
+        });
+    demand(
+      option,
+      `Registra primero ${field === "project" ? "el proyecto" : "la unidad"} en el catálogo.`,
+    );
+    entry[field] = option.name;
+  }
 }
 async function access(
   tx: Client,
@@ -256,6 +299,8 @@ export async function fixedCostRoutes(
           ...(q.get("sheet") ? { sheetId: q.get("sheet")! } : {}),
           ...(q.get("country") ? { country: q.get("country")! } : {}),
           ...(q.get("category") ? { category: q.get("category")! } : {}),
+          ...(q.get("project") ? { project: q.get("project")! } : {}),
+          ...(q.get("unit") ? { unit: q.get("unit")! } : {}),
           ...(q.get("kind")
             ? { kind: z.enum(["FIXED", "VARIABLE"]).parse(q.get("kind")) }
             : {}),
@@ -264,7 +309,7 @@ export async function fixedCostRoutes(
             : {}),
         };
         const where = { ...shared, entryType };
-        const [sheets, rows, total, groups, facets, categories] =
+        const [sheets, rows, total, groups, facets, categories, options] =
           await Promise.all([
             tx.fixedCostSheet.findMany({ orderBy: { createdAt: "asc" } }),
             tx.fixedCostEntry.findMany({
@@ -283,7 +328,7 @@ export async function fixedCostRoutes(
             tx.fixedCostEntry.groupBy({
               by: ["currency", "entryType", "paid", "kind"],
               where: shared,
-              _sum: { amount: true },
+              _sum: { amount: true, bonus: true },
               _count: true,
             }),
             tx.fixedCostEntry.findMany({
@@ -296,8 +341,22 @@ export async function fixedCostRoutes(
               orderBy: { name: "asc" },
               take: 5000,
             }),
+            tx.fixedCostOption.findMany({
+              orderBy: { name: "asc" },
+              take: 5000,
+            }),
           ]);
+        const order = ["Asesores", "Servicios", "Tecnología", "Impuestos"];
+        sheets.sort(
+          (a, b) =>
+            (order.includes(a.name) ? order.indexOf(a.name) : 99) -
+            (order.includes(b.name) ? order.indexOf(b.name) : 99),
+        );
         return send({
+          projects: options
+            .filter((o) => o.kind === "PROJECT")
+            .map((o) => o.name),
+          units: options.filter((o) => o.kind === "UNIT").map((o) => o.name),
           sheets,
           rows,
           total,
@@ -316,6 +375,32 @@ export async function fixedCostRoutes(
             ]),
           ].sort(),
         });
+      }
+      if (p[0] === "options" && method === "POST" && !p[1]) {
+        const b = z
+          .object({
+            kind: z.enum(["PROJECT", "UNIT"]),
+            names: z.array(text.min(1)).min(1).max(200),
+          })
+          .strict()
+          .parse(await body());
+        for (const name of b.names) {
+          const key = costKey(name);
+          demand(key, "Escribe un nombre válido.");
+          await tx.fixedCostOption.upsert({
+            where: { kind_key: { kind: b.kind, key } },
+            create: { kind: b.kind, name, key },
+            update: {},
+          });
+        }
+        await recordActivity(tx, {
+          data: {
+            actorId: user.id,
+            action: "COSTOS_CATALOGO_GUARDADO",
+            detail: { kind: b.kind, count: b.names.length },
+          },
+        });
+        return send({ ok: true });
       }
       if (p[0] === "categories" && method === "POST" && !p[1]) {
         const b = z
@@ -348,6 +433,9 @@ export async function fixedCostRoutes(
           })
           .strict()
           .parse(await body());
+        const options = await tx.fixedCostOption.findMany({ take: 5000 });
+        for (const input of b.rows)
+          await canonicalCostOptions(tx, input.entry, options);
         const keys = b.rows.map((r) => r.id ?? r.requestId);
         demand(
           keys.every(Boolean) && new Set(keys).size === keys.length,
@@ -453,6 +541,8 @@ export async function fixedCostRoutes(
             403,
           );
           for (const name of [
+            "Asesores",
+            "Servicios",
             "Personal",
             "Propiedades",
             "Tecnología",
@@ -463,6 +553,17 @@ export async function fixedCostRoutes(
             await tx.fixedCostSheet.upsert({
               where: { name },
               create: { name },
+              update: {},
+            });
+          for (const name of [
+            "Asesores",
+            "Servicios",
+            "Tecnología",
+            "Impuestos",
+          ])
+            await tx.fixedCostOption.upsert({
+              where: { kind_key: { kind: "UNIT", key: costKey(name) } },
+              create: { kind: "UNIT", name, key: costKey(name) },
               update: {},
             });
           return send({ ok: true });
@@ -539,6 +640,7 @@ export async function fixedCostRoutes(
               .parse(await body()),
             b = input.entry,
             month = costMonth.parse(b.date.slice(0, 7));
+          await canonicalCostOptions(tx, b);
           demand(
             await tx.fixedCostSheet.findUnique({ where: { id: b.sheetId } }),
             "Hoja no encontrada.",
@@ -588,6 +690,8 @@ export async function fixedCostRoutes(
             .parse(await body());
           if (method === "PATCH")
             demand(input.entry, "Falta el gasto actualizado.");
+          if (method === "PATCH" && input.entry)
+            await canonicalCostOptions(tx, input.entry);
           const where = { id: p[1], version: input.version };
           const result =
             method === "DELETE"

@@ -67,3 +67,12 @@ test("income quantity times price is calculated exactly by the server, not trust
     false,
   );
 });
+
+test("ledger search ignores accents, case and repeated spaces; conversion is explicit and exact", async () => {
+  const { costKey, convertedCost } = await import("../lib/cost-ledger");
+  assert.equal(costKey("  TECNOLOGÍA   Perú "), costKey("tecnologia peru"));
+  assert.equal(convertedCost("10.10", "0.20", "3.75", "USD", "PEN"), "38.63");
+  assert.equal(convertedCost("10.10", "0.20", null, "USD", "PEN"), null);
+  assert.equal(convertedCost("10.10", "0.20", null, "PEN", "PEN"), "10.30");
+  assert.equal(convertedCost("10.10", "0.20", "0", "USD", "PEN"), null);
+});

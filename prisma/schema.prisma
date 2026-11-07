@@ -1572,6 +1572,11 @@ model FixedCostSheet {
   entries FixedCostEntry[]
 }
 model FixedCostEntry {
+  project String @default("")
+  unit String @default("")
+  bonus Decimal @default(0) @db.Decimal(14,2)
+  conversionRate Decimal? @db.Decimal(18,6)
+  targetCurrency String @default("PEN")
   entryType String @default("EXPENSE")
   quantity Int @default(1)
   unitPrice Decimal? @db.Decimal(14,2)
@@ -1611,4 +1616,14 @@ model FixedCostCategory {
  id String @id @default(cuid())
  name String @unique
  createdAt DateTime @default(now())
+}
+
+
+model FixedCostOption {
+ id String @id @default(cuid())
+ kind String
+ name String
+ key String
+ createdAt DateTime @default(now())
+ @@unique([kind,key])
 }

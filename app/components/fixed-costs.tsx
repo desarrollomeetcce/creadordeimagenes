@@ -6,11 +6,19 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
+import { CostChoice } from "./cost-choice";
+import { convertedCost } from "../../lib/cost-ledger";
 import { MetaDateRange } from "./meta-date-range";
 import { limaToday } from "./date-range";
 import "./fixed-costs.css";
 type Entry = {
+  project: string;
+  unit: string;
+  bonus: string;
+  conversionRate: string | null;
+  targetCurrency: string;
   entryType: "EXPENSE" | "INCOME";
   sheetId: string;
   date: string;
@@ -35,6 +43,8 @@ type Dirty = {
   entry: Entry;
 };
 type Data = {
+  projects: string[];
+  units: string[];
   owner: boolean;
   canEdit: boolean;
   sheets: { id: string; name: string }[];
@@ -47,39 +57,38 @@ type Data = {
     entryType: string;
     paid: boolean;
     kind: string;
-    _sum: { amount: string | null };
+    _sum: { amount: string | null; bonus?: string | null };
   }[];
 };
 type Column = { key: keyof Entry; name: string; width: number };
 const expenseColumns: Column[] = [
-  { key: "date", name: "Fecha", width: 110 },
-  { key: "concept", name: "Concepto", width: 220 },
-  { key: "person", name: "Persona", width: 150 },
+  { key: "concept", name: "Concepto", width: 230 },
+  { key: "project", name: "Proyecto", width: 170 },
+  { key: "unit", name: "Unidad", width: 160 },
   { key: "country", name: "País", width: 110 },
-  { key: "category", name: "Categoría", width: 140 },
-  { key: "location", name: "Propiedad / lugar", width: 160 },
-  { key: "quantity", name: "Cantidad", width: 80 },
-  { key: "unitPrice", name: "Precio unitario", width: 110 },
-  { key: "amount", name: "Total", width: 110 },
-  { key: "currency", name: "Moneda", width: 75 },
+  { key: "unitPrice", name: "Monto", width: 110 },
+  { key: "bonus", name: "Comisión / bono", width: 120 },
+  { key: "conversionRate", name: "Conversión", width: 135 },
+  { key: "currency", name: "Moneda", width: 80 },
+  { key: "targetCurrency", name: "Convertir a", width: 90 },
   { key: "paid", name: "Pago", width: 110 },
+  { key: "date", name: "Fecha", width: 115 },
   { key: "kind", name: "Tipo", width: 100 },
   { key: "notes", name: "Nota", width: 200 },
 ];
-const incomeColumns = expenseColumns
-  .filter((c) => !["person", "location", "kind"].includes(c.key))
-  .map((c) => ({
-    ...c,
-    name:
-      c.key === "concept"
-        ? "Producto / concepto"
-        : c.key === "quantity"
-          ? "Unidades vendidas"
-          : c.key === "paid"
-            ? "Cobro"
-            : c.name,
-    width: c.key === "quantity" ? 125 : c.width,
-  }));
+const incomeColumns: Column[] = [
+  { key: "concept", name: "Producto / concepto", width: 230 },
+  { key: "project", name: "Proyecto", width: 170 },
+  { key: "unit", name: "Unidad", width: 160 },
+  { key: "country", name: "País", width: 110 },
+  { key: "quantity", name: "Unidades vendidas", width: 125 },
+  { key: "unitPrice", name: "Precio unitario", width: 110 },
+  { key: "amount", name: "Total", width: 110 },
+  { key: "currency", name: "Moneda", width: 80 },
+  { key: "paid", name: "Cobro", width: 110 },
+  { key: "date", name: "Fecha", width: 115 },
+  { key: "notes", name: "Nota", width: 200 },
+];
 const minor = (v: string) =>
   /^\d+(\.\d{0,2})?$/.test(v)
     ? BigInt(v.split(".")[0]) * 100n +
@@ -109,6 +118,11 @@ function computed(e: Entry): Entry {
 }
 function fields(r: Entry): Entry {
   return {
+    project: r.project ?? "",
+    unit: r.unit ?? "",
+    bonus: r.bonus ?? "0.00",
+    conversionRate: r.conversionRate ?? null,
+    targetCurrency: r.targetCurrency ?? "PEN",
     entryType: r.entryType ?? "EXPENSE",
     sheetId: r.sheetId,
     date: r.date,
@@ -154,6 +168,13 @@ export function FixedCosts() {
         .slice(0, 10);
     }),
     [sheet, setSheet] = useState(""),
+    [project, setProject] = useState(""),
+    [unit, setUnit] = useState(""),
+    [catalog, setCatalog] = useState<"PROJECT" | "UNIT" | null>(null),
+    [catalogText, setCatalogText] = useState(""),
+    [selected, setSelected] = useState<Set<string>>(new Set()),
+    [widths, setWidths] = useState<Record<string, number>>({}),
+    [maximized, setMaximized] = useState(false),
     [country, setCountry] = useState(""),
     [countryText, setCountryText] = useState(""),
     [category, setCategory] = useState(""),
@@ -186,6 +207,8 @@ export function FixedCosts() {
     page: String(page),
     entryType: type,
     ...(sheet ? { sheet } : {}),
+    ...(project ? { project } : {}),
+    ...(unit ? { unit } : {}),
     ...(country ? { country } : {}),
     ...(category ? { category } : {}),
     ...(paid ? { paid } : {}),
@@ -216,6 +239,7 @@ export function FixedCosts() {
       return;
     }
     setData(null);
+    setSelected(new Set());
     setPage(1);
     setNotice("");
     setRemove("");
@@ -240,6 +264,17 @@ export function FixedCosts() {
   }
   function empty(): Entry {
     return {
+      project,
+      unit:
+        unit ||
+        (data?.sheets.find((s) => s.id === sheet)?.name &&
+          data?.units.find(
+            (u) => u === data.sheets.find((s) => s.id === sheet)?.name,
+          )) ||
+        "",
+      bonus: "0.00",
+      conversionRate: null,
+      targetCurrency: "PEN",
       entryType: type,
       sheetId: sheet || data?.sheets[0]?.id || "",
       date: limaToday() >= from && limaToday() <= to ? limaToday() : from,
@@ -266,7 +301,7 @@ export function FixedCosts() {
       requestAnimationFrame(() =>
         grid.current
           ?.querySelector<HTMLInputElement>(
-            '[data-row="' + key + '"][data-col="1"]',
+            '[data-row="' + key + '"][data-col="0"]',
           )
           ?.focus(),
       );
@@ -289,7 +324,7 @@ export function FixedCosts() {
   function edit(
     key: string,
     col: keyof Entry,
-    value: string | number | boolean,
+    value: string | number | boolean | null,
   ) {
     const current = rows.find((r) => r.key === key);
     if (!current) return;
@@ -310,7 +345,14 @@ export function FixedCosts() {
               requestId: key.startsWith("ghost:") ? crypto.randomUUID() : key,
               entry: current.entry,
             });
-      const entry = computed({ ...baseline.entry, [col]: value });
+      const entry = computed({
+        ...baseline.entry,
+        ...(type === "EXPENSE" && col === "unitPrice" ? { quantity: 1 } : {}),
+        ...(["currency", "targetCurrency"].includes(col)
+          ? { conversionRate: null }
+          : {}),
+        [col]: col === "conversionRate" && value === "" ? null : value,
+      });
       return { ...previous, [key]: { ...baseline, entry } };
     });
     setNotice("");
@@ -423,7 +465,9 @@ export function FixedCosts() {
         collected: 0n,
         spent: 0n,
       },
-      n = minor(g._sum.amount ?? "0") ?? 0n;
+      n =
+        (minor(g._sum.amount ?? "0") ?? 0n) +
+        (minor(g._sum.bonus ?? "0") ?? 0n);
     if (g.entryType === "INCOME") {
       t.income += n;
       if (g.paid) t.collected += n;
@@ -433,10 +477,37 @@ export function FixedCosts() {
     }
     totals.set(g.currency, t);
   }
+  function resizeColumn(
+    e: ReactPointerEvent<HTMLSpanElement>,
+    key: string,
+    base: number,
+  ) {
+    e.preventDefault();
+    const el = e.currentTarget,
+      start = e.clientX,
+      width = widths[key] ?? base;
+    el.setPointerCapture(e.pointerId);
+    const move = (event: PointerEvent) =>
+      setWidths((v) => ({
+        ...v,
+        [key]: Math.max(
+          key === "item" ? 48 : 65,
+          Math.min(800, width + event.clientX - start),
+        ),
+      }));
+    const end = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
   const canEdit = data?.canEdit && !loading && !busy;
   return (
     <section
-      className="fixed-costs fc-workbook"
+      className={"fixed-costs fc-workbook" + (maximized ? " fc-maximized" : "")}
       aria-label="Hoja de costos e ingresos"
     >
       <header className="fc-bar">
@@ -491,64 +562,42 @@ export function FixedCosts() {
             }}
           />
         </label>
-        <form
-          className="fc-category-filter"
-          onSubmit={(e) => {
-            e.preventDefault();
-            changeView(() => setCategory(categoryText.trim()));
-          }}
-        >
-          <label className="fc-inline-label">
-            Categoría
-            <input
-              aria-label="Filtrar o crear categoría"
-              placeholder="Todas · escribe una"
-              list="fc-categories"
-              value={categoryText}
-              disabled={busy || !!dirtyCount}
-              onChange={(e) => setCategoryText(e.target.value)}
-            />
-          </label>
-          <button title="Aplicar categoría" disabled={busy || !!dirtyCount}>
-            ↵
-          </button>
-          {canEdit &&
-            categoryText.trim() &&
-            !data.categories.some(
-              (c) => c.toLowerCase() === categoryText.trim().toLowerCase(),
-            ) && (
-              <button
-                type="button"
-                title="Crear categoría"
-                aria-label="Crear categoría"
-                onClick={() =>
-                  void mutate(async () => {
-                    await request("/categories", "POST", {
-                      name: categoryText.trim(),
-                    });
-                    setCategory(categoryText.trim());
-                    setPage(1);
-                  }, "Categoría creada.")
-                }
-              >
-                ＋
-              </button>
-            )}
-          {category && (
+        <label className="fc-inline-label">
+          Proyecto
+          <CostChoice
+            label="Filtrar proyecto"
+            value={project}
+            options={data?.projects ?? []}
+            disabled={busy || !!dirtyCount}
+            onChange={(v) => changeView(() => setProject(v))}
+          />
+          {project && (
             <button
-              type="button"
-              aria-label="Quitar filtro categoría"
-              onClick={() =>
-                changeView(() => {
-                  setCategory("");
-                  setCategoryText("");
-                })
-              }
+              aria-label="Quitar filtro proyecto"
+              onClick={() => changeView(() => setProject(""))}
             >
               ×
             </button>
           )}
-        </form>
+        </label>
+        <label className="fc-inline-label">
+          Unidad
+          <CostChoice
+            label="Filtrar unidad"
+            value={unit}
+            options={data?.units ?? []}
+            disabled={busy || !!dirtyCount}
+            onChange={(v) => changeView(() => setUnit(v))}
+          />
+          {unit && (
+            <button
+              aria-label="Quitar filtro unidad"
+              onClick={() => changeView(() => setUnit(""))}
+            >
+              ×
+            </button>
+          )}
+        </label>
         <label className="fc-inline-label">
           {type === "INCOME" ? "Cobro" : "Pago"}
           <select
@@ -680,6 +729,47 @@ export function FixedCosts() {
         >
           ↻
         </button>
+        <button
+          aria-expanded={catalog === "PROJECT"}
+          disabled={!canEdit}
+          onClick={() => {
+            setCatalog(catalog === "PROJECT" ? null : "PROJECT");
+            setCatalogText("");
+          }}
+        >
+          Proyectos
+        </button>
+        <button
+          aria-expanded={catalog === "UNIT"}
+          disabled={!canEdit}
+          onClick={() => {
+            setCatalog(catalog === "UNIT" ? null : "UNIT");
+            setCatalogText("");
+          }}
+        >
+          Unidades
+        </button>
+        <button
+          aria-pressed={maximized}
+          onClick={() => setMaximized((v) => !v)}
+        >
+          {maximized ? "− Restaurar tabla" : "⛶ Maximizar tabla"}
+        </button>
+        {selected.size > 0 && (
+          <>
+            <span>{selected.size} seleccionadas</span>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  for (const row of rows.filter((r) => selected.has(r.key)))
+                    edit(row.key, "paid", true);
+                }}
+              >
+                Marcar {type === "INCOME" ? "cobradas" : "pagadas"}
+              </button>
+            )}
+          </>
+        )}
         <span className="fc-save-status" role="status">
           {loading
             ? "Cargando…"
@@ -731,6 +821,18 @@ export function FixedCosts() {
                 Editar hoja
               </button>
             )}
+            {data?.owner && (
+              <button
+                disabled={busy || !!dirtyCount}
+                onClick={() =>
+                  void mutate(async () => {
+                    await request("/sheets/initialize", "POST", {});
+                  }, "Hojas listas.")
+                }
+              >
+                Añadir hojas Asesores, Servicios, Tecnología e Impuestos
+              </button>
+            )}
             {type === "EXPENSE" && (
               <details>
                 <summary>Traer fijos del mes anterior</summary>
@@ -755,6 +857,52 @@ export function FixedCosts() {
           </div>
         </details>
       </div>
+      {catalog && (
+        <form
+          className="fc-catalog"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void mutate(async () => {
+              const names = catalogText
+                .split(/[\n\t]+/)
+                .map((v) => v.trim())
+                .filter(Boolean);
+              if (!names.length) throw Error("Escribe al menos un nombre.");
+              await request("/options", "POST", { kind: catalog, names });
+              setCatalogText("");
+            }, "Catálogo guardado.");
+          }}
+        >
+          <div>
+            <strong>
+              {catalog === "PROJECT" ? "Tus proyectos" : "Tus unidades"}
+            </strong>
+            <span>
+              {(catalog === "PROJECT" ? data?.projects : data?.units)?.join(
+                " · ",
+              ) || "Aún no hay nombres"}
+            </span>
+          </div>
+          <textarea
+            aria-label={
+              catalog === "PROJECT"
+                ? "Nombres de proyectos"
+                : "Nombres de unidades"
+            }
+            placeholder="Escribe o pega un nombre por línea"
+            rows={2}
+            value={catalogText}
+            onChange={(e) => setCatalogText(e.target.value)}
+            maxLength={32000}
+          />
+          <button disabled={busy || !catalogText.trim()}>
+            Guardar nombres
+          </button>
+          <button type="button" onClick={() => setCatalog(null)}>
+            Cerrar
+          </button>
+        </form>
+      )}
       {error && (
         <p role="alert" className="fc-error">
           {error}
@@ -829,9 +977,9 @@ export function FixedCosts() {
         >
           <table>
             <colgroup>
-              <col style={{ width: 38 }} />
+              <col style={{ width: widths.item ?? 60 }} />
               {columns.map((c) => (
-                <col key={c.key} style={{ width: c.width }} />
+                <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />
               ))}
               {data?.canEdit && <col style={{ width: 44 }} />}
             </colgroup>
@@ -848,10 +996,92 @@ export function FixedCosts() {
                 {data?.canEdit && <th />}
               </tr>
               <tr>
-                <th scope="col">#</th>
+                <th scope="col" className="fc-item-head">
+                  <input
+                    type="checkbox"
+                    aria-label="Seleccionar filas de esta página"
+                    checked={
+                      rows.filter((r) => r.row).length > 0 &&
+                      rows
+                        .filter((r) => r.row)
+                        .every((r) => selected.has(r.key))
+                    }
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked
+                          ? new Set(rows.filter((r) => r.row).map((r) => r.key))
+                          : new Set(),
+                      )
+                    }
+                  />
+                  <span>#</span>
+                  <span
+                    role="separator"
+                    aria-label="Ancho de ítem"
+                    aria-orientation="vertical"
+                    tabIndex={0}
+                    className="fc-resize"
+                    onPointerDown={(e) => resizeColumn(e, "item", 60)}
+                    onKeyDown={(e) => {
+                      if (["ArrowLeft", "ArrowRight"].includes(e.key)) {
+                        e.preventDefault();
+                        setWidths((v) => ({
+                          ...v,
+                          item: Math.max(
+                            48,
+                            (v.item ?? 60) + (e.key === "ArrowRight" ? 8 : -8),
+                          ),
+                        }));
+                      }
+                    }}
+                  />
+                </th>
                 {columns.map((c) => (
                   <th scope="col" key={c.key}>
                     {c.name}
+                    <span
+                      role="separator"
+                      aria-label={"Ancho de " + c.name}
+                      aria-orientation="vertical"
+                      tabIndex={0}
+                      className="fc-resize"
+                      onKeyDown={(e) => {
+                        if (["ArrowLeft", "ArrowRight"].includes(e.key)) {
+                          e.preventDefault();
+                          setWidths((v) => ({
+                            ...v,
+                            [c.key]: Math.max(
+                              65,
+                              (v[c.key] ?? c.width) +
+                                (e.key === "ArrowRight" ? 10 : -10),
+                            ),
+                          }));
+                        }
+                      }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        const el = e.currentTarget;
+                        el.setPointerCapture(e.pointerId);
+                        const start = e.clientX,
+                          width = widths[c.key] ?? c.width;
+                        const move = (event: PointerEvent) =>
+                          setWidths((v) => ({
+                            ...v,
+                            [c.key]: Math.max(
+                              65,
+                              Math.min(800, width + event.clientX - start),
+                            ),
+                          }));
+                        const end = () => {
+                          el.removeEventListener("pointermove", move);
+                          el.removeEventListener("pointerup", end);
+                          el.removeEventListener("pointercancel", end);
+                        };
+                        el.addEventListener("pointermove", move);
+                        el.addEventListener("pointerup", end);
+                        el.addEventListener("pointercancel", end);
+                      }}
+                    />
                   </th>
                 ))}
                 {data?.canEdit && <th scope="col" aria-label="Eliminar fila" />}
@@ -859,57 +1089,95 @@ export function FixedCosts() {
             </thead>
             <tbody>
               {rows.map(({ key, row, entry }, r) => {
-                const group = [
-                    entry.country || "Sin país",
-                    entry.category ||
-                      data?.sheets.find((s) => s.id === entry.sheetId)?.name ||
-                      "",
-                    entry.location,
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                  previous = rows[r - 1]?.entry,
-                  previousGroup = previous
-                    ? [
-                        previous.country || "Sin país",
-                        previous.category ||
-                          data?.sheets.find((s) => s.id === previous.sheetId)
-                            ?.name ||
-                          "",
-                        previous.location,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
-                    : "";
                 return (
                   <Fragment key={key}>
-                    {group !== previousGroup &&
-                      (row || dirty[key] || entry.concept) && (
-                        <tr
-                          className={
-                            "fc-country-group tone-" +
-                            ((entry.country.length + entry.category.length) % 4)
-                          }
-                        >
-                          <th
-                            colSpan={
-                              columns.length + 1 + (data?.canEdit ? 1 : 0)
-                            }
-                          >
-                            {group}
-                          </th>
-                        </tr>
-                      )}
-                    <tr className={dirty[key] ? "fc-dirty" : ""}>
+                    <tr
+                      className={
+                        (dirty[key] ? "fc-dirty " : "") +
+                        (selected.has(key) ? "fc-selected" : "")
+                      }
+                    >
                       <th scope="row" className="fc-row-number">
-                        {(page - 1) * 50 + r + 1}
+                        <label>
+                          <input
+                            type="checkbox"
+                            aria-label={`Seleccionar fila ${r + 1}`}
+                            disabled={!row && !dirty[key]}
+                            checked={selected.has(key)}
+                            onChange={(e) =>
+                              setSelected((v) => {
+                                const n = new Set(v);
+                                if (e.target.checked) n.add(key);
+                                else n.delete(key);
+                                return n;
+                              })
+                            }
+                          />
+                          <span>{(page - 1) * 50 + r + 1}</span>
+                        </label>
                       </th>
                       {columns.map((c, i) => (
                         <td
                           key={c.key}
                           className={c.key === "amount" ? "fc-computed" : ""}
                         >
-                          {c.key === "paid" ? (
+                          {c.key === "project" || c.key === "unit" ? (
+                            <CostChoice
+                              row={key}
+                              col={i}
+                              label={`${c.name} fila ${r + 1}`}
+                              value={entry[c.key]}
+                              options={
+                                (c.key === "project"
+                                  ? data?.projects
+                                  : data?.units) ?? []
+                              }
+                              disabled={!canEdit}
+                              onChange={(v) => edit(key, c.key, v)}
+                              onKeyDown={(e) => keyboard(e, r, i)}
+                            />
+                          ) : c.key === "conversionRate" ? (
+                            <div className="fc-conversion">
+                              <input
+                                aria-label={`Tasa de conversión fila ${r + 1}`}
+                                data-row={key}
+                                data-col={i}
+                                placeholder={
+                                  entry.currency === entry.targetCurrency
+                                    ? "1"
+                                    : "Tasa"
+                                }
+                                value={entry.conversionRate ?? ""}
+                                inputMode="decimal"
+                                readOnly={
+                                  !canEdit ||
+                                  entry.currency === entry.targetCurrency
+                                }
+                                onChange={(e) =>
+                                  edit(
+                                    key,
+                                    "conversionRate",
+                                    e.target.value.replace(",", "."),
+                                  )
+                                }
+                                onKeyDown={(e) => keyboard(e, r, i)}
+                                title={`1 ${entry.currency} equivale a esta cantidad de ${entry.targetCurrency}`}
+                              />
+                              <output
+                                aria-label={`Conversión fila ${r + 1}`}
+                                title="Monto más bono, convertido con tu tasa"
+                              >
+                                {convertedCost(
+                                  computed(entry).amount,
+                                  entry.bonus,
+                                  entry.conversionRate,
+                                  entry.currency,
+                                  entry.targetCurrency,
+                                ) ?? "—"}{" "}
+                                {entry.targetCurrency}
+                              </output>
+                            </div>
+                          ) : c.key === "paid" ? (
                             <select
                               data-row={key}
                               data-col={i}
@@ -953,7 +1221,7 @@ export function FixedCosts() {
                                     : "text"
                               }
                               inputMode={
-                                ["unitPrice", "amount"].includes(c.key)
+                                ["unitPrice", "amount", "bonus"].includes(c.key)
                                   ? "decimal"
                                   : undefined
                               }
@@ -967,7 +1235,11 @@ export function FixedCosts() {
                               value={
                                 c.key === "amount"
                                   ? money(minor(computed(entry).amount) ?? 0n)
-                                  : String(entry[c.key])
+                                  : c.key === "unitPrice" &&
+                                      type === "EXPENSE" &&
+                                      entry.quantity !== 1
+                                    ? computed(entry).amount
+                                    : String(entry[c.key] ?? "")
                               }
                               readOnly={!canEdit || c.key === "amount"}
                               tabIndex={c.key === "amount" ? -1 : undefined}
@@ -985,7 +1257,9 @@ export function FixedCosts() {
                                   c.key,
                                   c.key === "quantity"
                                     ? Number(e.target.value)
-                                    : c.key === "currency"
+                                    : ["currency", "targetCurrency"].includes(
+                                          c.key,
+                                        )
                                       ? e.target.value.toUpperCase()
                                       : e.target.value,
                                 )
@@ -1075,23 +1349,33 @@ export function FixedCosts() {
                   </td>
                 </tr>
               )}
-              {Array.from({ length: Math.max(0, 18 - rows.length) }, (_, i) => (
+              {Array.from({ length: Math.max(0, 50 - rows.length) }, (_, i) => (
                 <tr className="fc-blank-grid-row" key={"blank" + i}>
                   <th scope="row">{(page - 1) * 50 + rows.length + i + 1}</th>
                   {columns.map((c, j) => (
                     <td
                       key={c.key}
                       onClick={() => {
-                        if (canEdit)
+                        if (!canEdit) return;
+                        const keys = [
+                          "ghost:" + ghost,
+                          ...Array.from({ length: i + 1 }, () =>
+                            crypto.randomUUID(),
+                          ),
+                        ];
+                        setExtras((v) => [...v, ...keys]);
+                        setGhost((v) => v + 1);
+                        requestAnimationFrame(() =>
                           grid.current
                             ?.querySelector<HTMLInputElement>(
-                              '[data-row="ghost:' +
-                                ghost +
+                              '[data-row="' +
+                                keys.at(-1) +
                                 '"][data-col="' +
                                 j +
                                 '"]',
                             )
-                            ?.focus();
+                            ?.focus(),
+                        );
                       }}
                     />
                   ))}
@@ -1117,7 +1401,7 @@ export function FixedCosts() {
             disabled={busy || !!dirtyCount}
             onClick={() => changeView(() => setSheet(""))}
           >
-            Todas
+            Totales
           </button>
           {data?.sheets.map((s) => (
             <button
