@@ -3063,3 +3063,6 @@ Costos fijos pasa a cuadrícula editable, cabecera única, calendario compartido
 
 
 2026-11-07 · Libro de costos: ancho completo pegado al menú, scroll único de tabla, ítem/check, resize por mouse/teclado, Totales sin duplicar, catálogos canónicos Proyecto/Unidad por pegado y búsqueda local; bono exacto y conversión con tasa explícita. Migración 202611070001 aditiva y hojas vacías solicitadas. Conserva Costos/Ingresos, CAS/replay, permisos actuales y monedas separadas. Pruebas QA y navegador documentadas en TESTING.md.
+
+
+2026-11-07 · Corrección Con entrega: filtro SQL por actividad local de hoy antes de cargar catálogo, límite10k e históricos; lista vacía ofrece25 candidatos de soloIDs del mismo ámbito para Actualizar vista manual, sin nuevas importaciones ni bucles. Conserva cuotas/autorización/estados/fechas, selección y comparativos. UI distingue falta de hechos de hoy y permite quitar solo entrega. Prueba PG real10.005objetos + casos adicionales; encuentra entrega fuera del límite, cachea solo2históricos. Prueba navegador pasa recuperación tras respuesta reciente simulada; sin publicidad ni IA reales.

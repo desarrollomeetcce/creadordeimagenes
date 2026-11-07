@@ -22,7 +22,9 @@ export function MetaVisibleRefresh({
   onUpdated,
   onReconnect,
   extraActions,
+  manualOnly = false,
 }: {
+  manualOnly?: boolean;
   extraActions?:ReactNode;
   items: Target[];
   accounts: {
@@ -76,7 +78,7 @@ export function MetaVisibleRefresh({
   const notified = useRef(new Map<string, string>());
   const refresh = useCallback(
     async (recover = false, manual = false) => {
-      if (running.current || document.visibilityState !== "visible") return;
+      if (running.current || document.visibilityState !== "visible" || (manualOnly && !manual)) return;
       const allPairs = (JSON.parse(key) as string[][]).filter(
         ([id]) =>
           manual || accounts.find((a) => a.id === id)?.autoSync !== false,
@@ -250,7 +252,7 @@ export function MetaVisibleRefresh({
         }
       }
     },
-    [key, connectionKey],
+    [key, connectionKey, manualOnly],
   );
   refreshRef.current = refresh;
   useEffect(() => {
@@ -285,7 +287,7 @@ export function MetaVisibleRefresh({
         onClick={() => void refresh(false, true)}
         title={
           (notice ? notice + ". " : "") +
-          "Consulta estados y gasto de hoy y ayer de los elementos visibles cada 60 s. No espera al histórico ni cambia las campañas."
+          (manualOnly ? "Consulta hasta 25 candidatos de esta selección para recuperar la entrega de hoy. No carga el catálogo ni el histórico." : "Consulta estados y gasto de hoy y ayer de los elementos visibles cada 60 s. No espera al histórico ni cambia las campañas.")
         }
       >
         {busy
@@ -317,7 +319,7 @@ export function MetaVisibleRefresh({
         <div>
           {" "}
           <small role="status">
-            {notice || "Estados y gasto de hoy/ayer · consulta cada 60 s"}
+            {notice || (manualOnly ? "Pulsa Actualizar vista para consultar hasta 25 elementos de esta selección." : "Estados y gasto de hoy/ayer · consulta cada 60 s")}
           </small>
           <small>
             Verde: activado · Gris: pausado · Borde ámbar: último estado sin

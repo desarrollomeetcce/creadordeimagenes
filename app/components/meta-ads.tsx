@@ -58,6 +58,7 @@ import { MetaAliasAction } from "./meta-alias-action";
 import { MetaSalesCounter } from "./meta-sales-counter";
 import { MetaSummaryCounters } from "./meta-summary-counters";
 import type { MetaSummary } from "../../lib/meta-ads/summary";
+import { parseDeliveryFilters, encodeDeliveryFilters } from "../../lib/meta-ads/state-filter";
 import { MetaDeliveryFilter } from "./meta-delivery-filter";
 import { MetaCostOrder, MetaCostButton } from "./meta-cost-order";
 import type { MetaSelection } from "../../lib/meta-ads/preferences";
@@ -690,6 +691,7 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
     [accountListBusiness, setAccountListBusiness] = useState(""),
     [accountListPage, setAccountListPage] = useState(1),
     [items, setItems] = useState<Item[]>([]),
+    [refreshTargets,setRefreshTargets]=useState<{id:string;accountId:string}[]>([]),
     [pendingCampaigns,setPendingCampaigns]=useState<PendingInventoryCampaign[]>([]),
     [summary, setSummary] = useState<MetaSummary | null>(null),
     [total, setTotal] = useState(0),
@@ -1449,6 +1451,7 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
     const current = ++serial.current;
     void (async () => {
       setLoading(true);
+      setRefreshTargets([]);
       const summaryInputs = [
         tab,
         level,
@@ -1521,6 +1524,7 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
           if (serial.current === current) {
             const reconciled = data.items.map((item: Item) => [...statusAcks.current.values()].reduce((row, ack) => applyMetaStatusAck(row, ack), item)).filter((item: Item) => matchesMetaStatusFilter(item, state));
             setItems(reconciled);
+            setRefreshTargets(data.refreshTargets??[]);
             setPendingCampaigns(data.pendingCampaigns??[]);
             setCountryCounts(data.linkedCampaignCountries??[]);
             setSelected(old => old ? reconciled.find((item: Item) => item.id === old.id) ?? old : old);
@@ -3837,9 +3841,10 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
                     </div>
                     <div className="meta-pinned-actions">
                       <MetaVisibleRefresh
+                        manualOnly={!items.length && !selected && !selectionDetail}
                         items={selectionDetail
                           ? selectedObjects.filter(o => selectionDetail.ids.includes(o.id))
-                          : selected ? [selected] : items}
+                          : selected ? [selected] : items.length ? items : refreshTargets}
                         accounts={accounts.map((a) => ({
                           ...a,
                           autoSync:
@@ -3921,18 +3926,23 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
                   {!loading && !items.length && (
                     <section className="panel meta-empty">
                       <h2>
-                        {accounts.length
+                        {accounts.length && parseDeliveryFilters(state)?.includes("delivery")
+                          ? "No hay entrega registrada hoy para estos filtros"
+                          : accounts.length
                           ? "No hay resultados para esta selección"
                           : "Conecta tus cuentas publicitarias"}
                       </h2>
                       <p>
-                        {accounts.length
-                          ? "Habilita y sincroniza una cuenta, o ajusta los filtros. Las estadísticas aparecerán cuando termine la importación."
+                        {accounts.length && parseDeliveryFilters(state)?.includes("delivery")
+                          ? "Sin actividad de hoy en los datos guardados. Pulsa Actualizar vista para comprobar la entrega reciente."
+                          : accounts.length
+                          ? "Ajusta los filtros o revisa la sincronización de la cuenta seleccionada."
                           : owner
                             ? "Conecta tu cuenta de Facebook para empezar."
                             : "Solicita al OWNER acceso a las cuentas que necesitas consultar."}
                       </p>
-                      {owner && (
+                      {accounts.length>0 && parseDeliveryFilters(state)?.includes("delivery") && <button type="button" onClick={()=>setState(encodeDeliveryFilters((parseDeliveryFilters(state)??[]).filter(v=>v!=="delivery")))}>Ver sin filtro de entrega</button>}
+                      {owner && !parseDeliveryFilters(state)?.includes("delivery") && (
                         <button
                           type="button"
                           onClick={() =>

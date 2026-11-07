@@ -1,9 +1,14 @@
+import { deliveryActivityWhere } from "./delivery-scope";
 import { linkedCampaignCountryCounts } from "./linked-campaign-counts";
 import { pendingInventoryCampaigns } from "./pending-campaigns";
 import { campaignInventoryTasks } from "./campaign-inventory-status";
 import { metaSearchConditions } from "./keyword-search";
 import { recentMetaDataVersions } from "./data-versions";
-import { realtimeCoverage, metaPeriodCovered, statusIsStale } from "./realtime-policy";
+import {
+  realtimeCoverage,
+  metaPeriodCovered,
+  statusIsStale,
+} from "./realtime-policy";
 import { isCountryCode } from "./countries";
 import { parseDeliveryFilters } from "./state-filter";
 import { metaCampaignSalesData } from "./effectiveness";
@@ -71,7 +76,16 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   );
   const business = params.get("business");
   const scoped = allowed.filter((a) => !business || a.businessId === business);
-  if (!scoped.length) return { items: [], pendingCampaigns:[], linkedCampaignCountries:[], summary:undefined, total: 0, page: 1, limited: false };
+  if (!scoped.length)
+    return {
+      items: [],
+      pendingCampaigns: [],
+      linkedCampaignCountries: [],
+      summary: undefined,
+      total: 0,
+      page: 1,
+      limited: false,
+    };
   const q = (params.get("q") ?? "").slice(0, 200),
     state = params.get("state") ?? "all",
     campaign = params.get("campaign"),
@@ -113,7 +127,9 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   }
   const analysisPeriod = params.get("analysisPeriod") ?? "today";
   demand(
-    ["today", "7", "14", "15", "30", "lifetime", "custom"].includes(analysisPeriod),
+    ["today", "7", "14", "15", "30", "lifetime", "custom"].includes(
+      analysisPeriod,
+    ),
     "Periodo de análisis inválido.",
   );
   if (summarySelection.length) {
@@ -218,8 +234,12 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         }
       : {}),
   };
+  // Narrow today's delivery before loading objects, lifetime totals and eight comparisons.
+  const deliveryWhere: Prisma.MetaAdObjectWhereInput = hasFilter("delivery")
+    ? { AND: [where, deliveryActivityWhere(scoped)] }
+    : where;
   const objects = await db.metaAdObject.findMany({
-    where,
+    where: deliveryWhere,
     orderBy: { id: "asc" },
     include: {
       alias: {
@@ -230,16 +250,36 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   });
   if (objectSelection.length)
     demand(
-      objects.length === objectSelection.length,
+      (hasFilter("delivery")
+        ? await db.metaAdObject.count({ where })
+        : objects.length) === objectSelection.length,
       "La selección cambió. Actualiza los elementos seleccionados.",
       409,
     );
-  const pendingCampaigns=await pendingInventoryCampaigns(actor,scoped.map(a=>a.id),{level,state,q,country});
-  const linkedCampaignCountries=await linkedCampaignCountryCounts(scoped.map(a=>a.id));
+  const pendingCampaigns = await pendingInventoryCampaigns(
+    actor,
+    scoped.map((a) => a.id),
+    { level, state, q, country },
+  );
+  const linkedCampaignCountries = await linkedCampaignCountryCounts(
+    scoped.map((a) => a.id),
+  );
   const limited = objects.length > 10000;
   const visible = objects.slice(0, 10000);
-  if (!visible.length)
+  if (!visible.length) {
+    // An empty delivery page must still be able to refresh today/ yesterday.
+    // Oldest verified candidates rotate as refresh-visible persists seenAt.
+    // Keep the same authorized account/search/status/hierarchy scope, only remove delivery.
+    const refreshTargets = hasFilter("delivery")
+      ? await db.metaAdObject.findMany({
+          where,
+          select: { id: true, accountId: true },
+          orderBy: [{ seenAt: "asc" }, { id: "asc" }],
+          take: 25,
+        })
+      : [];
     return {
+      refreshTargets,
       items: [],
       pendingCampaigns,
       linkedCampaignCountries,
@@ -259,6 +299,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           }
         : {}),
     };
+  }
   const parents = await db.metaAdObject.findMany({
     where: {
       accountId: { in: scoped.map((a) => a.id) },
@@ -447,8 +488,15 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
           (focused && key === "lifetime" && !total) ||
           (focused &&
             key === "custom" &&
-            !metaPeriodCovered(a.realtimeState, o.id, customSince!, customUntil!,
-              a.syncedAt ? { since: shiftDay(reportUntil, -29), until: reportUntil } : null))
+            !metaPeriodCovered(
+              a.realtimeState,
+              o.id,
+              customSince!,
+              customUntil!,
+              a.syncedAt
+                ? { since: shiftDay(reportUntil, -29), until: reportUntil }
+                : null,
+            ))
             ? "UNAVAILABLE"
             : results > 0
               ? "RESULTS"
@@ -517,7 +565,8 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     if (stale) rating = "STALE";
     return {
       ...o,
-      campaignTask: inventoryTasks.get(o.aliasId + "|" + o.aliasCountry) ?? "NONE",
+      campaignTask:
+        inventoryTasks.get(o.aliasId + "|" + o.aliasCountry) ?? "NONE",
       stale,
       statusStale: statusIsStale(
         o.seenAt,
@@ -753,7 +802,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     let refs =
       limited && !evaluationStatus
         ? await db.metaAdObject.findMany({
-            where,
+            where: deliveryWhere,
             select: { id: true, level: true, campaignId: true },
           })
         : items;
