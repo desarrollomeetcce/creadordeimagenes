@@ -7,7 +7,7 @@ import { dashboard } from "../lib/meta-ads/dashboard";
 import { localDay, shiftDay } from "../lib/meta-ads/analytics";
 
 test(
-  "Delivery is filtered before the catalogue cap, and empty pages retain bounded authorized refresh targets",
+  "Delivery uses positive spend in the selected period before the catalogue cap, with bounded empty-page recovery",
   { skip: !process.env.DATABASE_URL?.endsWith("/delivery_qa") },
   async () => {
     const tag = randomUUID(),
@@ -91,7 +91,9 @@ test(
       paused = object(99991, "Pausada con gasto", "PAUSED"),
       wrongScope = object(99992, "Otro scope"),
       yesterday = object(99993, "Solo ayer"),
-      foreign = object(99994, "Otra cuenta", "ACTIVE", other);
+      foreign = object(99994, "Otra cuenta", "ACTIVE", other),
+      older = object(99995, "Solo período anterior", "PAUSED"),
+      totalOnly = object(99996, "Solo acumulado", "PAUSED");
     await db.metaAdObject.createMany({
       data: [
         delivered,
@@ -99,6 +101,8 @@ test(
         wrongScope,
         yesterday,
         foreign,
+        older,
+        totalOnly,
         ...Array.from({ length: 40 }, (_, i) =>
           object(20000 + i, "Vacía objetivo"),
         ),
@@ -149,6 +153,27 @@ test(
         },
       ],
     });
+    await db.metaAdDaily.create({
+      data: {
+        objectId: older.id,
+        accountId: account,
+        day: shiftDay(today, -15),
+        scope: "7d_click,1d_view|impression",
+        spend: 4,
+        impressions: 10,
+      },
+    });
+    await db.metaAdTotal.create({
+      data: {
+        objectId: totalOnly.id,
+        accountId: account,
+        since: shiftDay(today, -100),
+        until: today,
+        scope: "7d_click,1d_view|impression",
+        spend: 15,
+        impressions: 10,
+      },
+    });
     const fetch = globalThis.fetch;
     globalThis.fetch = async () => {
       throw Error("No external requests in delivery QA");
@@ -165,26 +190,26 @@ test(
         });
       const started = performance.now();
       const found = await dashboard(owner, query({ summary: "1" }));
-      assert.equal(found.total, 2);
+      assert.equal(found.total, 1);
       assert.equal(found.limited, false);
       assert.deepEqual(
         new Set(found.items.map((o) => o.id)),
-        new Set([delivered.id, paused.id]),
+        new Set([paused.id]),
       );
       assert.equal(found.summary?.currencies[0].spend, 2);
       assert.equal(
         await db.metaInsightCache.count({
           where: { object: { accountId: account } },
         }),
-        2,
-        "Only two delivered campaigns should load/cache their history, not 10,000 unrelated rows",
+        1,
+        "Only the campaign with spend should load/cache its history, not 10,000 unrelated rows or impressions without spend",
       );
       console.log(
-        `PASS delivery outside old10k cap found; only2 histories aggregated in ${Math.round(performance.now() - started)}ms (synthetic local DB)`,
+        `PASS delivery outside old10k cap found; only1 history aggregated in ${Math.round(performance.now() - started)}ms (synthetic local DB)`,
       );
       assert.equal(
         (await dashboard(owner, query({ state: "active,delivery" }))).total,
-        1,
+        0,
       );
       assert.equal(
         (await dashboard(owner, query({ state: "paused,delivery" }))).items[0]
@@ -199,7 +224,98 @@ test(
         dashboard(viewer, query({ accounts: other })),
         /no autorizadas/,
       );
-      assert.equal((await dashboard(viewer, query())).total, 2);
+      assert.equal((await dashboard(viewer, query())).total, 1);
+      const custom = {
+        analysisPeriod: "custom",
+        since: shiftDay(today, -20),
+        until: shiftDay(today, -10),
+      };
+      const historical = await dashboard(
+        owner,
+        query({ ...custom, summary: "1" }),
+      );
+      assert.deepEqual(
+        historical.items.map((o) => o.id),
+        [older.id],
+      );
+      assert.equal(historical.items[0].periods.custom.spend, 4);
+      assert.equal(historical.summary?.currencies[0].spend, 4);
+      const yesterdayOnly = await dashboard(
+        owner,
+        query({
+          analysisPeriod: "custom",
+          since: shiftDay(today, -1),
+          until: shiftDay(today, -1),
+        }),
+      );
+      assert.deepEqual(
+        yesterdayOnly.items.map((o) => o.id),
+        [yesterday.id],
+      );
+      assert.equal(
+        (await dashboard(owner, query({ analysisPeriod: "7" }))).total,
+        2,
+      );
+      assert.equal(
+        (await dashboard(owner, query({ analysisPeriod: "30" }))).total,
+        3,
+      );
+      const lifetime = await dashboard(
+        owner,
+        query({ analysisPeriod: "lifetime" }),
+      );
+      assert.equal(lifetime.total, 4);
+      assert(
+        lifetime.items.some(
+          (o) => o.id === totalOnly.id && o.periods.lifetime.spend === 15,
+        ),
+      );
+      assert(
+        !lifetime.items.some(
+          (o) => o.id === delivered.id || o.id === wrongScope.id,
+        ),
+      );
+      await assert.rejects(
+        dashboard(owner, query({ analysisPeriod: "custom" })),
+        /fechas de análisis/,
+      );
+      await assert.rejects(
+        dashboard(
+          owner,
+          query({
+            analysisPeriod: "custom",
+            since: today,
+            until: shiftDay(today, -1),
+          }),
+        ),
+        /Rango de fechas/,
+      );
+      const child = object(99997, "Anuncio de ayer");
+      await db.metaAdObject.create({
+        data: { ...child, level: "ad", campaignId: yesterday.id },
+      });
+      await db.metaAdDaily.create({
+        data: {
+          objectId: child.id,
+          accountId: account,
+          day: shiftDay(today, -1),
+          scope: "7d_click,1d_view|impression",
+          spend: 3,
+          impressions: 0,
+        },
+      });
+      assert.equal(
+        (
+          await dashboard(
+            owner,
+            query({ level: "ad", campaign: yesterday.id, analysisPeriod: "7" }),
+          )
+        ).total,
+        1,
+      );
+      console.log(
+        "PASS historical custom dates, 7/30days, stored lifetime total, positive spend only, paused campaigns, selected-period summary and child-level hierarchy",
+      );
       const empty = await dashboard(owner, query({ q: "Vacía objetivo" }));
       assert.equal(empty.total, 0);
       assert("refreshTargets" in empty);
@@ -211,7 +327,7 @@ test(
       ]);
       assert.equal(
         await db.metaInsightCache.count({
-          where: { object: { name: "Vacía objetivo" } },
+          where: { object: { name: "Vacía objetivo", accountId: account } },
         }),
         0,
         "Empty delivery must skip historical aggregates entirely",
@@ -262,6 +378,9 @@ test(
           accountId: account,
           session: raw,
           objectId: picked.id,
+          historicalId: older.id,
+          historicalSince: shiftDay(today, -20),
+          historicalUntil: shiftDay(today, -10),
         }),
       );
       console.log(

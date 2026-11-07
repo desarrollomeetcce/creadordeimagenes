@@ -3927,14 +3927,14 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
                     <section className="panel meta-empty">
                       <h2>
                         {accounts.length && parseDeliveryFilters(state)?.includes("delivery")
-                          ? "No hay entrega registrada hoy para estos filtros"
+                          ? "No hay gasto registrado en el período seleccionado"
                           : accounts.length
                           ? "No hay resultados para esta selección"
                           : "Conecta tus cuentas publicitarias"}
                       </h2>
                       <p>
                         {accounts.length && parseDeliveryFilters(state)?.includes("delivery")
-                          ? "Sin actividad de hoy en los datos guardados. Pulsa Actualizar vista para comprobar la entrega reciente."
+                          ? "Ajusta las fechas o consulta Todos para ver también los elementos sin gasto en ese período."
                           : accounts.length
                           ? "Ajusta los filtros o revisa la sincronización de la cuenta seleccionada."
                           : owner

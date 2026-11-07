@@ -132,6 +132,23 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     ),
     "Periodo de análisis inválido.",
   );
+  const customSince = params.get("since"),
+    customUntil = params.get("until");
+  demand(
+    (!customSince && !customUntil) ||
+      (!!customSince &&
+        !!customUntil &&
+        /^\d{4}-\d{2}-\d{2}$/.test(customSince) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(customUntil) &&
+        customSince <= customUntil &&
+        Number.isFinite(Date.parse(customSince)) &&
+        Number.isFinite(Date.parse(customUntil))),
+    "Rango de fechas inválido.",
+  );
+  demand(
+    analysisPeriod !== "custom" || (!!customSince && !!customUntil),
+    "Selecciona fechas de análisis.",
+  );
   if (summarySelection.length) {
     const permitted = await db.metaAdObject.count({
       where: {
@@ -234,9 +251,19 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
         }
       : {}),
   };
-  // Narrow today's delivery before loading objects, lifetime totals and eight comparisons.
+  // Narrow the selected period's spend before loading objects, lifetime totals and eight comparisons.
   const deliveryWhere: Prisma.MetaAdObjectWhereInput = hasFilter("delivery")
-    ? { AND: [where, deliveryActivityWhere(scoped)] }
+    ? {
+        AND: [
+          where,
+          deliveryActivityWhere(
+            scoped,
+            analysisPeriod,
+            customSince,
+            customUntil,
+          ),
+        ],
+      }
     : where;
   const objects = await db.metaAdObject.findMany({
     where: deliveryWhere,
@@ -291,9 +318,9 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
             summary: await metaSummary(
               [],
               scoped,
-              "today",
-              null,
-              null,
+              analysisPeriod,
+              customSince,
+              customUntil,
               summarySelection.length > 0,
             ),
           }
@@ -336,23 +363,6 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       measure,
     ),
     "Tipo de resultado inválido.",
-  );
-  const customSince = params.get("since"),
-    customUntil = params.get("until");
-  demand(
-    (!customSince && !customUntil) ||
-      (!!customSince &&
-        !!customUntil &&
-        /^\d{4}-\d{2}-\d{2}$/.test(customSince) &&
-        /^\d{4}-\d{2}-\d{2}$/.test(customUntil) &&
-        customSince <= customUntil &&
-        Number.isFinite(Date.parse(customSince)) &&
-        Number.isFinite(Date.parse(customUntil))),
-    "Rango de fechas inválido.",
-  );
-  demand(
-    analysisPeriod !== "custom" || (!!customSince && !!customUntil),
-    "Selecciona fechas de análisis.",
   );
   const dataVersions = await recentMetaDataVersions(scoped);
   const accountContext = new Map(
@@ -617,10 +627,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     items = items.filter(
       (o) => parentMap.get(o.campaignId ?? o.id)?.status === "ACTIVE",
     );
-  if (hasFilter("delivery"))
-    items = items.filter(
-      (o) => o.periods.today.impressions > 0 || o.periods.today.spend > 0,
-    );
+  // Delivery is already resolved from period spend in SQL, including stored lifetime totals.
 
   if (params.get("currency"))
     items = items.filter((o) => o.currency === params.get("currency"));

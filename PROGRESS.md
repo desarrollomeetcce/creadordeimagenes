@@ -3066,3 +3066,6 @@ Costos fijos pasa a cuadrícula editable, cabecera única, calendario compartido
 
 
 2026-11-07 · Corrección Con entrega: filtro SQL por actividad local de hoy antes de cargar catálogo, límite10k e históricos; lista vacía ofrece25 candidatos de soloIDs del mismo ámbito para Actualizar vista manual, sin nuevas importaciones ni bucles. Conserva cuotas/autorización/estados/fechas, selección y comparativos. UI distingue falta de hechos de hoy y permite quitar solo entrega. Prueba PG real10.005objetos + casos adicionales; encuentra entrega fuera del límite, cachea solo2históricos. Prueba navegador pasa recuperación tras respuesta reciente simulada; sin publicidad ni IA reales.
+
+
+2026-11-07 · Aclaración posterior Con entrega: el usuario espera todos los que tuvieron gasto en el período elegido, no solo hoy. SQL ahora compara gasto>0 con rango exacto, ventanas7/14/15/30 y acumulado desdeinicio; impresiones sin gasto no cuentan, pausadas con gasto sí salvo filtro de estado adicional. Retirado postfiltro periods.today; fechas validadas antes de catálogo/retorno vacío. Mensajes de UI y ayuda actualizados al período. Test PG y Chromium confirman campaña con gasto pasado4.00/sin gasto hoy entra solo en el período correspondiente, Todos conserva catálogo. Sin llamadas o mutaciones Meta/IA reales.

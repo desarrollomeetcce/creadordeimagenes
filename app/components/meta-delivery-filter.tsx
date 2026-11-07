@@ -77,7 +77,7 @@ export function MetaDeliveryFilter({
         </fieldset>
         <small>
           Se cumplen todos los criterios. Activados y Desactivados se sustituyen
-          entre sí. Con entrega considera actividad de hoy.
+          entre sí. Con entrega considera gasto en el período seleccionado.
         </small>
       </div>
     </div>
