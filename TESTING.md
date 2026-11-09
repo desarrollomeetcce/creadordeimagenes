@@ -2751,3 +2751,11 @@ Chromium verifica cinco flujos: Crear campaña primero y fichas CO2/PE1/PY1 en l
 
 
 2026-11-09 · Recursos propios: estándar319/319 y20 pruebas de campaña/workbench/batch,3 nuevas pruebas de transporte multipart/plan video/rangos. Integración PG QA exclusiva con PNG real de Sharp y MP4 H.264 real de ffmpeg: permisos por carpeta, idempotencia, MIME/codec inválidos, carpeta/permanencia, auditoría solo metadatos, cero UsageLedger/ImageVersion/AuditThumbnail, selección por diplomado y rangos206/416. Plan mixtoimagen/video llega PUBLISHED PAUSED con proveedor simulado, una sola subida, esperaVIDEO_READY sin consulta antes de15s, verificación devideo/título/descripción, originaltemporal eliminado por limpieza yfoto permanente preservada. Chromium carga por carpetas, cambia de diplomado, video reproducible/ranges, retención explícita, Biblioteca y auditoría textual, escritorio/móvil, sin generación ni publicación Meta real. Typecheck y build de producción correctos.
+
+
+## 2026-11-09 — Verificación IA persistente
+
+- npm test:321 pruebas aprobadas; regresiones de catálogo de2020 vigente, JSON/Date, claves con revisión distinta/ERROR/sin fecha rechazadas; solicitudes OpenAI simuladas conservan medium/1024x1024/n=1 tanto sin referencias como con ellas y preservan usage. Cero llamadas pagadas.
+- npm run typecheck y npm run build aprobados (log /tmp/ai-verification-build.txt).
+- Integración explícita tests/provider-verification.integration.test.ts en delivery_qa local: vistas completa/ligera, configured, guardar parámetros sin perder verificación/fecha real, proveedor creativo independiente y rechazo de modelo inventado/revisión ajena/clave cambiada. RUN_PROVIDER_VERIFICATION_QA=1, DATABASE_URL QA y clave maestra sintética; fetch bloqueado. Fixture restaurado en finally.
+- Chromium1500×1000 contra build local y DB sintética: catálogo verificado en2020 sigue vigente, campos gpt-image-2/gpt-5-mini habilitados, sin aviso24h ni erroresJS/POST/generación. Captura /tmp/ai-verification-browser.png. Publicación remota no equivale a verificar reinicio del VPS.

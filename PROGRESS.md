@@ -3072,3 +3072,10 @@ Costos fijos pasa a cuadrícula editable, cabecera única, calendario compartido
 
 
 2026-11-09 · Recursos propios: modo Sin IA en primera columna, upload central por diplomado, conservar carpeta o solo campaña temporal24h, selección automática. Imágenes y video original MP4/MOV validados; galería/Biblioteca con reproducción/ranges, ZIP correcto. Sin generación/cobroIA/versiones/miniaturas; auditoría textual paginada. Meta advideos multipart, espera durable de procesamiento y creativo video_data confirmado; caducidad anticipada tras publicación completa y protección de otros borradores. Migración aditiva202611090001, Docker ffmpeg. SDKoficial y pruebas QA documentadas.
+
+
+## 2026-11-09 — Verificación IA sin vencimiento diario
+
+Se eliminó la caducidad artificial de24h de catálogos de imagen y dirección creativa en las vistas completas/ligeras, Conexiones, ejecución y ajustes. El criterio compartido conserva statusVERIFIED, fecha real válida y coincidencia de revisión; claves nuevas y errores reales siguen bloqueados. Guardar modelos compatibles de la misma credencial conserva su verificación y fecha original, ajustando la revisión de configuración bajo el lock existente. Se retiró el reloj de renders dedicado a caducidad. Sin migración, modelos inventados, verificaciones remotas ni generación pagada.
+
+Investigación del costo comunicado: US$5/20=US$0,25 por resultado, cobro observado por usuario en OpenAI sin desglose confirmado. Adaptador envía n=1, calidad y tamaño explícitos para generación/edición; prueba interceptada verifica gpt-image-2/medium/1024x1024 y conserva usage. Cada proyecto puede tener calidad/resolución propias que prevalecen sobre ajustes globales. Referencias y dirección creativa son entradas/llamadas adicionales; sin acceso al desglose productivo no se atribuye causa ni se promete un precio. No se cambiaron silenciosamente modelos/calidad ni trabajos anteriores.

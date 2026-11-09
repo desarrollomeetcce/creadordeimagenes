@@ -653,3 +653,49 @@ test("OpenAI: rechazo del prompt muestra solo longitud y etapa, nunca texto priv
   });
  });
 });
+
+test("provider verification follows the credential revision without a daily expiry", async () => {
+  const { isProviderVerified } = await import("../lib/provider-verification");
+  const { publicConnection } = await import("../lib/provider-connections");
+  const { safeConfiguration } = await import("../lib/ai");
+  const row = {
+    status: "VERIFIED", revision: 8, verifiedRevision: 8,
+    verifiedAt: new Date("2020-01-01T00:00:00Z"), models: [],
+    encryptedKey: "synthetic", monthlyLimitMicros: 0n, dailyLimitMicros: 0n,
+    operationLimitMicros: 0n, imageReserveMicros: 0n,
+  };
+  assert.equal(isProviderVerified(row), true);
+  assert.equal(isProviderVerified({ ...row, verifiedAt: row.verifiedAt.toISOString() }), true);
+  assert.equal(publicConnection("openai", row as any).status, "VERIFIED");
+  assert.equal(safeConfiguration(row as any).status, "VERIFIED");
+  for (const invalid of [
+    { ...row, revision: 9 }, { ...row, status: "ERROR" },
+    { ...row, status: "UNVERIFIED" }, { ...row, verifiedAt: null },
+    { ...row, verifiedAt: "invalid" }, { ...row, verifiedRevision: null },
+  ]) assert.equal(isProviderVerified(invalid), false);
+  assert.equal(publicConnection("openai", { ...row, revision: 9 } as any).status, "UNVERIFIED");
+  assert.equal(safeConfiguration({ ...row, revision: 9 } as any).status, "UNVERIFIED");
+  assert.equal(publicConnection("openai", { ...row, status: "ERROR" } as any).status, "ERROR");
+});
+
+test("OpenAI keeps medium 1024 settings and requests one output for generation and references", async () => {
+  const oldFetch = globalThis.fetch;
+  const png = await sharp({create:{width:4,height:4,channels:3,background:"white"}}).png().toBuffer();
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    const body = init!.body instanceof FormData ? Object.fromEntries(init!.body.entries()) : JSON.parse(String(init!.body));
+    assert.equal(body.model, "gpt-image-2");
+    assert.equal(body.quality, "medium");
+    assert.equal(body.size, "1024x1024");
+    assert.equal(Number(body.n), 1);
+    return new Response(JSON.stringify({data:[{b64_json:png.toString("base64")}],usage:{total_tokens:123}}),{status:200});
+  };
+  try {
+    for (const images of [undefined, [{bytes:png,mime:"image/png"}]]) {
+      const result = await adapter("openai").generate(key,{model:"gpt-image-2",prompt:"Test",quality:"medium",size:"1024x1024",images});
+      assert.deepEqual(result.usage,{total_tokens:123});
+    }
+    assert.equal(calls,2);
+  } finally { globalThis.fetch = oldFetch; }
+});

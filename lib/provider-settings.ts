@@ -1,3 +1,4 @@
+import { isProviderVerified } from "./provider-verification";
 import type { ProviderConfiguration } from "@prisma/client";
 import { db } from "./db";
 import { ownerOnly } from "./auth";
@@ -71,18 +72,12 @@ export async function aiConfigurationView(meta = false) {
             },
           })
         : row;
-    const valid =
-      source?.status === "VERIFIED" &&
-      source.verifiedRevision === source.revision &&
-      source.verifiedAt &&
-      Date.now() - source.verifiedAt.getTime() < 86400000;
+    const valid = isProviderVerified(source);
     return {
       ...row,
       status:
-        row.status === "VERIFIED" &&
-        row.verifiedAt &&
-        Date.now() - row.verifiedAt.getTime() >= 86400000
-          ? "EXPIRED"
+        row.status === "VERIFIED" && !isProviderVerified(row)
+          ? "UNVERIFIED"
           : row.status,
       monthlyLimitMicros: String(row.monthlyLimitMicros),
       dailyLimitMicros: String(row.dailyLimitMicros),
@@ -91,7 +86,7 @@ export async function aiConfigurationView(meta = false) {
       creativeStatus: valid
         ? "VERIFIED"
         : source?.status === "VERIFIED"
-          ? "EXPIRED"
+          ? "UNVERIFIED"
           : (source?.status ?? "NOT_CONFIGURED"),
       creativeVerifiedAt: source?.verifiedAt ?? null,
     };
@@ -105,11 +100,7 @@ export async function aiConfigurationView(meta = false) {
       ? await db.providerConnection.findUnique({ where: { provider } })
       : null;
   const source = provider === c?.provider ? c : profile;
-  const valid =
-    source?.status === "VERIFIED" &&
-    source.verifiedRevision === source.revision &&
-    source.verifiedAt &&
-    Date.now() - source.verifiedAt.getTime() < 86400000;
+  const valid = isProviderVerified(source);
   return {
     ...safeConfiguration(c),
     creativeModels: ((source?.models ?? []) as ModelCapability[]).filter(
@@ -118,7 +109,7 @@ export async function aiConfigurationView(meta = false) {
     creativeStatus: valid
       ? "VERIFIED"
       : source?.status === "VERIFIED"
-        ? "EXPIRED"
+        ? "UNVERIFIED"
         : (source?.status ?? "NOT_CONFIGURED"),
     creativeVerifiedAt: source?.verifiedAt ?? null,
   };
@@ -203,6 +194,7 @@ export async function saveAIConfiguration(
     const { apiKey, ...data } = b;
     const encryptedKey = apiKey ? encryptKey(apiKey) : source!.encryptedKey!,
       maskedKey = apiKey ? maskKey(apiKey) : source!.maskedKey;
+    const keepVerification = !changed && isProviderVerified(source);
     const reset = changed
       ? { models: [], imageModel: null, creativeModel: null, alternatives: [] }
       : {};
@@ -214,7 +206,9 @@ export async function saveAIConfiguration(
         encryptedKey,
         maskedKey,
         models: changed ? [] : imageModels,
-        status: "UNVERIFIED",
+        status: keepVerification ? "VERIFIED" : "UNVERIFIED",
+        verifiedAt: keepVerification ? source!.verifiedAt : null,
+        verifiedRevision: keepVerification ? 1 : null,
       },
       update: {
         ...data,
@@ -223,9 +217,9 @@ export async function saveAIConfiguration(
         maskedKey,
         models: changed ? [] : imageModels,
         revision: { increment: 1 },
-        status: "UNVERIFIED",
-        verifiedAt: null,
-        verifiedRevision: null,
+        status: keepVerification ? "VERIFIED" : "UNVERIFIED",
+        verifiedAt: keepVerification ? source!.verifiedAt : null,
+        verifiedRevision: keepVerification ? (old?.revision ?? 0) + 1 : null,
         error: null,
       },
     });

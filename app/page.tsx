@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { isProviderVerified } from "../lib/provider-verification";
 import { ThemeToggle } from "./components/theme-toggle";
 import "./components/meta-header.css";
 import "./components/creative-workspace.css";
@@ -1942,7 +1943,6 @@ function PosterAISettings() {
   const [testBudget, setTestBudget] = useState<any>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [liveError, setLiveError] = useState("");
-  const [now, setNow] = useState(Date.now());
   const editing = useRef(false);
   const providerSequence = useRef(0),
     creativeSequence = useRef(0);
@@ -2005,13 +2005,11 @@ function PosterAISettings() {
       }
     };
     const timer = setInterval(() => void poll(), 10000);
-    const clock = setInterval(() => setNow(Date.now()), 10000);
     const focus = () => void poll();
     window.addEventListener("focus", focus);
     return () => {
       active = false;
       clearInterval(timer);
-      clearInterval(clock);
       window.removeEventListener("focus", focus);
     };
   }, []);
@@ -2134,11 +2132,7 @@ function PosterAISettings() {
     (m: any) => m.id === c.imageModel && m.kind === "image",
   );
 
-  const verified =
-    c.status === "VERIFIED" &&
-    c.verifiedRevision === c.revision &&
-    c.verifiedAt &&
-    now - new Date(c.verifiedAt).getTime() < 86400000;
+  const verified = isProviderVerified(c);
   const checks = [
     {
       label: "Clave guardada en el servidor",
@@ -2151,7 +2145,7 @@ function PosterAISettings() {
       ok: !dirty && !key,
     },
     {
-      label: "Consulta de modelos verificada durante las últimas 24 horas",
+      label: "Modelos verificados para la clave guardada",
       target: "ai-connection",
       ok: !!verified,
     },
@@ -2416,8 +2410,8 @@ function PosterAISettings() {
             {new Date(c.verifiedAt).toLocaleString("es-PE", {
               timeZone: "America/Lima",
             })}
-            . Debe renovarse cada 24 horas. Verifica acceso a modelos; no
-            garantiza saldo ni generación.
+            . Sin vencimiento automático. Verifica acceso a modelos; no garantiza
+            saldo ni generación.
           </p>
         )}
         {c.error && <div className="notice error">{c.error}</div>}

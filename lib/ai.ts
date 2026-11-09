@@ -1,3 +1,4 @@
+import { isProviderVerified } from "./provider-verification";
 import {
   creativeConnection,
   capabilityFingerprint,
@@ -24,12 +25,8 @@ export function safeConfiguration(c: ProviderConfiguration | null) {
       maxGenerations: 100,
     };
   const { encryptedKey: _key, ...safe } = c;
-  if (
-    safe.status === "VERIFIED" &&
-    safe.verifiedAt &&
-    Date.now() - safe.verifiedAt.getTime() >= 86400000
-  )
-    safe.status = "EXPIRED";
+  if (safe.status === "VERIFIED" && !isProviderVerified(safe))
+    safe.status = "UNVERIFIED";
   return {
     ...safe,
     monthlyLimitMicros: String(c.monthlyLimitMicros),
@@ -45,11 +42,8 @@ export async function configured(textOnly=false) {
   });
   demand(
     c?.encryptedKey &&
-      c.status === "VERIFIED" &&
-      c.verifiedRevision === c.revision &&
-      c.verifiedAt &&
-      Date.now() - c.verifiedAt.getTime() < 86400000,
-    "El OWNER debe guardar y verificar la conexión de IA (válida durante 24 horas).",
+      isProviderVerified(c),
+    "El OWNER debe guardar y verificar la conexión de IA.",
     409,
   );
   const models = c.models as ModelCapability[];

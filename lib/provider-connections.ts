@@ -1,3 +1,4 @@
+import { isProviderVerified } from "./provider-verification";
 import type {
   Prisma,
   ProviderConfiguration,
@@ -12,16 +13,6 @@ import { encryptKey, decryptKey, maskKey } from "./crypto";
 import { adapter, providers, type ModelCapability } from "./providers";
 import { recordActivity } from "./activity";
 type Actor = { id: string; role: string };
-const stale = (row: {
-  status: string;
-  verifiedAt: Date | null;
-  verifiedRevision: number | null;
-  revision: number;
-}) =>
-  row.status !== "VERIFIED" ||
-  row.verifiedRevision !== row.revision ||
-  !row.verifiedAt ||
-  Date.now() - row.verifiedAt.getTime() >= 86400000;
 export function publicConnection(
   provider: string,
   row: ProviderConnection | null,
@@ -33,8 +24,8 @@ export function publicConnection(
     maskedKey: row?.maskedKey ?? null,
     revision: row?.revision ?? 0,
     status:
-      row?.status === "VERIFIED" && stale(row)
-        ? "EXPIRED"
+      row?.status === "VERIFIED" && !isProviderVerified(row)
+        ? "UNVERIFIED"
         : (row?.status ?? "NOT_CONFIGURED"),
     verifiedAt: row?.verifiedAt ?? null,
     verifiedRevision: row?.verifiedRevision ?? null,
@@ -321,8 +312,8 @@ export async function creativeConnection(
       ? c
       : await client.providerConnection.findUnique({ where: { provider } });
   demand(
-    source?.encryptedKey && !stale(source),
-    "Guarda y verifica la conexión del proveedor de dirección creativa (válida durante24 horas).",
+    source?.encryptedKey && isProviderVerified(source),
+    "Guarda y verifica la conexión del proveedor de dirección creativa.",
     409,
   );
   const model = (source.models as ModelCapability[]).find(
