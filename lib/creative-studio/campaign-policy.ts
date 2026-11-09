@@ -56,7 +56,7 @@ export const campaignConfigSchema = z
     conversation: conversationSchema.optional(),
     placements: positionsSchema.optional(),
     allowExcludedPlacementSpend: z.boolean().optional(),
-    multiAdvertiser: z.literal(false).optional(),
+    multiAdvertiser: z.boolean().optional(),
     website: z.string().max(2000).default(""),
     leadFormId: z
       .string()

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { studioRequest } from "./inventory-meta-picker";
 export type CampaignParentOption = {
   id: string;
@@ -24,6 +24,8 @@ export function StudioCampaignParentPicker({
   onSelect,
   onCreate,
   disabled = false,
+  trailing,
+  configurationSelected = false,
 }: {
   kind: "campaigns" | "adsets";
   accountId: string;
@@ -32,6 +34,8 @@ export function StudioCampaignParentPicker({
   onSelect: (rows: CampaignParentOption[]) => void;
   onCreate: () => void;
   disabled?: boolean;
+  trailing?: ReactNode;
+  configurationSelected?: boolean;
 }) {
   const [searchMode, setSearchMode] = useState(selected.length > 0),
     [query, setQuery] = useState(""),
@@ -49,6 +53,9 @@ export function StudioCampaignParentPicker({
     setError("");
     setLoading(false);
   }, [accountId, campaignId]);
+  useEffect(() => {
+    if (configurationSelected) setSearchMode(false);
+  }, [configurationSelected]);
   useEffect(() => () => controller.current?.abort(), []);
   async function search(more = false) {
     if (loading || !accountId) return;
@@ -99,10 +106,14 @@ export function StudioCampaignParentPicker({
   const title = kind === "campaigns" ? "Campaña" : "Conjuntos de anuncios";
   return (
     <section className="studio-parent-picker" aria-label={"Destino · " + title}>
-      <div className="studio-choice-switch">
+      <div
+        className={
+          "studio-choice-switch" + (trailing ? " has-configuration" : "")
+        }
+      >
         <button
           type="button"
-          aria-pressed={!searchMode}
+          aria-pressed={!searchMode && !configurationSelected}
           disabled={disabled}
           onClick={() => {
             setSearchMode(false);
@@ -121,6 +132,7 @@ export function StudioCampaignParentPicker({
         >
           ⌕ Buscar {kind === "campaigns" ? "campaña" : "conjuntos"}
         </button>
+        {trailing}
       </div>
       {searchMode && (
         <div className="studio-parent-search">

@@ -8,7 +8,7 @@ import {
 } from "../../lib/creative-studio/campaign-workbench-policy";
 
 export function useCampaignPresets(categoryId: string) {
-  const [data, setData] = useState<any>({ presets: [], conversations: [] }),
+  const [data, setData] = useState<any>({ presets: [], conversations: [], campaignConfigurations: [], adConfigurations: [] }),
     [loading, setLoading] = useState(false),
     [error, setError] = useState("");
   const request = useRef<Promise<any> | null>(null),

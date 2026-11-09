@@ -15,6 +15,7 @@ export function SearchSelect({
   onSelect,
   options,
   name,
+  placeholder,
   required,
   disabled,
   loading,
@@ -28,6 +29,7 @@ export function SearchSelect({
   onSelect: (option: SearchOption) => void;
   options: SearchOption[];
   name?: string;
+  placeholder?: string;
   required?: boolean;
   disabled?: boolean;
   loading?: boolean;
@@ -73,6 +75,7 @@ export function SearchSelect({
           id={id}
           ref={input}
           name={name}
+          placeholder={placeholder}
           value={value}
           required={required}
           disabled={disabled}

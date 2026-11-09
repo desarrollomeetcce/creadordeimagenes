@@ -16,11 +16,15 @@ import {
   type CampaignConfig,
   type CampaignItem,
 } from "../../lib/creative-studio/campaign-policy";
+import {
+  useNamedConfiguration,
+  NamedConfigurationPicker,
+  NamedConfigurationSave,
+} from "./studio-named-configuration";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { countryName, countryOptions } from "../../lib/meta-ads/countries";
 import { launchPollDelay } from "../../lib/creative-studio/launch-wait";
 import {
-  StudioCampaignPresetPicker,
   StudioConversationEditor,
   useCampaignPresets,
 } from "./studio-campaign-presets";
@@ -571,6 +575,54 @@ export function StudioCampaign({
         style: "currency",
         currency: currency || "USD",
       }).format(n);
+  const campaignConfiguration = useNamedConfiguration({
+    kind: "campaign",
+    categoryId,
+    form,
+    store: presets,
+    disabled: locked,
+    onApply: (settings) => {
+      const { adsetCount, ...rest } = settings;
+      setSelectedCampaign(undefined);
+      setSelectedAdsets([]);
+      const audiences = Array.from(
+        { length: adsetCount ?? form.audiences.length },
+        (_, i) =>
+          form.audiences[i] ?? {
+            name: "Público " + (i + 1),
+            ageMin: 18,
+            ageMax: 65,
+            gender: "ALL",
+            strictAge: false,
+          },
+      );
+      applyConfig({
+        ...rest,
+        audiences,
+        existingCampaignId: undefined,
+        existingAdsetId: undefined,
+        existingAdsetIds: undefined,
+        distribution: {},
+        ...(!["WHATSAPP", "LEADS_WHATSAPP"].includes(settings.objective)
+          ? { conversation: undefined }
+          : {}),
+      });
+    },
+  });
+  const adConfiguration = useNamedConfiguration({
+    kind: "ad",
+    categoryId,
+    form,
+    store: presets,
+    disabled: locked,
+    onApply: (settings) =>
+      applyConfig({
+        ...settings,
+        ...(!["WHATSAPP", "LEADS_WHATSAPP"].includes(form.objective)
+          ? { conversation: undefined }
+          : {}),
+      }),
+  });
   async function retryPublication() {
     if (!draft || retryInFlight.current) return;
     retryInFlight.current = true;
@@ -1263,23 +1315,6 @@ export function StudioCampaign({
             </p>
           )}
         </section>
-        <StudioCampaignParentPicker
-          kind="campaigns"
-          accountId={form.accountId}
-          selected={selectedCampaign ? [selectedCampaign] : []}
-          disabled={locked}
-          onSelect={chooseCampaign}
-          onCreate={() => {
-            setSelectedCampaign(undefined);
-            setSelectedAdsets([]);
-            applyConfig({
-              existingCampaignId: undefined,
-              existingAdsetId: undefined,
-              existingAdsetIds: undefined,
-              distribution: {},
-            });
-          }}
-        />
         <section className="studio-preparation-data">
           <div className="studio-budget">
             {!form.existingCampaignId ? (
@@ -1324,146 +1359,33 @@ export function StudioCampaign({
               </div>
             )}
           </div>
-          {form.existingCampaignId && (
-            <StudioCampaignParentPicker
-              kind="adsets"
-              accountId={form.accountId}
-              campaignId={form.existingCampaignId}
-              selected={selectedAdsets}
-              disabled={locked}
-              onSelect={chooseAdsets}
-              onCreate={() => {
-                setSelectedAdsets([]);
-                applyConfig({
-                  existingAdsetId: undefined,
-                  existingAdsetIds: undefined,
-                  distribution: {},
-                });
-              }}
-            />
-          )}
-          <section className="studio-adset-distribution">
-            <label>
-              Cantidad de conjuntos de anuncios
-              <input
-                aria-label="Cantidad de conjuntos de anuncios"
-                type="number"
-                min="1"
-                max="10"
-                disabled={
-                  !!form.existingAdsetId || !!form.existingAdsetIds?.length
-                }
-                value={form.audiences.length}
-                onChange={(e) =>
-                  changeAudienceCount(Number(e.target.value) || 1)
-                }
-              />
-            </label>
-            <small>
-              {items.reduce((n, i) => n + i.variationIds.length, 0)} afiches
-              elegidos · reparto editable, sin duplicar imágenes.
-            </small>
-            {items.map((item) => {
-              let counts: number[] = [];
-              try {
-                counts = imageDistribution(item, form);
-              } catch {
-                counts = form.distribution?.[item.subproductId] ?? [];
-              }
-              return (
-                <div
-                  key={item.subproductId}
-                  className="studio-distribution-item"
-                >
-                  <strong>
-                    {item.name} · {item.variationIds.length} afiches
-                  </strong>
-                  {!counts.length ? (
-                    <small role="status">
-                      Selecciona al menos {form.audiences.length} afiches o
-                      reduce los conjuntos.
-                    </small>
-                  ) : (
-                    <>
-                      <div className="studio-distribution-counts">
-                        {counts.map((n, i) => (
-                          <label key={i}>
-                            Conjunto {i + 1}
-                            <input
-                              type="number"
-                              min="1"
-                              max="50"
-                              aria-label={
-                                item.name + " · afiches del conjunto " + (i + 1)
-                              }
-                              value={
-                                form.distribution?.[item.subproductId]?.[i] ?? n
-                              }
-                              onChange={(e) =>
-                                update("distribution", {
-                                  ...form.distribution,
-                                  [item.subproductId]: counts.map((x, j) =>
-                                    j === i ? Number(e.target.value) : x,
-                                  ),
-                                })
-                              }
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <small role="status">
-                        {counts.join(" + ")} ={" "}
-                        {counts.reduce((a, b) => a + b, 0)} /{" "}
-                        {item.variationIds.length} anuncios
-                        {counts.some((n) => n < 1) ||
-                        counts.reduce((a, b) => a + b, 0) !==
-                          item.variationIds.length
-                          ? " · Ajusta la suma para incluir todos los afiches."
-                          : ""}
-                      </small>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const d = { ...form.distribution };
-                      delete d[item.subproductId];
-                      update("distribution", d);
-                    }}
-                  >
-                    Repartir equitativamente
-                  </button>
-                </div>
-              );
-            })}
-          </section>
         </section>
-        <StudioCampaignPresetPicker
-          categoryId={categoryId}
-          form={form}
-          store={presets}
+        <StudioCampaignParentPicker
+          kind="campaigns"
+          configurationSelected={!!campaignConfiguration.selected}
+          trailing={<NamedConfigurationPicker model={campaignConfiguration} />}
+          accountId={form.accountId}
+          selected={selectedCampaign ? [selectedCampaign] : []}
           disabled={locked}
-          onApply={(settings) =>
+          onSelect={(rows) => {
+            campaignConfiguration.clear();
+            chooseCampaign(rows);
+          }}
+          onCreate={() => {
+            campaignConfiguration.clear();
+            setSelectedCampaign(undefined);
+            setSelectedAdsets([]);
             applyConfig({
-              ...settings,
-              ...(form.existingCampaignId ? { objective: form.objective } : {}),
-              ...(form.existingAdsetId || form.existingAdsetIds?.length
-                ? {
-                    platforms: form.platforms,
-                    placements: form.placements,
-                    allowExcludedPlacementSpend:
-                      form.allowExcludedPlacementSpend,
-                  }
-                : {}),
-              ...(settings.objective === "LEADS" ||
-              settings.objective === "TRAFFIC"
-                ? { conversation: undefined }
-                : {}),
-            })
-          }
+              existingCampaignId: undefined,
+              existingAdsetId: undefined,
+              existingAdsetIds: undefined,
+              distribution: {},
+            });
+          }}
         />
         <details
           className="studio-campaign-stage stage-campaign"
+          hidden={campaignConfiguration.collapsed}
           open
           ref={(el) => {
             stages.current.campaign = el;
@@ -1482,6 +1404,23 @@ export function StudioCampaign({
             <span className="studio-stage-caret">⌄</span>
           </summary>
           <div className="studio-stage-body">
+            <label>
+              Cantidad de conjuntos de anuncios
+              <input
+                aria-label="Cantidad de conjuntos de anuncios"
+                type="number"
+                min="1"
+                max="10"
+                disabled={
+                  !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                }
+                value={form.audiences.length}
+                onChange={(e) =>
+                  changeAudienceCount(Number(e.target.value) || 1)
+                }
+              />
+            </label>
+
             <label>
               Nombre de campaña
               <input
@@ -1566,6 +1505,7 @@ export function StudioCampaign({
         </details>
         <details
           className="studio-campaign-stage stage-placements"
+          hidden={campaignConfiguration.collapsed}
           ref={(el) => {
             stages.current.placements = el;
           }}
@@ -1605,6 +1545,7 @@ export function StudioCampaign({
             )}
           </div>
         </details>
+        <NamedConfigurationSave model={campaignConfiguration} />
         <section
           className="studio-campaign-method"
           aria-label="Método de preparación"
@@ -1761,65 +1702,186 @@ export function StudioCampaign({
             </section>
           )}
         </section>
-        {mode === "TRADITIONAL" && (
-          <>
-            {" "}
-            <details
-              className="studio-campaign-stage stage-audiences"
-              ref={(el) => {
-                stages.current.audiences = el;
-              }}
-            >
-              <summary>
-                <span className="studio-stage-number">03</span>
-                <span>
-                  <strong>Públicos</strong>
-                  <small>
-                    {form.audiences.length}{" "}
-                    {form.existingAdsetId || form.existingAdsetIds?.length
-                      ? "existentes, sin cambios"
-                      : "por configurar · manual o IA"}
-                  </small>
-                </span>
-                <span className="studio-stage-caret">⌄</span>
-              </summary>
-              <div className="studio-stage-body">
-                {mode === "TRADITIONAL" && (
-                  <div className="studio-audience-grid">
-                    {form.audiences.map((a, i) => (
-                      <StudioCampaignAudience
-                        key={
-                          (form.existingAdsetIds?.[i] ??
-                            form.existingAdsetId ??
-                            "new") +
-                          ":" +
-                          i
+        <details
+          className="studio-campaign-stage stage-audiences"
+          ref={(el) => {
+            stages.current.audiences = el;
+          }}
+        >
+          <summary>
+            <span className="studio-stage-number">03</span>
+            <span>
+              <strong>Públicos</strong>
+              <small>
+                {form.audiences.length}{" "}
+                {form.existingAdsetId || form.existingAdsetIds?.length
+                  ? "existentes, sin cambios"
+                  : "por configurar · manual o IA"}
+              </small>
+            </span>
+            <span className="studio-stage-caret">⌄</span>
+          </summary>
+          <div className="studio-stage-body">
+            {form.existingCampaignId && (
+              <StudioCampaignParentPicker
+                kind="adsets"
+                accountId={form.accountId}
+                campaignId={form.existingCampaignId}
+                selected={selectedAdsets}
+                disabled={locked}
+                onSelect={chooseAdsets}
+                onCreate={() => {
+                  setSelectedAdsets([]);
+                  applyConfig({
+                    existingAdsetId: undefined,
+                    existingAdsetIds: undefined,
+                    distribution: {},
+                  });
+                }}
+              />
+            )}
+
+            <section className="studio-adset-distribution">
+              <strong>Anuncios por público</strong>
+              <small>
+                {items.reduce((n, i) => n + i.variationIds.length, 0)} afiches
+                elegidos · reparto editable, sin duplicar imágenes.
+              </small>
+              {items.map((item) => {
+                let counts: number[] = [];
+                try {
+                  counts = imageDistribution(item, form);
+                } catch {
+                  counts = form.distribution?.[item.subproductId] ?? [];
+                }
+                return (
+                  <div
+                    key={item.subproductId}
+                    className="studio-distribution-item"
+                  >
+                    <strong>
+                      {item.name} · {item.variationIds.length} afiches
+                    </strong>
+                    <label>
+                      Reparto
+                      <select
+                        aria-label={"Distribución de anuncios · " + item.name}
+                        value={
+                          form.distribution?.[item.subproductId]
+                            ? "custom"
+                            : "equal"
                         }
-                        index={i}
-                        value={a}
-                        config={form}
-                        categoryId={categoryId}
-                        accountId={form.accountId}
-                        existing={
-                          !!form.existingAdsetId ||
-                          !!form.existingAdsetIds?.length
-                        }
-                        onChange={(value) =>
-                          update(
-                            "audiences",
-                            form.audiences.map((a, j) => (i === j ? value : a)),
-                          )
-                        }
-                      />
-                    ))}
+                        onChange={(e) => {
+                          const d = { ...form.distribution };
+                          if (e.target.value === "equal")
+                            delete d[item.subproductId];
+                          else d[item.subproductId] = counts;
+                          update("distribution", d);
+                        }}
+                      >
+                        <option value="equal">Equitativo</option>
+                        <option value="custom">Personalizado</option>
+                      </select>
+                    </label>
+                    {!counts.length ? (
+                      <small role="status">
+                        Selecciona al menos {form.audiences.length} afiches o
+                        reduce los conjuntos.
+                      </small>
+                    ) : (
+                      <>
+                        <div className="studio-distribution-counts">
+                          {counts.map((n, i) => (
+                            <label key={i}>
+                              Público {i + 1}
+                              <input
+                                type="number"
+                                min="1"
+                                max="50"
+                                aria-label={
+                                  item.name +
+                                  " · afiches del conjunto " +
+                                  (i + 1)
+                                }
+                                value={
+                                  form.distribution?.[item.subproductId]?.[i] ??
+                                  n
+                                }
+                                onChange={(e) =>
+                                  update("distribution", {
+                                    ...form.distribution,
+                                    [item.subproductId]: counts.map((x, j) =>
+                                      j === i ? Number(e.target.value) : x,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <small role="status">
+                          {counts.join(" + ")} ={" "}
+                          {counts.reduce((a, b) => a + b, 0)} /{" "}
+                          {item.variationIds.length} anuncios
+                          {counts.some((n) => n < 1) ||
+                          counts.reduce((a, b) => a + b, 0) !==
+                            item.variationIds.length
+                            ? " · Ajusta la suma para incluir todos los afiches."
+                            : ""}
+                        </small>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = { ...form.distribution };
+                        delete d[item.subproductId];
+                        update("distribution", d);
+                      }}
+                    >
+                      Repartir equitativamente
+                    </button>
                   </div>
-                )}
+                );
+              })}
+            </section>
+
+            {(mode === "TRADITIONAL" || !aiFields.audiences) && (
+              <div className="studio-audience-grid">
+                {form.audiences.map((a, i) => (
+                  <StudioCampaignAudience
+                    key={
+                      (form.existingAdsetIds?.[i] ??
+                        form.existingAdsetId ??
+                        "new") +
+                      ":" +
+                      i
+                    }
+                    index={i}
+                    value={a}
+                    config={form}
+                    categoryId={categoryId}
+                    accountId={form.accountId}
+                    existing={
+                      !!form.existingAdsetId || !!form.existingAdsetIds?.length
+                    }
+                    onChange={(value) =>
+                      update(
+                        "audiences",
+                        form.audiences.map((a, j) => (i === j ? value : a)),
+                      )
+                    }
+                  />
+                ))}
               </div>
-            </details>
-          </>
-        )}
+            )}
+          </div>
+        </details>
+
+        <NamedConfigurationPicker model={adConfiguration} />
         <details
           className="studio-campaign-stage stage-ads"
+          hidden={adConfiguration.collapsed}
           ref={(el) => {
             stages.current.ads = el;
           }}
@@ -1837,8 +1899,13 @@ export function StudioCampaign({
           </summary>
           <div className="studio-stage-body">
             <label className="studio-check studio-multi-advertiser">
-              <input type="checkbox" checked={false} disabled />
-              Multianunciante desactivado
+              <input
+                aria-label="Multianunciante"
+                type="checkbox"
+                checked={!!form.multiAdvertiser}
+                onChange={(e) => update("multiAdvertiser", e.target.checked)}
+              />
+              Multianunciante
             </label>
             {!(mode === "AI" && aiFields.body) && (
               <>
@@ -1898,6 +1965,7 @@ export function StudioCampaign({
                   disabled={locked}
                 />
               )}
+            <NamedConfigurationSave model={adConfiguration} />
           </div>
         </details>
         <details className="studio-legal-options">

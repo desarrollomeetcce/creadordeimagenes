@@ -1,3 +1,4 @@
+import { configurationDirectory } from "./campaign-configuration-settings";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
@@ -32,6 +33,7 @@ export async function campaignPresets(actor: Actor, categoryId: string) {
   });
   const studio = object(project.studio);
   return {
+    ...configurationDirectory(studio),
     presets: Array.isArray(studio.campaignPresets)
       ? studio.campaignPresets.flatMap((v: any) => {
           const p = presetSchema.safeParse(v);

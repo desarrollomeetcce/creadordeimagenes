@@ -470,3 +470,29 @@ test("Category dictionaries use explicit Meta field keys and never infer demogra
     50,
   );
 });
+
+test("Campaign and ad configurations keep operational data and each other's scope out", async()=>{
+  const {campaignConfigurationSettings,adConfigurationSettings,campaignConfigurationSettingsSchema,adConfigurationSettingsSchema,configurationMatches}=await import("../lib/creative-studio/campaign-configuration-settings");
+  const form={...config({multiAdvertiser:true}),campaignName:"[pais] · [diplomado]",conversation:{name:"Info",greeting:"Hola",autofill:"Más información"}};
+  const campaign=campaignConfigurationSettings(form),ad=adConfigurationSettings(form);
+  assert.equal(campaign.adsetCount,2);assert.equal(campaign.campaignName,form.campaignName);
+  for(const field of ["dailyBudget","country","accountId","pageId","body","headline","description","conversation","audiences","distribution","multiAdvertiser"])assert(!(field in campaign));
+  assert.equal(ad.multiAdvertiser,true);assert.deepEqual(ad.conversation,form.conversation);
+  for(const field of ["dailyBudget","country","accountId","pageId","campaignName","objective","platforms","placements","adsetCount","audiences","distribution"])assert(!(field in ad));
+  assert.equal(campaignConfigurationSettingsSchema.safeParse({...campaign,dailyBudget:7}).success,false);
+  assert.equal(adConfigurationSettingsSchema.safeParse({...ad,platforms:["facebook"]}).success,false);
+  assert(configurationMatches("campaign",campaign,{...form,dailyBudget:99,country:"PE",body:"Other"}));
+  assert(!configurationMatches("campaign",campaign,{...form,campaignName:"Changed"}));
+  assert(!configurationMatches("ad",ad,{...form,body:"Changed"}));
+  assert.equal(campaignConfigSchema.parse(form).multiAdvertiser,true);
+});
+
+test("Historical combined configurations remain available as two scopes without rewriting",async()=>{
+  const {configurationDirectory}=await import("../lib/creative-studio/campaign-configuration-settings");
+  const studio={campaignPresets:[{id:"00000000-0000-4000-8000-000000000001",name:"Old",revision:1,settings:reusableCampaignSettings(config())}],unchanged:"keep"};
+  const before=JSON.stringify(studio),directory=configurationDirectory(studio);
+  assert.equal(directory.campaignConfigurations.length,1);assert.equal(directory.adConfigurations.length,1);
+  assert.equal(directory.campaignConfigurations[0].settings.body,undefined);
+  assert.equal(directory.adConfigurations[0].settings.objective,undefined);
+  assert.equal(JSON.stringify(studio),before);
+});

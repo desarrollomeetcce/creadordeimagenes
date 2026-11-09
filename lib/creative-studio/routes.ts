@@ -25,6 +25,8 @@ export async function creativeStudioRoutes(
   studio.studioAccess(actor);
   const p = parts.slice(1),
     method = req.method;
+  if (["campaign-configurations","ad-configurations"].includes(p[0]) && p[1] && p.length===2 && method==="POST")
+    return send(await (await import("./campaign-configurations")).saveConfiguration(actor,p[1],await body(),p[0]==="campaign-configurations"?"campaign":"ad"));
   if (p[0] === "campaign-presets" && p[1] && p.length === 2) {
     if (method === "GET") return send(await campaignPresets(actor, p[1]));
     if (method === "POST")

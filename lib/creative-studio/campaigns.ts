@@ -1080,7 +1080,7 @@ export async function tickLaunch(actor: Actor, id: string) {
       edge = "adcreatives";
       body = {
         name: `${campaignDisplayName(item, config)} · Afiche ${step.image! + 1}`,
-        contextual_multi_ads: { enroll_status: "OPT_OUT" },
+        contextual_multi_ads: { enroll_status: config.multiAdvertiser ? "OPT_IN" : "OPT_OUT" },
         object_story_spec: {
           page_id: config.pageId,
           link_data: {
@@ -1264,8 +1264,8 @@ export async function tickLaunch(actor: Actor, id: string) {
         409,
       );
       demand(
-        result.contextual_multi_ads?.enroll_status !== "OPT_IN",
-        "Meta devolvió el creativo con multianunciante activado; revisa el anuncio.",
+        config.multiAdvertiser ? result.contextual_multi_ads?.enroll_status === "OPT_IN" : result.contextual_multi_ads?.enroll_status !== "OPT_IN",
+        "Meta no confirmó la opción de multianunciante elegida; revisa el anuncio.",
         409,
       );
       if (config.conversation) {
