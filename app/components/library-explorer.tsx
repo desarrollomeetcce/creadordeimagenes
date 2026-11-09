@@ -48,6 +48,9 @@ type Item = {
   createdAt: string;
   reviewStatus: string;
   model: string;
+  mediaType?: string;
+  ownResource?: boolean;
+  originalName?: string | null;
   subproduct: {
     id: string;
     name: string;
@@ -564,23 +567,33 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             />
             Seleccionar
           </label>
-          <button
-            type="button"
-            className="image-preview-trigger"
-            onClick={() =>
-              setPreview({
-                id: i.id,
-                name: i.subproduct?.name ?? "Imagen",
-                revision: i.revision,
-              })
-            }
-          >
-            <img
-              loading="lazy"
-              src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
-              alt={i.subproduct?.name ?? "Imagen"}
+          {i.mediaType === "VIDEO" ? (
+            <video
+              controls
+              preload="none"
+              style={{ width: "100%", maxHeight: 240 }}
+              src={"/api/variations/" + i.id}
+              aria-label={i.originalName ?? "Video propio"}
             />
-          </button>
+          ) : (
+            <button
+              type="button"
+              className="image-preview-trigger"
+              onClick={() =>
+                setPreview({
+                  id: i.id,
+                  name: i.subproduct?.name ?? "Imagen",
+                  revision: i.revision,
+                })
+              }
+            >
+              <img
+                loading="lazy"
+                src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
+                alt={i.subproduct?.name ?? "Imagen"}
+              />
+            </button>
+          )}
           <strong>{i.subproduct?.name ?? "Imagen"}</strong>
           <small>
             {i.reviewStatus === "APPROVED" ? "Aprobada" : "Por aprobar"}
@@ -630,34 +643,46 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             ? "Aprobada"
             : "Pendiente de aprobación"}
         </span>
-        <button
-          type="button"
-          className="image-preview-trigger"
-          aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
-          onClick={() =>
-            setPreview({
-              id: i.id,
-              name: i.subproduct?.name ?? "Prueba de IA",
-              revision: i.revision,
-              sourceNotice: i.sourceNotice,
-              subproductHref:
-                i.subproduct && !i.sourceNotice
-                  ? "?" +
-                    new URLSearchParams({
-                      view: "projects",
-                      category: i.subproduct.category.id,
-                      subproduct: i.subproduct.id,
-                    })
-                  : undefined,
-            })
-          }
-        >
-          <img
-            loading="lazy"
-            src={"/api/variations/" + i.id + "?thumbnail=true&v=" + i.revision}
-            alt={i.subproduct?.name ?? "Prueba de IA"}
+        {i.mediaType === "VIDEO" ? (
+          <video
+            controls
+            preload="none"
+            style={{ width: "100%", maxHeight: 240 }}
+            src={"/api/variations/" + i.id}
+            aria-label={i.originalName ?? "Video propio"}
           />
-        </button>
+        ) : (
+          <button
+            type="button"
+            className="image-preview-trigger"
+            aria-label={`Ampliar imagen · ${i.subproduct?.name ?? "Prueba de IA"}`}
+            onClick={() =>
+              setPreview({
+                id: i.id,
+                name: i.subproduct?.name ?? "Prueba de IA",
+                revision: i.revision,
+                sourceNotice: i.sourceNotice,
+                subproductHref:
+                  i.subproduct && !i.sourceNotice
+                    ? "?" +
+                      new URLSearchParams({
+                        view: "projects",
+                        category: i.subproduct.category.id,
+                        subproduct: i.subproduct.id,
+                      })
+                    : undefined,
+              })
+            }
+          >
+            <img
+              loading="lazy"
+              src={
+                "/api/variations/" + i.id + "?thumbnail=true&v=" + i.revision
+              }
+              alt={i.subproduct?.name ?? "Prueba de IA"}
+            />
+          </button>
+        )}
         <strong>{i.subproduct?.name ?? "Prueba de IA"}</strong>
         {i.copied && (
           <small title="Comparte el archivo, versiones y permisos del original">
@@ -725,7 +750,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               : "Aprobar imagen"}
           </button>
         )}
-        {i.canEdit && (
+        {i.canEdit && !i.ownResource && (
           <button type="button" onClick={() => setEditing(i.id)}>
             Editar imagen
           </button>
@@ -766,7 +791,9 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
             </p>
           )}
         </details>
-        <a href={"/api/variations/" + i.id + "?download"}>Descargar PNG</a>
+        <a href={"/api/variations/" + i.id + "?download"}>
+          Descargar {i.mediaType === "VIDEO" ? "video" : "imagen"}
+        </a>
         {anchorOrder && (
           <OrderProgressCard
             inline

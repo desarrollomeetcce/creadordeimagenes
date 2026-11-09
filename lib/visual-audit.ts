@@ -339,14 +339,36 @@ export async function listAuditThumbnails(
     }),
     db.auditThumbnail.count({ where }),
   ]);
+  const ownWhere: Prisma.AuditEventWhereInput = {
+    action: "RECURSO_PROPIO_SUBIDO",
+    ...(q
+      ? {
+          OR: [
+            { detail: { path: ["file"], string_contains: q } },
+            { detail: { path: ["diploma"], string_contains: q } },
+            { detail: { path: ["folder"], string_contains: q } },
+          ],
+        }
+      : {}),
+  };
+  const ownTotal = await db.auditEvent.count({ where: ownWhere });
+  const ownUploads = await db.auditEvent.findMany({
+    where: ownWhere,
+    select: { id: true, createdAt: true, detail: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 20,
+    skip: (page - 1) * 20,
+  });
   return {
+    ownUploads,
+    ownTotal,
     rows: rows.map((row) => ({
       ...row,
       available: row.status === "AVAILABLE" && row.expiresAt > new Date(),
     })),
     total,
     page,
-    pages: Math.max(1, Math.ceil(total / 20)),
+    pages: Math.max(1, Math.ceil(total / 20), Math.ceil(ownTotal / 20)),
   };
 }
 export async function auditThumbnailImage(actor: Actor, id: string) {

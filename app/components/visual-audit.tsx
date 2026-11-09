@@ -25,7 +25,18 @@ type Row = {
   createdAt: string;
   expiresAt: string;
 };
-type List = { rows: Row[]; page: number; pages: number; total: number };
+type List = {
+  ownTotal?: number;
+  ownUploads?: {
+    id: string;
+    createdAt: string;
+    detail: Record<string, string>;
+  }[];
+  rows: Row[];
+  page: number;
+  pages: number;
+  total: number;
+};
 async function request(
   path: string,
   method = "GET",
@@ -325,6 +336,28 @@ export function VisualAuditPanel() {
             <p>
               {rows.total} registros · página {rows.page} de {rows.pages}
             </p>
+            {!!rows.ownUploads?.length && (
+              <details className="panel">
+                <summary>
+                  Recursos propios · sin IA (
+                  {rows.ownTotal ?? rows.ownUploads.length})
+                </summary>
+                {rows.ownUploads.map((entry) => (
+                  <p key={entry.id}>
+                    <strong>{entry.detail.file}</strong> ·{" "}
+                    {[
+                      entry.detail.project,
+                      entry.detail.folder,
+                      entry.detail.diploma,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ")}{" "}
+                    · {entry.detail.type === "VIDEO" ? "Video" : "Foto"} ·{" "}
+                    {entry.detail.storage} · {date(entry.createdAt)}
+                  </p>
+                ))}
+              </details>
+            )}
             <div className="visual-audit-grid" aria-busy={loading}>
               {rows.rows.map((row) => (
                 <article className="panel stack visual-audit-card" key={row.id}>

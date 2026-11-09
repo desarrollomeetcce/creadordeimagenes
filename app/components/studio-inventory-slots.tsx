@@ -22,7 +22,9 @@ export function StudioInventorySlots({
   focusRequest,
   loadDirectory,
   onChoose,
+  manual = false,
 }: {
+  manual?: boolean;
   listId: string;
   country: string;
   existingNames: string[];
@@ -404,7 +406,9 @@ export function StudioInventorySlots({
               : `Usar ${count} ${count === 1 ? "seleccionado" : "seleccionados"}`}
           </button>
           <small className="studio-slot-help">
-            Elegir no genera imágenes. Usa «Generar» cuando estés listo.
+            {manual
+              ? "Elige tus diplomados y sube los recursos en la columna central."
+              : "Elegir no genera imágenes. Usa «Generar» cuando estés listo."}
           </small>
         </>
       )}

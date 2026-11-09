@@ -135,12 +135,15 @@ export type CampaignItem = {
   subproductId: string;
   name: string;
   variationIds: string[];
+  mediaTypes?: Record<string, string>;
   source?: { listId?: string; itemId?: string };
 };
 export type LaunchStep = {
   key: string;
   kind:
     | "IMAGE"
+    | "VIDEO"
+    | "VIDEO_READY"
     | "CAMPAIGN"
     | "ADSET"
     | "CREATIVE"
@@ -155,8 +158,9 @@ export type LaunchStep = {
   target?: string;
   state: "PENDING" | "RUNNING" | "DONE" | "UNCERTAIN";
   startedAt?: string;
+  processingSince?: string;
   existing?: boolean;
-  wait?: { reason: "pacing" | "quota"; until: string };
+  wait?: { reason: "pacing" | "quota" | "processing"; until: string };
   receipt?: Record<string, any>;
 };
 export function campaignText(
@@ -352,9 +356,11 @@ export function launchPlan(
   const count = config?.audiences.length ?? 2;
   const balanced = config?.planVersion === 2;
   campaigns.forEach((c, i) => {
-    c.variationIds.forEach((_v, j) =>
-      add(`image:${i}:${j}`, "IMAGE", i, { image: j }),
-    );
+    c.variationIds.forEach((v, j) => {
+      const video = c.mediaTypes?.[v] === "VIDEO";
+      add(`image:${i}:${j}`, video ? "VIDEO" : "IMAGE", i, { image: j });
+      if (video) add(`video-ready:${i}:${j}`, "VIDEO_READY", i, { image: j });
+    });
     add(
       `campaign:${i}`,
       "CAMPAIGN",
@@ -391,10 +397,19 @@ export function launchPlan(
   });
   if (balanced) {
     const prepared = steps.filter((s) =>
-      ["IMAGE", "CREATIVE", "VERIFY_CREATIVE"].includes(s.kind),
+      ["IMAGE", "VIDEO", "VIDEO_READY", "CREATIVE", "VERIFY_CREATIVE"].includes(
+        s.kind,
+      ),
     );
     const objects = steps.filter(
-      (s) => !["IMAGE", "CREATIVE", "VERIFY_CREATIVE"].includes(s.kind),
+      (s) =>
+        ![
+          "IMAGE",
+          "VIDEO",
+          "VIDEO_READY",
+          "CREATIVE",
+          "VERIFY_CREATIVE",
+        ].includes(s.kind),
     );
     steps.splice(0, steps.length, ...prepared, ...objects);
   }

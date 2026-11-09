@@ -18,6 +18,7 @@ export async function regenerateSelected(
   let projectId: string | null = null;
   for (const id of [...new Set(ids)]) {
     const v = await accessibleVariation(user, id, "GENERATE");
+    demand(v.mediaType!=="VIDEO","Los videos propios no se regeneran como imágenes. Usa el video original en la campaña.",409);
     if (projectId === null) projectId = v.job.projectId;
     demand(
       projectId === v.job.projectId,

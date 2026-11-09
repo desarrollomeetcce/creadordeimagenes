@@ -1,4 +1,4 @@
-import {deletedSourceNotice} from "./source-status";
+import { deletedSourceNotice } from "./source-status";
 import { recordActivity } from "./activity";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -27,9 +27,32 @@ export async function variationRoutes(
   const v = await accessibleVariation(
     user,
     id,
-    method === "GET" ? "VIEW" : ["regenerate","edit-ai"].includes(action) ? "GENERATE" : "EDIT",
+    method === "GET"
+      ? "VIEW"
+      : ["regenerate", "edit-ai"].includes(action)
+        ? "GENERATE"
+        : "EDIT",
     action === "restore",
   );
+  if (
+    [
+      "logos",
+      "design",
+      "background",
+      "versions",
+      "enable-layers",
+      "manual",
+      "restore-version",
+      "edit-ai",
+      "regenerate",
+      "duplicate",
+    ].includes(action)
+  )
+    demand(
+      !v.ownResource,
+      "Los recursos propios conservan su archivo original. Crea una imagen nueva para usar el editor.",
+      409,
+    );
   if (action === "logos" && method === "GET" && parts.length === 4) {
     const version = await db.imageVersion.findUnique({
       where: { variationId_number: { variationId: id, number: v.revision } },
@@ -65,8 +88,21 @@ export async function variationRoutes(
     });
   }
   if (action === "design" && method === "GET") {
-    const source=v.subproductId?await db.subproduct.findUnique({where:{id:v.subproductId},select:{deletedAt:true,category:{select:{deletedAt:true,project:{select:{deletedAt:true}}}}}}):null;
-    const sourceNotice=deletedSourceNotice(source);
+    const source = v.subproductId
+      ? await db.subproduct.findUnique({
+          where: { id: v.subproductId },
+          select: {
+            deletedAt: true,
+            category: {
+              select: {
+                deletedAt: true,
+                project: { select: { deletedAt: true } },
+              },
+            },
+          },
+        })
+      : null;
+    const sourceNotice = deletedSourceNotice(source);
 
     const versions = await db.imageVersion.findMany({
       where: { variationId: id },
@@ -85,7 +121,9 @@ export async function variationRoutes(
       id,
       jobId: v.job.id,
       sourceNotice,
-      orderId: sourceNotice?null:(v.job.snapshot as Record<string, unknown>).orderId ?? null,
+      orderId: sourceNotice
+        ? null
+        : ((v.job.snapshot as Record<string, unknown>).orderId ?? null),
       orderMode:
         (v.job.snapshot as Record<string, unknown>).executionMode ?? null,
       canApprove:
@@ -168,8 +206,10 @@ export async function variationRoutes(
         requestId: z.uuid(),
         expectedRevision: z.number().int().min(1),
         editKind: z.enum(["background", "full"]).default("full"),
-        designMode:z.enum(["professional","editable"]).default("professional"),
-        reasoningLevel:z.enum(["low","medium","high"]).default("medium"),
+        designMode: z
+          .enum(["professional", "editable"])
+          .default("professional"),
+        reasoningLevel: z.enum(["low", "medium", "high"]).default("medium"),
       })
       .parse(await readBody());
     demand(
@@ -234,9 +274,9 @@ export async function variationRoutes(
                 }
               : {
                   sourceVariationId: id,
-                  renderMode: b.designMode==="editable"?"editable":"flat",
-                  designMode:b.designMode,
-                  reasoningLevel:b.reasoningLevel,
+                  renderMode: b.designMode === "editable" ? "editable" : "flat",
+                  designMode: b.designMode,
+                  reasoningLevel: b.reasoningLevel,
                 }),
           },
         },

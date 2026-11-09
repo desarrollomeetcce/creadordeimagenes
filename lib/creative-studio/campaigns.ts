@@ -287,7 +287,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
   const ids = b.items.flatMap((i) => i.variationIds);
   demand(
     new Set(ids).size === ids.length,
-    "No repitas un afiche en la selección.",
+    "No repitas un recurso en la selección.",
   );
   const vs = await db.variation.findMany({
     where: {
@@ -301,6 +301,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
       subproductId: true,
       job: { select: { status: true } },
       revision: true,
+      mediaType: true,
     },
   });
   demand(
@@ -315,7 +316,7 @@ export async function createLaunch(actor: Actor, input: unknown) {
           ),
         ),
       ),
-    "Un afiche ya no pertenece al subproducto o no está disponible.",
+    "Un recurso ya no pertenece al diplomado o no está disponible.",
     409,
   );
   const items: CampaignItem[] = b.items.map((i) => {
@@ -323,6 +324,12 @@ export async function createLaunch(actor: Actor, input: unknown) {
     return {
       ...i,
       name: s.name,
+      mediaTypes: Object.fromEntries(
+        i.variationIds.map((id) => [
+          id,
+          vs.find((v) => v.id === id)!.mediaType,
+        ]),
+      ),
       source: {
         listId: object(s.studio).listId,
         itemId: object(s.studio).itemId,
@@ -875,6 +882,32 @@ async function receiptStep(
         }
       }
     }
+    if (done) {
+      const temporary = await tx.variation.findMany({
+        where: {
+          id: {
+            in: (d.campaigns as CampaignItem[]).flatMap((i) => i.variationIds),
+          },
+          ownResource: true,
+          permanent: false,
+        },
+        select: { id: true },
+      });
+      for (const v of temporary) {
+        const other = await tx.creativeMetaLaunch.count({
+          where: {
+            id: { not: d.id },
+            status: { in: ["DRAFT", "PUBLISHING", "NEEDS_REVIEW"] },
+            campaigns: { array_contains: [{ variationIds: [v.id] }] },
+          },
+        });
+        if (!other)
+          await tx.variation.update({
+            where: { id: v.id },
+            data: { expiresAt: new Date() },
+          });
+      }
+    }
     if (done)
       await recordActivity(tx, {
         data: {
@@ -949,13 +982,18 @@ export async function tickLaunch(actor: Actor, id: string) {
   };
   // Everything that can fail locally is prepared before claiming a remote request.
   let edge:
-      "adimages" | "campaigns" | "adsets" | "adcreatives" | "ads" | "object" =
-      "object",
+      | "adimages"
+      | "advideos"
+      | "campaigns"
+      | "adsets"
+      | "adcreatives"
+      | "ads"
+      | "object" = "object",
     body: Record<string, unknown> | undefined,
     remoteId: string | undefined,
     fields: string | undefined;
   try {
-    if (step.kind === "IMAGE") {
+    if (step.kind === "IMAGE" || step.kind === "VIDEO") {
       const variation = await db.variation.findFirst({
         where: {
           id: item.variationIds[step.image!],
@@ -964,17 +1002,33 @@ export async function tickLaunch(actor: Actor, id: string) {
           expired: false,
           OR: [{ permanent: true }, { expiresAt: { gt: new Date() } }],
         },
-        select: { path: true, revision: true },
+        select: { path: true, revision: true, mediaType: true, mime: true },
       });
       demand(
         variation &&
           variation.revision ===
             config.variationRevisions[item.variationIds[step.image!]],
-        "El afiche cambió desde la revisión. Prepara de nuevo la campaña.",
+        "El recurso cambió desde la revisión. Prepara de nuevo la campaña.",
         409,
       );
-      edge = "adimages";
-      body = { bytes: (await load(variation.path)).toString("base64") };
+      demand(
+        (variation.mediaType === "VIDEO") === (step.kind === "VIDEO"),
+        "El tipo de recurso cambió.",
+        409,
+      );
+      edge = step.kind === "VIDEO" ? "advideos" : "adimages";
+      const bytes = await load(variation.path);
+      body =
+        step.kind === "VIDEO"
+          ? {
+              source: new Blob([new Uint8Array(bytes)], {
+                type: variation.mime,
+              }),
+            }
+          : { bytes: bytes.toString("base64") };
+    } else if (step.kind === "VIDEO_READY") {
+      remoteId = resolve(`image:${step.campaign}:${step.image}`).id;
+      fields = "id,status,picture";
     } else if (step.kind === "CAMPAIGN") {
       edge = "campaigns";
       body = {
@@ -1050,6 +1104,26 @@ export async function tickLaunch(actor: Actor, id: string) {
           },
         },
       };
+      if (item.mediaTypes?.[item.variationIds[step.image!]] === "VIDEO") {
+        const story = (body as any).object_story_spec,
+          link = story.link_data;
+        story.video_data = {
+          video_id: resolve(`image:${step.campaign}:${step.image}`).id,
+          image_url: resolve(`video-ready:${step.campaign}:${step.image}`)
+            .picture,
+          message: link.message,
+          title: link.name,
+          link_description: link.description,
+          call_to_action: {
+            ...link.call_to_action,
+            value: { ...link.call_to_action.value, link: link.link },
+          },
+          ...(link.page_welcome_message
+            ? { page_welcome_message: link.page_welcome_message }
+            : {}),
+        };
+        delete story.link_data;
+      }
     } else if (step.kind === "VERIFY_CREATIVE") {
       remoteId = resolve(`creative:${step.campaign}:${step.image}`).id;
       fields = "id,account_id,object_story_spec,contextual_multi_ads";
@@ -1102,7 +1176,53 @@ export async function tickLaunch(actor: Actor, id: string) {
         502,
       );
       receipt = { hash: image.hash };
-    } else if (["CAMPAIGN", "ADSET", "CREATIVE", "AD"].includes(step.kind)) {
+    } else if (step.kind === "VIDEO_READY") {
+      demand(String(result.id) === remoteId, "Meta devolvió otro video.", 502);
+      const status = result.status?.video_status;
+      demand(
+        !["error", "failed"].includes(status),
+        "Meta no pudo procesar el video. Revisa el archivo.",
+        409,
+      );
+      if (status !== "ready" || !result.picture) {
+        step.processingSince ??= new Date().toISOString();
+        demand(
+          Date.now() - Date.parse(step.processingSince) < 30 * 60000,
+          "Meta aún no termina de procesar el video. Revísalo antes de continuar.",
+          409,
+        );
+        step.state = "PENDING";
+        delete step.startedAt;
+        step.wait = {
+          reason: "processing",
+          until: new Date(Date.now() + 15000).toISOString(),
+        };
+        await db.creativeMetaLaunch.updateMany({
+          where: { id, status: "PUBLISHING", revision: d.revision + 1 },
+          data: { steps: json(steps), revision: { increment: 1 } },
+        });
+        return getLaunch(actor, id);
+      }
+      let cover: URL | undefined;
+      try {
+        cover = new URL(result.picture);
+      } catch {}
+      demand(
+        cover?.protocol === "https:" &&
+          !cover.username &&
+          !cover.password &&
+          !cover.searchParams.has("access_token") &&
+          !cover.searchParams.has("appsecret_proof") &&
+          (cover.hostname.endsWith(".fbcdn.net") ||
+            cover.hostname.endsWith(".facebook.com") ||
+            cover.hostname.endsWith(".fbsbx.com")),
+        "Meta no confirmó una portada válida del video.",
+        502,
+      );
+      receipt = { id: remoteId, picture: cover.href };
+    } else if (
+      ["VIDEO", "CAMPAIGN", "ADSET", "CREATIVE", "AD"].includes(step.kind)
+    ) {
       demand(
         typeof result.id === "string" && /^\d{1,40}$/.test(result.id),
         "Meta no confirmó el identificador creado.",
@@ -1113,6 +1233,18 @@ export async function tickLaunch(actor: Actor, id: string) {
       demand(result.success === true, "Meta no confirmó la activación.", 502);
       receipt = { id: remoteId, status: "ACTIVE" };
     } else if (step.kind === "VERIFY_CREATIVE") {
+      const video =
+        item.mediaTypes?.[item.variationIds[step.image!]] === "VIDEO";
+      const returnedStory = video
+        ? result.object_story_spec?.video_data
+        : result.object_story_spec?.link_data;
+      if (video)
+        demand(
+          String(returnedStory?.video_id) ===
+            resolve(`image:${step.campaign}:${step.image}`).id,
+          "Meta no confirmó el video elegido.",
+          409,
+        );
       demand(
         String(result.id) === remoteId &&
           String(result.account_id).replace(/^act_/, "") === a.id,
@@ -1120,14 +1252,13 @@ export async function tickLaunch(actor: Actor, id: string) {
         502,
       );
       demand(
-        result.object_story_spec?.link_data?.call_to_action?.type ===
-          campaignCTA(config).type,
+        returnedStory?.call_to_action?.type === campaignCTA(config).type,
         "Meta no confirmó el botón del objetivo elegido. Revisa el creativo antes de publicarlo.",
         409,
       );
       demand(
         String(result.object_story_spec?.page_id) === config.pageId &&
-          result.object_story_spec?.link_data?.name ===
+          (video ? returnedStory?.title : returnedStory?.name) ===
             campaignText(config.headline, item, config),
         "Meta no confirmó la página o el headline exacto. Revisa el creativo antes de activarlo.",
         409,
@@ -1143,8 +1274,7 @@ export async function tickLaunch(actor: Actor, id: string) {
             campaignText(t, item, config),
           ),
         );
-        let returned =
-          result.object_story_spec?.link_data?.page_welcome_message;
+        let returned = returnedStory?.page_welcome_message;
         if (typeof returned === "string") {
           try {
             returned = JSON.parse(returned);
@@ -1161,10 +1291,8 @@ export async function tickLaunch(actor: Actor, id: string) {
       }
       if (config.objective === "LEADS")
         demand(
-          String(
-            result.object_story_spec?.link_data?.call_to_action?.value
-              ?.lead_gen_form_id,
-          ) === config.leadFormId,
+          String(returnedStory?.call_to_action?.value?.lead_gen_form_id) ===
+            config.leadFormId,
           "Meta no confirmó el formulario seleccionado.",
           409,
         );

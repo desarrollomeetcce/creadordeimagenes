@@ -456,6 +456,9 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     db.libraryImageCopy.count({ where: copyWhere }),
   ]);
   const variationSelect = {
+    mediaType: true,
+    ownResource: true,
+    originalName: true,
     id: true,
     revision: true,
     reviewStatus: true,

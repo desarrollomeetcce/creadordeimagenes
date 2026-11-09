@@ -3,8 +3,7 @@ import { z } from "zod";
 import { demand, AppError } from "../errors";
 import { db } from "../db";
 import { resourceAccess } from "../auth";
-import { maxUploadBytes, store, remove } from "../storage";
-import { validateUpload } from "../uploads";
+
 import * as studio from "./service";
 import * as campaigns from "./campaigns";
 import { campaignPresets, saveCampaignPreset } from "./campaign-presets";
@@ -143,7 +142,10 @@ export async function creativeStudioRoutes(
   if (p[0] === "images" && p[1] === "save" && method === "POST")
     return send(await studio.saveStudioImages(actor, await body()));
   if (p[0] === "upload" && p[1] && method === "POST")
-    return send(await uploadReady(actor, p[1], req), 201);
+    return send(
+      await (await import("./own-media")).uploadOwnMedia(actor, p[1], req),
+      201,
+    );
   if (
     p[0] === "page-lead-forms" &&
     p[1] &&
@@ -212,108 +214,4 @@ export async function creativeStudioRoutes(
       return send(await campaigns.tickLaunch(actor, p[1]));
   }
   throw new AppError("Ruta del estudio no encontrada.", 404);
-}
-async function uploadReady(actor: Actor, subId: string, req: NextRequest) {
-  await resourceAccess(actor, "subproduct", subId, "EDIT");
-  const max = maxUploadBytes() + 10000;
-  demand(
-    Number(req.headers.get("content-length") ?? 0) <= max,
-    "El archivo es demasiado grande.",
-    413,
-  );
-  const reader = req.body?.getReader();
-  demand(reader, "Selecciona una imagen.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const r = await reader.read();
-      if (r.done) break;
-      size += r.value.length;
-      if (size > max) {
-        await reader.cancel();
-        throw new AppError("El archivo es demasiado grande.", 413);
-      }
-      chunks.push(r.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const form = await new Response(new Uint8Array(Buffer.concat(chunks)), {
-    headers: { "Content-Type": req.headers.get("content-type") ?? "" },
-  }).formData();
-  const file = form.get("file");
-  demand(file instanceof File, "Selecciona una imagen.");
-  const requestId = z.uuid().parse(form.get("requestId"));
-  const jobId = "studio-upload-" + requestId;
-  const prior = await db.generationJob.findUnique({
-    where: { id: jobId },
-    include: { variation: true },
-  });
-  if (prior) {
-    demand(
-      prior.actorId === actor.id && prior.subproductId === subId,
-      "La subida ya existe.",
-      409,
-    );
-    return { id: prior.variation?.id };
-  }
-  const checked = await validateUpload(file);
-  demand(checked.mime.startsWith("image/"), "Sube un afiche PNG, JPEG o WebP.");
-  const { prepareAuditThumbnail, captureAuditThumbnail, requireAuditSpace } =
-    await import("../visual-audit");
-  await requireAuditSpace();
-  const thumbnail = await prepareAuditThumbnail(checked.bytes);
-  const path = await store(checked.bytes);
-  try {
-    const sub = await db.subproduct.findUniqueOrThrow({
-      where: { id: subId },
-      include: { category: { select: { projectId: true } } },
-    });
-    const result = await db.$transaction(async (tx) => {
-      await tx.generationJob.create({
-        data: {
-          id: jobId,
-          actorId: actor.id,
-          projectId: sub.category.projectId,
-          subproductId: subId,
-          idempotencyKey: jobId,
-          status: "COMPLETED",
-          snapshot: {
-            source: "manual-upload",
-            engine: "manual",
-            fileName: file.name.slice(0, 200),
-          },
-          reservedMicros: 0,
-          completedAt: new Date(),
-        },
-      });
-      const v = await tx.variation.create({
-        data: {
-          jobId,
-          subproductId: subId,
-          path,
-          model: "Afiche subido · sin IA",
-          reviewStatus: "APPROVED",
-          expiresAt: new Date(Date.now() + 48 * 3600000),
-        },
-      });
-      const version = await tx.imageVersion.create({
-        data: {
-          variationId: v.id,
-          number: 1,
-          path,
-          actorId: actor.id,
-          sourceJobId: jobId,
-        },
-      });
-      await captureAuditThumbnail(tx, version.id, thumbnail);
-      return { id: v.id };
-    });
-    return result;
-  } catch (e) {
-    if (!(await db.imageVersion.count({ where: { path } })))
-      await remove(path).catch(() => {});
-    throw e;
-  }
 }

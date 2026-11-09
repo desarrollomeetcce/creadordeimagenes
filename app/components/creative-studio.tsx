@@ -70,6 +70,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [page, setPage] = useState(1),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
+    [ownMode, setOwnMode] = useState(false),
+    [uploadStorage, setUploadStorage] = useState("campaign"),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [zone, setZone] = useState("canvas"),
@@ -86,6 +88,17 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [mode, setMode] = useState("Imagen + Texto"),
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
+  useEffect(() => {
+    try {
+      setOwnMode(localStorage.getItem("studio-own-mode:" + userId) === "own");
+    } catch {}
+  }, [userId]);
+  function preparationMode(own: boolean) {
+    setOwnMode(own);
+    try {
+      localStorage.setItem("studio-own-mode:" + userId, own ? "own" : "ai");
+    } catch {}
+  }
   const handoffCountry = useRef("");
   const handoffSelection = useRef<any>(null);
   const draftProducts = useRef(new Map<string, Record<string, string>>());
@@ -633,19 +646,28 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   async function upload(files: FileList | null) {
     if (!activeSub || !files?.length) return;
-    for (const file of [...files].slice(0, 20)) {
+    if (files.length > 20)
+      throw Error("Selecciona hasta20 archivos por subida.");
+    for (const file of [...files]) {
       const form = new FormData();
       form.set("file", file);
       form.set("requestId", crypto.randomUUID());
+      form.set("storage", uploadStorage);
       const r = await fetch("/api/creative-studio/upload/" + activeSub, {
         method: "POST",
         body: form,
       });
       const b = await r.json();
-      if (!r.ok) throw Error(b.error ?? "No se pudo subir el afiche.");
+      if (!r.ok) throw Error(b.error ?? "No se pudo subir el recurso.");
+      if (b.id)
+        setSelected((s) => ({
+          ...s,
+          [activeSub]: [...new Set([...(s[activeSub] ?? []), b.id])],
+        }));
     }
     await refreshGallery();
-    setNotice("✓ Afiches subidos sin generar con IA");
+    if (uploadStorage === "folder") await reloadProduct();
+    setNotice("✓ Recursos propios listos para la campaña");
   }
   function toggleImage(id: string) {
     setSelected((s) => ({
@@ -805,6 +827,26 @@ export function CreativeStudio({ userId }: { userId: string }) {
               <h2>Tu proyecto</h2>
             </div>
           </header>
+          <div
+            className="studio-preparation-mode"
+            role="group"
+            aria-label="Preparar recursos"
+          >
+            <button
+              type="button"
+              aria-pressed={!ownMode}
+              onClick={() => preparationMode(false)}
+            >
+              Con IA
+            </button>
+            <button
+              type="button"
+              aria-pressed={ownMode}
+              onClick={() => preparationMode(true)}
+            >
+              Sin IA · fotos y videos
+            </button>
+          </div>
           <div className="studio-project-picker">
             <SearchSelect
               label="Proyecto"
@@ -832,175 +874,184 @@ export function CreativeStudio({ userId }: { userId: string }) {
           )}
           {project ? (
             <>
-              <details
-                className="studio-project-config"
-                key={project.id}
-                open={projectConfigOpen}
-                onToggle={(e) => {
-                  if (e.currentTarget.open !== projectConfigOpen)
-                    setProjectConfigOpen(e.currentTarget.open);
-                }}
-              >
-                <summary>Configuración</summary>
-                <div className="studio-project-config-content">
-                  <label className="studio-prompt-label">
-                    Instrucciones del proyecto
-                    <textarea
-                      aria-label="Configuración del proyecto"
-                      rows={7}
-                      maxLength={30000}
-                      value={projectPrompt}
-                      disabled={!project.canEdit}
-                      placeholder="Define el estilo, los textos y las reglas que compartirán tus afiches…"
-                      onChange={(e) => {
-                        setProjectPrompt(e.target.value);
-                        draftProject(e.target.value, settings);
-                      }}
-                    />
-                    <span>
-                      {projectPrompt.length.toLocaleString("es-PE")} caracteres
-                    </span>
-                  </label>
-                  <details
-                    className="studio-reference-details"
-                    onToggle={(e) => {
-                      if (e.currentTarget.open) setReferencesOpen(true);
-                    }}
-                  >
-                    <summary>
-                      ⌁ Referencias opcionales <span>＋</span>
-                    </summary>
-                    {referencesOpen && (
-                      <div className="studio-reference-content">
-                        <label>
-                          Enlace web
-                          <input
-                            type="url"
-                            placeholder="https://…"
-                            value={web}
-                            onChange={(e) => setWeb(e.target.value)}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          disabled={busy || !web.trim()}
-                          onClick={() =>
-                            void run(async () => {
-                              await studioRequest(
-                                "/projects/" + project.id + "/web",
-                                "POST",
-                                { url: web },
-                              );
-                              setWeb("");
-                              setAttachmentsRevision((x) => x + 1);
-                              setNotice("✓ Referencia web añadida");
-                            })
-                          }
-                        >
-                          Añadir enlace
-                        </button>
-                        <Attachments
-                          key={project.id + ":" + attachmentsRevision}
-                          scope="project"
-                          id={project.id}
-                        />
-                      </div>
-                    )}
-                  </details>
-                  <details className="studio-settings">
-                    <summary>◈ Formato y acabado</summary>
-                    <div className="studio-field-pair">
-                      <label>
-                        Formato
-                        <select
-                          value={settings.format}
-                          onChange={(e) => {
-                            const s = { ...settings, format: e.target.value };
-                            setSettings(s);
-                            draftProject(projectPrompt, s);
-                          }}
-                        >
-                          <option value="1:1">Cuadrado · 1:1</option>
-                          <option value="4:5">Vertical · 4:5</option>
-                          <option value="9:16">Historia · 9:16</option>
-                          <option value="16:9">Horizontal · 16:9</option>
-                        </select>
-                      </label>
-                      <label>
-                        Calidad
-                        <select
-                          value={settings.quality}
-                          onChange={(e) => {
-                            const s = { ...settings, quality: e.target.value };
-                            setSettings(s);
-                            draftProject(projectPrompt, s);
-                          }}
-                        >
-                          {context.qualities.length ? (
-                            context.qualities.map((x: string) => (
-                              <option key={x} value={x}>
-                                {(
-                                  {
-                                    low: "Baja",
-                                    medium: "Media",
-                                    high: "Alta",
-                                    xhigh: "Muy alta",
-                                    max: "Máxima",
-                                    default: "Predeterminada",
-                                  } as any
-                                )[x] ?? x}
-                              </option>
-                            ))
-                          ) : (
-                            <option value="">Configurar IA</option>
-                          )}
-                        </select>
-                      </label>
-                    </div>
-                    <label>
-                      Resolución
-                      <select
-                        value={settings.resolution}
+              {!ownMode && (
+                <details
+                  className="studio-project-config"
+                  key={project.id}
+                  open={projectConfigOpen}
+                  onToggle={(e) => {
+                    if (e.currentTarget.open !== projectConfigOpen)
+                      setProjectConfigOpen(e.currentTarget.open);
+                  }}
+                >
+                  <summary>Configuración</summary>
+                  <div className="studio-project-config-content">
+                    <label className="studio-prompt-label">
+                      Instrucciones del proyecto
+                      <textarea
+                        aria-label="Configuración del proyecto"
+                        rows={7}
+                        maxLength={30000}
+                        value={projectPrompt}
+                        disabled={!project.canEdit}
+                        placeholder="Define el estilo, los textos y las reglas que compartirán tus afiches…"
                         onChange={(e) => {
-                          const s = { ...settings, resolution: e.target.value };
-                          setSettings(s);
-                          draftProject(projectPrompt, s);
-                        }}
-                      >
-                        {context.resolutions.map((x: string) => (
-                          <option key={x}>{x}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <small className="studio-model-label">
-                      {context.model ?? "Selecciona un modelo en Ajustes IA"}
-                    </small>
-                    <label className="studio-check">
-                      <input
-                        type="checkbox"
-                        checked={settings.previewFirst}
-                        onChange={(e) => {
-                          const s = {
-                            ...settings,
-                            previewFirst: e.target.checked,
-                          };
-                          setSettings(s);
-                          draftProject(projectPrompt, s);
+                          setProjectPrompt(e.target.value);
+                          draftProject(e.target.value, settings);
                         }}
                       />
-                      Aprobar la primera muestra antes del resto
+                      <span>
+                        {projectPrompt.length.toLocaleString("es-PE")}{" "}
+                        caracteres
+                      </span>
                     </label>
-                  </details>
-                  <button
-                    type="button"
-                    className="studio-save-project"
-                    disabled={busy || !project.canEdit}
-                    onClick={() => void run(saveProject)}
-                  >
-                    ✓ Guardar configuración
-                  </button>
-                </div>
-              </details>
+                    <details
+                      className="studio-reference-details"
+                      onToggle={(e) => {
+                        if (e.currentTarget.open) setReferencesOpen(true);
+                      }}
+                    >
+                      <summary>
+                        ⌁ Referencias opcionales <span>＋</span>
+                      </summary>
+                      {referencesOpen && (
+                        <div className="studio-reference-content">
+                          <label>
+                            Enlace web
+                            <input
+                              type="url"
+                              placeholder="https://…"
+                              value={web}
+                              onChange={(e) => setWeb(e.target.value)}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={busy || !web.trim()}
+                            onClick={() =>
+                              void run(async () => {
+                                await studioRequest(
+                                  "/projects/" + project.id + "/web",
+                                  "POST",
+                                  { url: web },
+                                );
+                                setWeb("");
+                                setAttachmentsRevision((x) => x + 1);
+                                setNotice("✓ Referencia web añadida");
+                              })
+                            }
+                          >
+                            Añadir enlace
+                          </button>
+                          <Attachments
+                            key={project.id + ":" + attachmentsRevision}
+                            scope="project"
+                            id={project.id}
+                          />
+                        </div>
+                      )}
+                    </details>
+                    <details className="studio-settings">
+                      <summary>◈ Formato y acabado</summary>
+                      <div className="studio-field-pair">
+                        <label>
+                          Formato
+                          <select
+                            value={settings.format}
+                            onChange={(e) => {
+                              const s = { ...settings, format: e.target.value };
+                              setSettings(s);
+                              draftProject(projectPrompt, s);
+                            }}
+                          >
+                            <option value="1:1">Cuadrado · 1:1</option>
+                            <option value="4:5">Vertical · 4:5</option>
+                            <option value="9:16">Historia · 9:16</option>
+                            <option value="16:9">Horizontal · 16:9</option>
+                          </select>
+                        </label>
+                        <label>
+                          Calidad
+                          <select
+                            value={settings.quality}
+                            onChange={(e) => {
+                              const s = {
+                                ...settings,
+                                quality: e.target.value,
+                              };
+                              setSettings(s);
+                              draftProject(projectPrompt, s);
+                            }}
+                          >
+                            {context.qualities.length ? (
+                              context.qualities.map((x: string) => (
+                                <option key={x} value={x}>
+                                  {(
+                                    {
+                                      low: "Baja",
+                                      medium: "Media",
+                                      high: "Alta",
+                                      xhigh: "Muy alta",
+                                      max: "Máxima",
+                                      default: "Predeterminada",
+                                    } as any
+                                  )[x] ?? x}
+                                </option>
+                              ))
+                            ) : (
+                              <option value="">Configurar IA</option>
+                            )}
+                          </select>
+                        </label>
+                      </div>
+                      <label>
+                        Resolución
+                        <select
+                          value={settings.resolution}
+                          onChange={(e) => {
+                            const s = {
+                              ...settings,
+                              resolution: e.target.value,
+                            };
+                            setSettings(s);
+                            draftProject(projectPrompt, s);
+                          }}
+                        >
+                          {context.resolutions.map((x: string) => (
+                            <option key={x}>{x}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <small className="studio-model-label">
+                        {context.model ?? "Selecciona un modelo en Ajustes IA"}
+                      </small>
+                      <label className="studio-check">
+                        <input
+                          type="checkbox"
+                          checked={settings.previewFirst}
+                          onChange={(e) => {
+                            const s = {
+                              ...settings,
+                              previewFirst: e.target.checked,
+                            };
+                            setSettings(s);
+                            draftProject(projectPrompt, s);
+                          }}
+                        />
+                        Aprobar la primera muestra antes del resto
+                      </label>
+                    </details>
+                    <button
+                      type="button"
+                      className="studio-save-project"
+                      disabled={busy || !project.canEdit}
+                      onClick={() => void run(saveProject)}
+                    >
+                      ✓ Guardar configuración
+                    </button>
+                  </div>
+                </details>
+              )}
               <div className="studio-section-divider" />
 
               <div className="studio-project-picker studio-product-picker">
@@ -1070,7 +1121,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <>
                   <div className="studio-inventory-launch">
                     <label>
-                      Inventario
+                      {ownMode ? "Lista de diplomados" : "Inventario"}
                       <select
                         aria-label="Inventario de productos"
                         disabled={busy || !!pendingSelection}
@@ -1086,6 +1137,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       </select>
                     </label>
                     <StudioInventorySlots
+                      manual={ownMode}
                       key={product.id + ":" + inventoryId + ":" + country}
                       listId={inventoryId}
                       country={country}
@@ -1170,7 +1222,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       </div>
                     ))}
                   </div>
-                  <div className="studio-left-generate">
+                  <div className="studio-left-generate" hidden={ownMode}>
                     <span>
                       {targetSubs.length
                         ? targetSubs.length + " seleccionados"
@@ -1188,6 +1240,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     <button
                       type="button"
                       className="studio-generate-button"
+                      hidden={ownMode}
                       disabled={
                         busy ||
                         !charge ||
@@ -1324,11 +1377,56 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       });
                     }}
                   />
-                  Seleccionar todos los afiches de este diplomado
+                  Seleccionar todos los recursos de este diplomado
                 </label>
                 <span>
-                  {gallery.total} afiches · {currentSelection.length} elegidos
+                  {gallery.total} recursos · {currentSelection.length} elegidos
                 </span>
+              </div>
+              <div className="studio-own-upload">
+                <div>
+                  <strong>Recursos para {active.name}</strong>
+                  <small>
+                    Fotos PNG/JPG/WebP · videos MP4/MOV H.264. Sin generación ni
+                    cargo de IA.
+                  </small>
+                </div>
+                <select
+                  aria-label="Destino de los recursos propios"
+                  value={uploadStorage}
+                  onChange={(e) => setUploadStorage(e.target.value)}
+                  disabled={busy}
+                >
+                  <option value="campaign">Solo campaña · temporal24h</option>
+                  <option value="folder">Guardar en esta carpeta</option>
+                </select>
+                <label className="studio-upload-button">
+                  ↑ Subir fotos o videos
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime"
+                    disabled={busy}
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      void run(() => upload(files));
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <small>
+                  Los temporales se eliminan tras publicar o al vencer. Para
+                  enviarlos a Meta se necesita una copia temporal. Fotos hasta{" "}
+                  {Math.min(
+                    16,
+                    Math.round(
+                      (context.maxOwnMediaBytes ?? 67108864) / 1048576,
+                    ),
+                  )}
+                  MB; videos hasta{" "}
+                  {Math.round((context.maxOwnMediaBytes ?? 67108864) / 1048576)}
+                  MB.
+                </small>
               </div>
               <div className="studio-poster-grid">
                 {gallery.items.map((i: any) => (
@@ -1348,31 +1446,48 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       />
                       <span>{imageSet.has(i.id) ? "✓" : "Elegir"}</span>
                     </label>
-                    <button
-                      type="button"
-                      className="studio-poster-preview"
-                      aria-label={"Ampliar afiche de " + active.name}
-                      onClick={() =>
-                        setPreview({
-                          id: i.id,
-                          revision: i.revision,
-                          name: active.name,
-                        })
-                      }
-                    >
-                      <img
-                        loading="lazy"
-                        src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
-                        alt={"Afiche de " + active.name}
+                    {i.mediaType === "VIDEO" ? (
+                      <video
+                        className="studio-own-video"
+                        controls
+                        preload="none"
+                        src={`/api/variations/${i.id}?v=${i.revision}`}
+                        aria-label={i.originalName ?? "Video propio"}
                       />
-                    </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="studio-poster-preview"
+                        aria-label={"Ampliar afiche de " + active.name}
+                        onClick={() =>
+                          setPreview({
+                            id: i.id,
+                            revision: i.revision,
+                            name: active.name,
+                          })
+                        }
+                      >
+                        <img
+                          loading="lazy"
+                          src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
+                          alt={"Afiche de " + active.name}
+                        />
+                      </button>
+                    )}
                     <div className="studio-poster-meta">
+                      {i.originalName && (
+                        <small title={i.originalName}>{i.originalName}</small>
+                      )}
                       <span>
                         {i.permanent
                           ? "✓ En Biblioteca"
                           : i.isSample && i.reviewStatus !== "APPROVED"
                             ? "Primera muestra"
-                            : "Variación"}
+                            : i.ownResource
+                              ? i.mediaType === "VIDEO"
+                                ? "Video propio · temporal"
+                                : "Foto propia · temporal"
+                              : "Variación"}
                       </span>
                       {i.isSample && i.reviewStatus !== "APPROVED" && (
                         <button
@@ -1441,16 +1556,18 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       (o) => o.scope?.subproduct === activeSub,
                     )
                       ? 0
-                      : Math.max(
-                          1,
-                          Math.min(6, generationFor(activeSub).count) -
-                            (gallery.items.length
-                              ? Math.min(
-                                  gallery.items.length,
-                                  Math.min(6, generationFor(activeSub).count),
-                                )
-                              : 0),
-                        ),
+                      : ownMode
+                        ? 0
+                        : Math.max(
+                            1,
+                            Math.min(6, generationFor(activeSub).count) -
+                              (gallery.items.length
+                                ? Math.min(
+                                    gallery.items.length,
+                                    Math.min(6, generationFor(activeSub).count),
+                                  )
+                                : 0),
+                          ),
                   },
                   (_, i) => (
                     <button
@@ -1496,7 +1613,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
               )}
               {currentSelection.length > 0 && (
                 <div className="studio-selection-bar">
-                  <strong>{currentSelection.length} afiches elegidos</strong>
+                  <strong>{currentSelection.length} recursos elegidos</strong>
                   <button
                     type="button"
                     disabled={busy}
@@ -1532,137 +1649,127 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   }}
                 />
               </div>
-              <div className="studio-composer">
-                <div className="studio-composer-heading">
-                  <strong>
-                    ✦ Dale una dirección a{" "}
-                    {allPrompt ? "todos los diplomados" : active.name}
-                  </strong>
-                  <label className="studio-check">
-                    <input
-                      type="checkbox"
-                      checked={allPrompt}
-                      onChange={(e) => setAllPrompt(e.target.checked)}
-                    />
-                    Usar en todos
-                  </label>
-                </div>
-                <textarea
-                  aria-label="Instrucciones del afiche"
-                  value={allPrompt ? commonPrompt : (prompts[activeSub] ?? "")}
-                  maxLength={30000}
-                  placeholder="¿Cómo quieres que se vea? El comportamiento del proyecto ya se aplica…"
-                  onChange={(e) =>
-                    allPrompt
-                      ? setCommonPrompt(e.target.value)
-                      : setPrompts((p) => ({
-                          ...p,
-                          [activeSub]: e.target.value,
-                        }))
-                  }
-                />
-                <div className="studio-composer-tools">
-                  <label className="studio-upload-button">
-                    ↑ Subir afiches
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/png,image/jpeg,image/webp"
-                      disabled={busy}
-                      onChange={(e) => {
-                        const files = e.target.files;
-                        void run(() => upload(files));
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                  <label>
-                    Variaciones
-                    <input
-                      aria-label="Cantidad de variaciones"
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={generationFor(activeSub).count}
+              {!ownMode && (
+                <div className="studio-composer">
+                  <div className="studio-composer-heading">
+                    <strong>
+                      ✦ Dale una dirección a{" "}
+                      {allPrompt ? "todos los diplomados" : active.name}
+                    </strong>
+                    <label className="studio-check">
+                      <input
+                        type="checkbox"
+                        checked={allPrompt}
+                        onChange={(e) => setAllPrompt(e.target.checked)}
+                      />
+                      Usar en todos
+                    </label>
+                  </div>
+                  <textarea
+                    aria-label="Instrucciones del afiche"
+                    value={
+                      allPrompt ? commonPrompt : (prompts[activeSub] ?? "")
+                    }
+                    maxLength={30000}
+                    placeholder="¿Cómo quieres que se vea? El comportamiento del proyecto ya se aplica…"
+                    onChange={(e) =>
+                      allPrompt
+                        ? setCommonPrompt(e.target.value)
+                        : setPrompts((p) => ({
+                            ...p,
+                            [activeSub]: e.target.value,
+                          }))
+                    }
+                  />
+                  <div className="studio-composer-tools">
+                    <label>
+                      Variaciones
+                      <input
+                        aria-label="Cantidad de variaciones"
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={generationFor(activeSub).count}
+                        onChange={(e) =>
+                          changeGeneration({
+                            count: Math.max(
+                              1,
+                              Math.min(100, Number(e.target.value) || 1),
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <select
+                      aria-label="Tipo de afiche"
+                      value={generationFor(activeSub).mode}
                       onChange={(e) =>
                         changeGeneration({
-                          count: Math.max(
-                            1,
-                            Math.min(100, Number(e.target.value) || 1),
-                          ),
+                          mode: e.target.value as GenerationPreferences["mode"],
                         })
                       }
-                    />
-                  </label>
-                  <select
-                    aria-label="Tipo de afiche"
-                    value={generationFor(activeSub).mode}
-                    onChange={(e) =>
-                      changeGeneration({
-                        mode: e.target.value as GenerationPreferences["mode"],
-                      })
-                    }
-                  >
-                    {modes.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="studio-price-field">
-                    Precio
+                    >
+                      {modes.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="studio-price-field">
+                      Precio
+                      <input
+                        aria-label="Precio de este diplomado"
+                        type="text"
+                        maxLength={160}
+                        placeholder="Sin precio"
+                        title={
+                          generationFor(activeSub).priceText.trim()
+                            ? "Se incluirá tal como está escrito, junto con las condiciones del prompt."
+                            : "Opcional. Vacío: se respeta lo indicado en el prompt. Ej.: 40 USD, 90 mil pesos, 30 soles."
+                        }
+                        value={generationFor(activeSub).priceText}
+                        onChange={(e) =>
+                          changeGeneration({ priceText: e.target.value })
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="studio-generate-button"
+                      disabled={busy || !charge || production.dispatching}
+                      onClick={() =>
+                        void run(() =>
+                          generate(
+                            allPrompt
+                              ? product.subproducts.map((s: any) => s.id)
+                              : [activeSub],
+                          ),
+                        )
+                      }
+                    >
+                      ✦{" "}
+                      {busy
+                        ? "Preparando…"
+                        : "Generar " +
+                          (allPrompt
+                            ? product.subproducts.reduce(
+                                (n: number, s: any) =>
+                                  n + generationFor(s.id).count,
+                                0,
+                              )
+                            : generationFor(activeSub).count)}
+                    </button>
+                  </div>
+                  <label className="studio-check studio-charge">
                     <input
-                      aria-label="Precio de este diplomado"
-                      type="text"
-                      maxLength={160}
-                      placeholder="Sin precio"
-                      title={
-                        generationFor(activeSub).priceText.trim()
-                          ? "Se incluirá tal como está escrito, junto con las condiciones del prompt."
-                          : "Opcional. Vacío: se respeta lo indicado en el prompt. Ej.: 40 USD, 90 mil pesos, 30 soles."
-                      }
-                      value={generationFor(activeSub).priceText}
-                      onChange={(e) =>
-                        changeGeneration({ priceText: e.target.value })
-                      }
+                      type="checkbox"
+                      checked={charge}
+                      onChange={(e) => setCharge(e.target.checked)}
                     />
+                    Autorizo las llamadas de IA y su posible cargo de API.
                   </label>
-                  <button
-                    type="button"
-                    className="studio-generate-button"
-                    disabled={busy || !charge || production.dispatching}
-                    onClick={() =>
-                      void run(() =>
-                        generate(
-                          allPrompt
-                            ? product.subproducts.map((s: any) => s.id)
-                            : [activeSub],
-                        ),
-                      )
-                    }
-                  >
-                    ✦{" "}
-                    {busy
-                      ? "Preparando…"
-                      : "Generar " +
-                        (allPrompt
-                          ? product.subproducts.reduce(
-                              (n: number, s: any) =>
-                                n + generationFor(s.id).count,
-                              0,
-                            )
-                          : generationFor(activeSub).count)}
-                  </button>
                 </div>
-                <label className="studio-check studio-charge">
-                  <input
-                    type="checkbox"
-                    checked={charge}
-                    onChange={(e) => setCharge(e.target.checked)}
-                  />
-                  Autorizo las llamadas de IA y su posible cargo de API.
-                </label>
-              </div>
+              )}
             </>
           ) : (
             <div className="studio-canvas-empty">

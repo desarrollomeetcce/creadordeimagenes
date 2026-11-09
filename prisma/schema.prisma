@@ -246,6 +246,10 @@ model GenerationOrder {
   @@index([status,createdAt,id])
 }
 model Variation {
+  mediaType String @default("IMAGE")
+  mime String @default("image/png")
+  originalName String?
+  ownResource Boolean @default(false)
   id String @id @default(cuid())
   subproductId String?
   subproduct Subproduct? @relation(fields:[subproductId],references:[id])

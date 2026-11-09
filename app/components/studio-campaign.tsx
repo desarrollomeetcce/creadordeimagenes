@@ -1989,8 +1989,9 @@ export function StudioCampaign({
           <small>{publishPercent} % confirmado</small>
           {draft.waiting && (
             <p>
-              El avance está guardado. Continuará automáticamente después de la
-              espera, sin repetir los pasos confirmados.
+              {draft.waitReason === "processing"
+                ? "Meta está procesando el video. Continuará al confirmarse, sin volver a subirlo."
+                : "El avance está guardado. Continuará automáticamente después de la espera, sin repetir los pasos confirmados."}
             </p>
           )}
           {!retrying &&
@@ -2169,7 +2170,9 @@ export function StudioCampaign({
                 {draft.config.existingAdsetId ||
                 draft.config.existingAdsetIds?.length
                   ? " · Se conserva la segmentación existente"
-                  : (a.savedAudienceId?" · Edades del público guardado · ":` · ${a.ageMin}–${a.ageMax}${(a.advantageAudience??!a.strictAge)?" · Edades sugeridas (Advantage+)":" · Rango de edad obligatorio"} · `) +
+                  : (a.savedAudienceId
+                      ? " · Edades del público guardado · "
+                      : ` · ${a.ageMin}–${a.ageMax}${(a.advantageAudience ?? !a.strictAge) ? " · Edades sugeridas (Advantage+)" : " · Rango de edad obligatorio"} · `) +
                     [...(a.interests ?? []), ...(a.detailedTargeting ?? [])]
                       .map((v: any) => v.name)
                       .join(" · ")}

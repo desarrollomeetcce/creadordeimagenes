@@ -1563,6 +1563,7 @@ async function handle(
           "El archivo temporal ya caducó.",
           410,
         );
+        if(v.mediaType==="VIDEO")return (await import("@/lib/creative-studio/media-response")).videoResponse(await load(v.path),v.mime,req.headers.get("range"),v.id,req.nextUrl.searchParams.has("download"));
         const jpg = req.nextUrl.searchParams.get("format") === "jpg";
         const thumbnail = req.nextUrl.searchParams.get("thumbnail") === "true";
         const etag = `"preview-${v.id}-${v.revision}-${jpg ? "jpg" : "webp"}"`;
@@ -1597,8 +1598,8 @@ async function handle(
               ? "image/jpeg"
               : thumbnail
                 ? "image/webp"
-                : "image/png",
-            "Content-Disposition": `${req.nextUrl.searchParams.has("download") ? "attachment" : "inline"}; filename="afiche_${v.id}.${jpg ? "jpg" : "png"}"`,
+                : v.mime,
+            "Content-Disposition": `${req.nextUrl.searchParams.has("download") ? "attachment" : "inline"}; filename="afiche_${v.id}.${jpg ? "jpg" : v.mime==="image/jpeg"?"jpg":v.mime==="image/webp"?"webp":"png"}"`,
             "Cache-Control": thumbnail
               ? "private, max-age=0, must-revalidate"
               : "private, no-store",

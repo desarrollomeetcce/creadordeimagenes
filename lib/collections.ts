@@ -300,10 +300,24 @@ export async function exportCollection(user: User, input: unknown) {
       "La descarga supera 100 MB. Selecciona menos imágenes.",
       413,
     );
-    if (b.format === "jpg")
+    if (b.format === "jpg" && row.mediaType !== "VIDEO")
       bytes = await (await import("./render")).jpeg(bytes);
+    else if (
+      b.format === "png" &&
+      row.mediaType !== "VIDEO" &&
+      row.mime !== "image/png"
+    )
+      bytes = await (
+        await import("sharp")
+      )
+        .default(bytes, { limitInputPixels: 20000000 })
+        .png()
+        .toBuffer();
     // Converted outputs count too; never let JPEG conversion bypass the byte cap.
-    if (b.format === "jpg") {
+    if (
+      (b.format === "jpg" || row.mime !== "image/png") &&
+      row.mediaType !== "VIDEO"
+    ) {
       total += bytes.length;
       demand(
         total <= 100000000,
@@ -320,7 +334,7 @@ export async function exportCollection(user: User, input: unknown) {
       number = (sequence.get(folder) ?? 0) + 1;
     sequence.set(folder, number);
     zip.file(
-      `${folder}/${safeFilename(delegated.has(row.id) ? "Afiche" : (row.subproduct?.name ?? "Prueba"))}_${String(number).padStart(2, "0")}_${safeFilename(row.id)}.${b.format}`,
+      `${folder}/${safeFilename(delegated.has(row.id) ? "Afiche" : (row.subproduct?.name ?? "Prueba"))}_${String(number).padStart(2, "0")}_${safeFilename(row.id)}.${row.mediaType === "VIDEO" ? (row.mime === "video/quicktime" ? "mov" : "mp4") : b.format}`,
       bytes,
     );
   }

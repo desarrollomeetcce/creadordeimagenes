@@ -273,6 +273,7 @@ export class MetaReader {
       | "promote_pages"
       | "saved_audiences"
       | "adimages"
+      | "advideos"
       | "campaigns"
       | "adsets"
       | "adcreatives"
@@ -339,7 +340,7 @@ export class MetaReader {
     const params = new URLSearchParams();
     if (body) {
       for (const [key, value] of Object.entries(body))
-        if (value !== undefined)
+        if (value !== undefined && !(edge === "advideos" && key === "source"))
           params.set(
             key,
             typeof value === "object" ? JSON.stringify(value) : String(value),
@@ -366,17 +367,37 @@ export class MetaReader {
         "appsecret_proof",
         createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
       );
+    let multipart: FormData | undefined;
+    if (edge === "advideos") {
+      demand(
+        body?.source instanceof Blob &&
+          body.source.size > 0 &&
+          body.source.size <= 64 * 1024 * 1024,
+        "Video inválido o demasiado grande.",
+      );
+      multipart = new FormData();
+      multipart.set(
+        "source",
+        body.source,
+        body.source.type === "video/quicktime" ? "video.mov" : "video.mp4",
+      );
+      if (this.appSecret)
+        multipart.set(
+          "appsecret_proof",
+          createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
+        );
+    }
     const response = await external(
       `https://graph.facebook.com/${this.version}/${path}${body ? "" : "?" + params}`,
       {
         method: body ? "POST" : "GET",
         headers: {
           Authorization: "Bearer " + this.token,
-          ...(body
+          ...(body && !multipart
             ? { "Content-Type": "application/x-www-form-urlencoded" }
             : {}),
         },
-        ...(body ? { body: params.toString() } : {}),
+        ...(body ? { body: multipart ?? params.toString() } : {}),
       },
     );
     let payload: any;
@@ -395,7 +416,7 @@ export class MetaReader {
         method: body ? "POST" : "GET",
         fields: body
           ? Object.keys(body)
-              .filter((k) => k !== "bytes")
+              .filter((k) => k !== "bytes" && k !== "source")
               .join(",")
           : (readFields ?? "id,name"),
       });

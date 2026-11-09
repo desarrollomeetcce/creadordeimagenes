@@ -3069,3 +3069,6 @@ Costos fijos pasa a cuadrícula editable, cabecera única, calendario compartido
 
 
 2026-11-07 · Aclaración posterior Con entrega: el usuario espera todos los que tuvieron gasto en el período elegido, no solo hoy. SQL ahora compara gasto>0 con rango exacto, ventanas7/14/15/30 y acumulado desdeinicio; impresiones sin gasto no cuentan, pausadas con gasto sí salvo filtro de estado adicional. Retirado postfiltro periods.today; fechas validadas antes de catálogo/retorno vacío. Mensajes de UI y ayuda actualizados al período. Test PG y Chromium confirman campaña con gasto pasado4.00/sin gasto hoy entra solo en el período correspondiente, Todos conserva catálogo. Sin llamadas o mutaciones Meta/IA reales.
+
+
+2026-11-09 · Recursos propios: modo Sin IA en primera columna, upload central por diplomado, conservar carpeta o solo campaña temporal24h, selección automática. Imágenes y video original MP4/MOV validados; galería/Biblioteca con reproducción/ranges, ZIP correcto. Sin generación/cobroIA/versiones/miniaturas; auditoría textual paginada. Meta advideos multipart, espera durable de procesamiento y creativo video_data confirmado; caducidad anticipada tras publicación completa y protección de otros borradores. Migración aditiva202611090001, Docker ffmpeg. SDKoficial y pruebas QA documentadas.
