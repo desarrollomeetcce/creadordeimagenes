@@ -92,6 +92,8 @@ export async function creativeStudioRoutes(
       return send(await studio.studioProject(actor, p[1]));
     if (p.length === 2 && method === "PATCH")
       return send(await studio.saveStudioProject(actor, p[1], await body()));
+    if (p[2] === "temporary-workspace" && p.length === 3 && method === "POST")
+      return send(await (await import("./temporary-workspace")).prepareTemporaryWorkspace(actor, p[1], await body()), 201);
     if (p[2] === "products" && method === "POST")
       return send(
         await studio.createStudioProduct(actor, p[1], await body()),

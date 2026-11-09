@@ -143,7 +143,7 @@ export async function hierarchyOptions(user: Actor, params: URLSearchParams, lib
     }),
     scope.project && scope.project !== "none"
       ? db.category.findMany({
-          where: { ...(library?libraryCategoryFilter(user):categoryFilter(user)), projectId: scope.project },
+          where: { ...(library?libraryCategoryFilter(user):categoryFilter(user)), campaignTemporary: false, projectId: scope.project },
           select: { id: true, name: true },
           orderBy: [{ name: "asc" }, { id: "asc" }],
         })

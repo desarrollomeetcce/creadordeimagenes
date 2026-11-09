@@ -835,7 +835,7 @@ async function handle(
             deletedAt: true,
             updatedAt: true,
             owner: { select: { name: true } },
-            _count: { select: { categories: { where: categoryFilter(user) } } },
+            _count: { select: { categories: { where: {...categoryFilter(user),campaignTemporary:false} } } },
           },
           orderBy: { updatedAt: "desc" },
         }),
@@ -884,7 +884,7 @@ async function handle(
           where: { id },
           include: {
             categories: {
-              where: categoryFilter(user),
+              where: {...categoryFilter(user),campaignTemporary:false},
               include: {
                 _count: {
                   select: { subproducts: { where: subproductFilter(user) } },

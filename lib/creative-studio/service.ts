@@ -150,7 +150,7 @@ export async function studioProject(actor: Actor, projectId: string) {
       id: true,
       name: true,
       categories: {
-        where: { ...categoryFullFilter(actor), deletedAt: null },
+        where: { ...categoryFullFilter(actor), deletedAt: null, campaignTemporary: false },
         select: {
           id: true,
           name: true,
@@ -177,6 +177,7 @@ export async function studioProduct(actor: Actor, categoryId: string) {
       id: true,
       name: true,
       projectId: true,
+      campaignTemporary: true,
       studio: true,
       subproducts: {
         where: { deletedAt: null },
@@ -357,7 +358,7 @@ export async function createStudioProduct(
       return previous;
     }
     const current = await tx.category.findMany({
-      where: { projectId, deletedAt: null },
+      where: { projectId, deletedAt: null, campaignTemporary: false },
       select: { name: true },
     });
     demand(
@@ -634,8 +635,9 @@ export async function saveStudioImages(actor: Actor, input: unknown) {
       await tx.$queryRaw`SELECT id FROM "Subproduct" WHERE id=${subproductId} FOR UPDATE`;
       const sub = await tx.subproduct.findUniqueOrThrow({
         where: { id: subproductId },
-        select: { studio: true },
+        select: { studio: true, category: { select: { campaignTemporary: true } } },
       });
+      demand(!sub.category.campaignTemporary, "Elige una carpeta para conservar los recursos antes de subirlos.", 409);
       await tx.subproduct.update({
         where: { id: subproductId },
         data: { studio: json({ ...object(sub.studio), folderPending: false }) },
@@ -749,6 +751,7 @@ export async function prepareInventorySelection(
   const available = await db.category.findMany({
     where: {
       projectId: b.projectId,
+      campaignTemporary: false,
       deletedAt: null,
       ...categoryFullFilter(actor),
     },
@@ -775,7 +778,7 @@ export async function prepareInventorySelection(
       });
       demand(project, "El proyecto no está disponible.", 404);
       const categories = await tx.category.findMany({
-        where: { projectId: b.projectId, deletedAt: null },
+        where: { projectId: b.projectId, deletedAt: null, campaignTemporary: false },
         select: { id: true, name: true, studio: true },
       });
       const existing = categories.find(

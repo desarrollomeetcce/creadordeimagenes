@@ -62,7 +62,7 @@ export async function libraryTree(
       select: { id: true, name: true, ownerId: true, deletedAt: true },
     }),
     db.category.findMany({
-      where: libraryCategoryFilter(user),
+      where: { ...libraryCategoryFilter(user), campaignTemporary: false },
       select: {
         id: true,
         name: true,
@@ -73,7 +73,7 @@ export async function libraryTree(
       },
     }),
     db.subproduct.findMany({
-      where: librarySubproductFilter(user),
+      where: { AND: [librarySubproductFilter(user), {category: {campaignTemporary: false}}] },
       select: {
         id: true,
         name: true,

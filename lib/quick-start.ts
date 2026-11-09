@@ -19,7 +19,11 @@ export async function quickStartOptions(actor: Actor) {
         id: true,
         name: true,
         categories: {
-          where: { ...categoryFullFilter(actor), deletedAt: null },
+          where: {
+            ...categoryFullFilter(actor),
+            deletedAt: null,
+            campaignTemporary: false,
+          },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         },

@@ -191,6 +191,7 @@ export async function uploadOwnMedia(
         },
       });
       demand(sub, "La carpeta no está disponible.", 404);
+      demand(!permanent || !sub.category.campaignTemporary, "Elige una carpeta antes de guardar recursos permanentes.", 409);
       const job = await tx.generationJob.create({
         data: {
           id: jobId,

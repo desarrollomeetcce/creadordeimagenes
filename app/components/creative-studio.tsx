@@ -88,12 +88,74 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [mode, setMode] = useState("Imagen + Texto"),
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
+  const temporaryMode = ownMode && uploadStorage === "campaign";
+  const workspaceSubs = product?.subproducts ?? [];
+  const savedWorkspaces = useRef(new Map<string, any>());
+  const temporaryRequests = useRef(new Map<string, string>());
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  function workspaceLocation(id?: string) {
+    const q = new URLSearchParams(location.search);
+    q.delete("subproduct");
+    if (id) q.set("category", id);
+    else q.delete("category");
+    history.replaceState(null, "", "?" + q);
+    if (project)
+      try {
+        localStorage.setItem(
+          "creative-studio-view:v1:" + userId,
+          JSON.stringify({
+            project: project.id,
+            ...(id ? { product: id } : {}),
+          }),
+        );
+      } catch {}
+  }
+  function clearWorkspace() {
+    workspaceLocation();
+    setProduct(null);
+    setActiveSub("");
+    setSelected({});
+    setTargetSubs([]);
+    setGallery({ items: [], total: 0, pages: 1 });
+    setPage(1);
+  }
+  function rememberWorkspace() {
+    if (project && product)
+      savedWorkspaces.current.set(
+        project.id + ":" + (product.campaignTemporary ? "campaign" : "folder"),
+        { product, activeSub, selected, targetSubs },
+      );
+  }
+  function chooseStorage(value: string) {
+    rememberWorkspace();
+    setUploadStorage(value);
+    const saved = savedWorkspaces.current.get(project?.id + ":" + value);
+    if (saved) {
+      workspaceLocation(saved.product.id);
+      setProduct(saved.product);
+      setActiveSub(saved.activeSub);
+      setSelected(saved.selected);
+      setTargetSubs(saved.targetSubs);
+      setCountry(saved.product.studio?.country ?? country);
+    } else clearWorkspace();
+  }
+  useEffect(() => {
+    if (project && product && !!product.campaignTemporary !== temporaryMode) {
+      rememberWorkspace();
+      clearWorkspace();
+    }
+  }, [temporaryMode, project?.id, product?.id]);
   useEffect(() => {
     try {
       setOwnMode(localStorage.getItem("studio-own-mode:" + userId) === "own");
     } catch {}
   }, [userId]);
   function preparationMode(own: boolean) {
+    if (!own && temporaryMode) chooseStorage("folder");
     setOwnMode(own);
     try {
       localStorage.setItem("studio-own-mode:" + userId, own ? "own" : "ai");
@@ -261,6 +323,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
         );
         return;
       }
+      if (initialProduct?.startsWith("studio-temporary-")) {
+        setOwnMode(true);
+        setUploadStorage("campaign");
+        await chooseProduct(initialProduct, initialSub, p.id);
+        return;
+      }
       const compatible = handoffCountry.current
         ? p.categories.filter(
             (c: any) => c.studio?.country === handoffCountry.current,
@@ -334,11 +402,17 @@ export function CreativeStudio({ userId }: { userId: string }) {
     }
     setNotice("Desfijado. Sus afiches y carpeta se conservan.");
   }
-  async function chooseProduct(id: string, initialSub?: string) {
+  async function chooseProduct(
+    id: string,
+    initialSub?: string,
+    expectedProjectId?: string,
+  ) {
     const seq = ++productSeq.current;
     setLoading(true);
     try {
       const p = visibleProduct(await studioRequest("/products/" + id));
+      if (expectedProjectId && p.projectId !== expectedProjectId)
+        throw Error("La preparación temporal pertenece a otro proyecto.");
       if (!mounted.current || seq !== productSeq.current) return;
       setProduct(p);
       setInventoryFocusRequest(0);
@@ -515,6 +589,13 @@ export function CreativeStudio({ userId }: { userId: string }) {
       await studioRequest("/products/" + product.id, "PATCH", {
         country: value,
       });
+      if (product.campaignTemporary && project) {
+        temporaryRequests.current.delete(project.id + ":" + country);
+        temporaryRequests.current.set(
+          project.id + ":" + value,
+          product.id.replace("studio-temporary-", ""),
+        );
+      }
       setProduct((p: any) => ({
         ...p,
         studio: { ...p.studio, country: value },
@@ -526,6 +607,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     const next = visibleProduct(
       await studioRequest("/products/" + productRef.current.id),
     );
+    productRef.current = next;
     setProduct(next);
     setPrompts((p) => ({
       ...Object.fromEntries(next.subproducts.map((s: any) => [s.id, s.prompt])),
@@ -533,27 +615,49 @@ export function CreativeStudio({ userId }: { userId: string }) {
     }));
     return next;
   }
+  async function ensureTemporary() {
+    if (!temporaryMode || !project)
+      throw Error("Elige una carpeta de destino.");
+    if (!country) throw Error("Selecciona el país de destino.");
+    const key = project.id + ":" + country;
+    let requestId = temporaryRequests.current.get(key);
+    if (!requestId) {
+      requestId = crypto.randomUUID();
+      temporaryRequests.current.set(key, requestId);
+    }
+    const next = visibleProduct(
+      await studioRequest(
+        "/projects/" + project.id + "/temporary-workspace",
+        "POST",
+        { requestId, country },
+      ),
+    );
+    workspaceLocation(next.id);
+    productRef.current = next;
+    setProduct(next);
+    return next;
+  }
   async function addItems(ids: string[], value: string) {
-    if (!product) return;
+    const workingProduct = product ?? (await ensureTemporary());
     if (
       pendingSelection &&
-      (product.studio?.country !== pendingSelection.country ||
+      (workingProduct.studio?.country !== pendingSelection.country ||
         inventoryId !== pendingSelection.listId)
     )
       throw Error(
         `Elige o crea una carpeta de ${countryName(pendingSelection.country)} y conserva el Inventario de la selección.`,
       );
-    if (product.studio?.country !== value) await changeCountry(value);
+    if (workingProduct.studio?.country !== value) await changeCountry(value);
     const added = await studioRequest(
-      "/products/" + product.id + "/items",
+      "/products/" + workingProduct.id + "/items",
       "POST",
       { listId: inventoryId, itemIds: ids },
     );
     try {
       localStorage.setItem(
-        "studio-unpinned:v1:" + userId + ":" + product.id,
+        "studio-unpinned:v1:" + userId + ":" + workingProduct.id,
         JSON.stringify(
-          unpinnedIds(product.id).filter(
+          unpinnedIds(workingProduct.id).filter(
             (id) => !added.some((s: any) => s.id === id),
           ),
         ),
@@ -580,16 +684,17 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setInventoryFocusRequest((n) => n + 1);
   }
   async function addName() {
+    const workingProduct = product ?? (await ensureTemporary());
     const added = await studioRequest(
-      "/products/" + product.id + "/items",
+      "/products/" + workingProduct.id + "/items",
       "POST",
       { names: [manualName.trim()] },
     );
     try {
       localStorage.setItem(
-        "studio-unpinned:v1:" + userId + ":" + product.id,
+        "studio-unpinned:v1:" + userId + ":" + workingProduct.id,
         JSON.stringify(
-          unpinnedIds(product.id).filter(
+          unpinnedIds(workingProduct.id).filter(
             (id) => !added.some((s: any) => s.id === id),
           ),
         ),
@@ -645,29 +750,52 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setZone("canvas");
   }
   async function upload(files: FileList | null) {
-    if (!activeSub || !files?.length) return;
-    if (files.length > 20)
-      throw Error("Selecciona hasta20 archivos por subida.");
-    for (const file of [...files]) {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("requestId", crypto.randomUUID());
-      form.set("storage", uploadStorage);
-      const r = await fetch("/api/creative-studio/upload/" + activeSub, {
-        method: "POST",
-        body: form,
-      });
-      const b = await r.json();
-      if (!r.ok) throw Error(b.error ?? "No se pudo subir el recurso.");
-      if (b.id)
-        setSelected((s) => ({
-          ...s,
-          [activeSub]: [...new Set([...(s[activeSub] ?? []), b.id])],
-        }));
+    if (!files?.length) return;
+    const pending = [...files];
+    if (pending.length > 20)
+      throw Error("Selecciona hasta 20 archivos por subida.");
+    let targetSub = activeSub;
+    if (!targetSub && temporaryMode) {
+      const working = product ?? (await ensureTemporary());
+      const added = await studioRequest(
+        "/products/" + working.id + "/items",
+        "POST",
+        { names: [manualName.trim() || "Mi campaña"] },
+      );
+      await reloadProduct();
+      targetSub = added[0].id;
+      activeRef.current = targetSub;
+      setActiveSub(targetSub);
+      setManualName("");
     }
-    await refreshGallery();
-    if (uploadStorage === "folder") await reloadProduct();
-    setNotice("✓ Recursos propios listos para la campaña");
+    if (!targetSub) throw Error("Elige un diplomado antes de subir recursos.");
+    setUploadProgress({ done: 0, total: pending.length });
+    try {
+      for (const [index, file] of pending.entries()) {
+        const form = new FormData();
+        form.set("file", file);
+        form.set("requestId", crypto.randomUUID());
+        form.set("storage", uploadStorage);
+        const r = await fetch("/api/creative-studio/upload/" + targetSub, {
+          method: "POST",
+          body: form,
+        });
+        const b = await r.json();
+        if (!r.ok) throw Error(b.error ?? "No se pudo subir el recurso.");
+        setUploadProgress({ done: index + 1, total: pending.length });
+        await refreshGallery();
+        if (b.id)
+          setSelected((s) => ({
+            ...s,
+            [targetSub]: [...new Set([...(s[targetSub] ?? []), b.id])],
+          }));
+      }
+      await refreshGallery();
+      if (uploadStorage === "folder") await reloadProduct();
+      setNotice("✓ Recursos propios listos para la campaña");
+    } finally {
+      setUploadProgress(null);
+    }
   }
   function toggleImage(id: string) {
     setSelected((s) => ({
@@ -759,6 +887,21 @@ export function CreativeStudio({ userId }: { userId: string }) {
     );
   return (
     <section className="creative-studio">
+      <input
+        ref={uploadInput}
+        aria-label="Archivos para campaña"
+        type="file"
+        multiple
+        hidden
+        accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime"
+        disabled={busy}
+        onChange={(e) => {
+          const files = e.target.files;
+          void run(() => upload(files));
+          e.target.value = "";
+        }}
+      />
+
       {pendingSelection && (
         <aside className="notice studio-replacement-handoff" role="status">
           <strong>
@@ -835,6 +978,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
             <button
               type="button"
               aria-pressed={!ownMode}
+              disabled={busy}
               onClick={() => preparationMode(false)}
             >
               Con IA
@@ -842,6 +986,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
             <button
               type="button"
               aria-pressed={ownMode}
+              disabled={busy}
               onClick={() => preparationMode(true)}
             >
               Sin IA · fotos y videos
@@ -1054,26 +1199,51 @@ export function CreativeStudio({ userId }: { userId: string }) {
               )}
               <div className="studio-section-divider" />
 
-              <div className="studio-project-picker studio-product-picker">
-                <SearchSelect
-                  label="Producto / carpeta"
-                  hideEmpty
-                  value={productQuery}
-                  disabled={busy || loading}
-                  onChange={(value) => {
-                    setProductQuery(value);
-                    if (product && value !== product.name) {
-                      setProduct(null);
-                      setActiveSub("");
-                      setCountry(pendingSelection?.country ?? "");
-                      setTargetSubs([]);
-                      setSelected({});
-                    }
-                  }}
-                  onSelect={(o) => void run(() => chooseProduct(o.id))}
-                  options={names(project.categories)}
-                />
-              </div>
+              {ownMode && (
+                <label className="studio-resource-destination">
+                  Destino de tus recursos
+                  <select
+                    aria-label="Destino de los recursos propios"
+                    value={uploadStorage}
+                    disabled={busy}
+                    onChange={(e) => chooseStorage(e.target.value)}
+                  >
+                    <option value="campaign">
+                      Solo campaña · temporal 24 horas
+                    </option>
+                    <option value="folder">Guardar en carpeta</option>
+                  </select>
+                  <small>
+                    {temporaryMode
+                      ? "Sin carpeta permanente. Se eliminan tras publicar o al vencer."
+                      : "Conserva fotos y videos en Biblioteca."}
+                  </small>
+                </label>
+              )}
+              {!temporaryMode && (
+                <>
+                  <div className="studio-project-picker studio-product-picker">
+                    <SearchSelect
+                      label="Producto / carpeta"
+                      hideEmpty
+                      value={productQuery}
+                      disabled={busy || loading}
+                      onChange={(value) => {
+                        setProductQuery(value);
+                        if (product && value !== product.name) {
+                          setProduct(null);
+                          setActiveSub("");
+                          setCountry(pendingSelection?.country ?? "");
+                          setTargetSubs([]);
+                          setSelected({});
+                        }
+                      }}
+                      onSelect={(o) => void run(() => chooseProduct(o.id))}
+                      options={names(project.categories)}
+                    />
+                  </div>
+                </>
+              )}
               <div className="studio-country-create-row">
                 <div className="studio-country-choice">
                   <span>
@@ -1083,12 +1253,14 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   <SheetSearchSelect
                     label="País de destino"
                     placeholder={
-                      !product ? "Sin país por ahora" : "Selecciona un país"
+                      !product && !temporaryMode
+                        ? "Sin país por ahora"
+                        : "Selecciona un país"
                     }
                     value={country}
                     disabled={busy}
                     options={[
-                      ...(!product
+                      ...(!product && !temporaryMode
                         ? [{ value: "", label: "Sin país por ahora" }]
                         : []),
                       ...context.countries.map((c: any) => ({
@@ -1099,7 +1271,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     onSelect={(value) => void run(() => changeCountry(value))}
                   />
                 </div>
-                {!productExists && (
+                {!temporaryMode && !productExists && (
                   <button
                     type="button"
                     className="studio-create-product"
@@ -1117,7 +1289,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   Puedes elegir el país ahora o antes de preparar la campaña.
                 </small>
               )}
-              {product && (
+              {(product || temporaryMode) && (
                 <>
                   <div className="studio-inventory-launch">
                     <label>
@@ -1138,12 +1310,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     </label>
                     <StudioInventorySlots
                       manual={ownMode}
-                      key={product.id + ":" + inventoryId + ":" + country}
+                      key={
+                        (product?.id ?? "temporary") +
+                        ":" +
+                        inventoryId +
+                        ":" +
+                        country
+                      }
                       listId={inventoryId}
                       country={country}
-                      existingNames={product.subproducts.map(
-                        (s: any) => s.name,
-                      )}
+                      existingNames={workspaceSubs.map((s: any) => s.name)}
                       predefined={!!pendingSelection || targetSubs.length > 0}
                       disabled={busy || !!pendingSelection}
                       focusRequest={inventoryFocusRequest}
@@ -1154,7 +1330,11 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   <div className="studio-add-sub">
                     <input
                       aria-label="Nombre nuevo"
-                      placeholder="O escribe un nombre…"
+                      placeholder={
+                        temporaryMode
+                          ? "O escribe un nombre temporal…"
+                          : "O escribe un nombre…"
+                      }
                       value={manualName}
                       onChange={(e) => setManualName(e.target.value)}
                       onKeyDown={(e) => {
@@ -1174,12 +1354,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
                     </button>
                   </div>
                   <div className="studio-sub-list">
-                    {product.subproducts.map((s: any) => (
+                    {workspaceSubs.map((s: any) => (
                       <div
                         key={s.id}
                         className={activeSub === s.id ? "active" : ""}
                       >
-                        <input
+                        {!ownMode && <input
                           type="checkbox"
                           aria-label={"Generar en " + s.name}
                           checked={targetSubs.includes(s.id)}
@@ -1190,7 +1370,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                                 : [...ids, s.id],
                             )
                           }
-                        />
+                        />}
                         <button
                           type="button"
                           onClick={() => {
@@ -1204,9 +1384,11 @@ export function CreativeStudio({ userId }: { userId: string }) {
                           </span>
                           <span>{s.name}</span>
                           <small className="studio-folder-status">
-                            {s.folderExists
-                              ? `${s.folderCount ?? 0} afiches · Carpeta existente`
-                              : "Nueva carpeta · Por guardar"}
+                            {temporaryMode
+                              ? "Solo campaña · temporal"
+                              : s.folderExists
+                                ? `${s.folderCount ?? 0} afiches · Carpeta existente`
+                                : "Nueva carpeta · Por guardar"}
                           </small>
                         </button>
                         <button
@@ -1230,7 +1412,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       ·{" "}
                       {(targetSubs.length
                         ? targetSubs
-                        : product.subproducts.map((s: any) => s.id)
+                        : workspaceSubs.map((s: any) => s.id)
                       ).reduce(
                         (n: number, id: string) => n + generationFor(id).count,
                         0,
@@ -1244,7 +1426,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       disabled={
                         busy ||
                         !charge ||
-                        !product.subproducts.length ||
+                        !workspaceSubs.length ||
                         production.dispatching
                       }
                       onClick={() =>
@@ -1252,13 +1434,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
                           generate(
                             targetSubs.length
                               ? targetSubs
-                              : product.subproducts.map((s: any) => s.id),
+                              : workspaceSubs.map((s: any) => s.id),
                           ),
                         )
                       }
                     >
-                      ✦ Generar en{" "}
-                      {targetSubs.length || product.subproducts.length}{" "}
+                      ✦ Generar en {targetSubs.length || workspaceSubs.length}{" "}
                       elementos
                     </button>
                   </div>
@@ -1284,7 +1465,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
             <span className="studio-step amber">02</span>
             <div>
               <span className="studio-eyebrow">EXPLORA. CREA. ELIGE.</span>
-              <h2>{active?.name ?? "Tus próximas ideas"}</h2>
+              <h2>
+                {active?.name ??
+                  (temporaryMode
+                    ? "Tu campaña temporal"
+                    : "Tus próximas ideas")}
+              </h2>
             </div>
             {country && (
               <span className="studio-chip">{countryName(country)}</span>
@@ -1328,7 +1514,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       </small>
                     )}
                     {selected[s.id]?.length ? (
-                      <span>{selected[s.id].length} ✓</span>
+                      <span className="studio-tab-selection">{selected[s.id].length} ✓</span>
                     ) : null}
                   </button>
                   <button
@@ -1383,52 +1569,66 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   {gallery.total} recursos · {currentSelection.length} elegidos
                 </span>
               </div>
-              <div className="studio-own-upload">
+              <div className="studio-own-upload studio-upload-compact">
                 <div>
-                  <strong>Recursos para {active.name}</strong>
+                  <strong>
+                    {temporaryMode
+                      ? "Recursos para tu campaña"
+                      : "Fotos y videos de " + active.name}
+                  </strong>
                   <small>
-                    Fotos PNG/JPG/WebP · videos MP4/MOV H.264. Sin generación ni
-                    cargo de IA.
+                    {temporaryMode
+                      ? "Temporal · 24 horas"
+                      : "Destino: " +
+                        (uploadStorage === "folder"
+                          ? "Biblioteca"
+                          : "solo campaña")}{" "}
+                    · PNG, JPG, WebP, MP4 o MOV
                   </small>
                 </div>
-                <select
-                  aria-label="Destino de los recursos propios"
-                  value={uploadStorage}
-                  onChange={(e) => setUploadStorage(e.target.value)}
+                <button
+                  type="button"
+                  className="studio-upload-button"
                   disabled={busy}
+                  onClick={() => uploadInput.current?.click()}
                 >
-                  <option value="campaign">Solo campaña · temporal24h</option>
-                  <option value="folder">Guardar en esta carpeta</option>
-                </select>
-                <label className="studio-upload-button">
                   ↑ Subir fotos o videos
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime"
-                    disabled={busy}
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      void run(() => upload(files));
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-                <small>
-                  Los temporales se eliminan tras publicar o al vencer. Para
-                  enviarlos a Meta se necesita una copia temporal. Fotos hasta{" "}
-                  {Math.min(
-                    16,
-                    Math.round(
-                      (context.maxOwnMediaBytes ?? 67108864) / 1048576,
-                    ),
-                  )}
-                  MB; videos hasta{" "}
-                  {Math.round((context.maxOwnMediaBytes ?? 67108864) / 1048576)}
-                  MB.
-                </small>
+                </button>
+
+                {uploadProgress && (
+                  <div role="status" className="studio-upload-progress">
+                    <progress
+                      max={uploadProgress.total}
+                      value={uploadProgress.done}
+                    />
+                    <span>
+                      {uploadProgress.done} de {uploadProgress.total} recursos
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="studio-poster-grid">
+                {ownMode && (
+                  <button
+                    type="button"
+                    className="studio-upload-tile"
+                    disabled={busy}
+                    onClick={() => uploadInput.current?.click()}
+                  >
+                    <span>＋</span>
+                    <strong>
+                      {gallery.items.length
+                        ? "Añadir más"
+                        : "Sube tus fotos o videos"}
+                    </strong>
+                    <small>
+                      {uploadStorage === "folder"
+                        ? "Se guardarán en tu carpeta"
+                        : "Solo para esta campaña · 24 horas"}
+                    </small>
+                  </button>
+                )}
+
                 {gallery.items.map((i: any) => (
                   <article
                     key={i.id}
@@ -1616,6 +1816,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   <strong>{currentSelection.length} recursos elegidos</strong>
                   <button
                     type="button"
+                    hidden={temporaryMode}
                     disabled={busy}
                     onClick={() =>
                       void run(async () => {
@@ -1779,13 +1980,31 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <i />
                 <i />
               </div>
-              <h2>Tu próxima campaña empieza aquí</h2>
+              <h2>
+                {temporaryMode
+                  ? "Tus recursos, listos para anunciar"
+                  : "Tu próxima campaña empieza aquí"}
+              </h2>
               <p>
-                {project
-                  ? "Elige o crea un producto y añade los diplomados que quieres trabajar."
-                  : "Elige un proyecto para comenzar a crear."}
+                {temporaryMode && project
+                  ? "Elige un diplomado o sube directamente tus fotos y videos."
+                  : project
+                    ? "Elige o crea un producto y añade los diplomados que quieres trabajar."
+                    : "Elige un proyecto para comenzar a crear."}
               </p>
-              <div className="studio-empty-steps">
+              {temporaryMode && project && (
+                <button
+                  type="button"
+                  className="studio-upload-tile studio-upload-first"
+                  disabled={busy}
+                  onClick={() => uploadInput.current?.click()}
+                >
+                  <span>＋</span>
+                  <strong>Subir fotos o videos para campaña</strong>
+                  <small>Temporal · 24 horas · Sin carpeta permanente</small>
+                </button>
+              )}
+              <div className="studio-empty-steps" hidden={ownMode}>
                 <span>01 Elige tu tema</span>
                 <span>02 Crea tus afiches</span>
                 <span>03 Publica en Meta</span>

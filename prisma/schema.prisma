@@ -94,6 +94,7 @@ model ProjectMember {
   @@id([projectId,userId])
 }
 model Category {
+  campaignTemporary Boolean @default(false)
   allUsers Boolean @default(false)
   createdById String?
   studio Json @default("{}")
