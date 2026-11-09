@@ -2768,3 +2768,10 @@ Chromium verifica cinco flujos: Crear campaña primero y fichas CO2/PE1/PY1 en l
 - tests/temporary-workspace.integration.test.ts (RUN_TEMPORARY_WORKSPACE_QA=1, DATABASE_URL exclusiva delivery_qa, STORAGE_PATH separado): idempotencia concurrente, cruce de país/actor rechazado, ocultación de catálogos/Biblioteca, foto real y replay, lectura autorizada de bytes, sin ledger/versiones, temporal24h, rechazo de permanencia y rollback, modo carpeta permanente y vencimiento. fetch bloqueado para no generar publicidad ni consumir IA.
 - Chromium real1600×1000 y390×844: país/inventario sin carpeta, upload directo PNG+MP4 genera tarjetas y selección, imagen decodifica y video responde206, cambio de destinos conserva datos, temas separados conservan sus recursos, guardar en carpeta mantiene Biblioteca, preparar abre editor y recargar conserva temporal; sin JS errors ni POST de generación/publicación. Selector deshabilitado durante subida: pruebas esperan su habilitación antes de cambiar destino. Capturas /tmp/temporary-campaign-desktop.png y /tmp/temporary-campaign-mobile.png.
 - No se verificó despliegue/reinicio del VPS ni se publicaron anuncios reales.
+
+
+## 2026-11-09 — Sin inventario en campañas temporales
+
+- npm test:321 aprobadas; typecheck y build producción aprobados. Cambio de interfaz usa rutas manuales existentes, sin nueva persistencia SQL.
+- Chromium1600×1000/390×844 con DB delivery_qa y archivos sintéticos: Sin inventario oculta buscador/carpeta; tres nombres creados desde izquierda/+central/Enter aparecen como pestañas. SQL confirma los tres sin listId/itemId; ninguna consulta de directorio de inventario tras elegirlo. Subida PNG decodifica/selecciona; X quita solo una pestaña, conserva archivo y otras dos, sin diálogo/DELETE ni POST de IA/Meta. Recargar mantiene preferencia y exclusión; alternar Carpeta/Temporal conserva temas. Sin erroresJS. Evidencia /tmp/no-inventory-browser.txt y capturas /tmp/no-inventory-desktop.png, /tmp/no-inventory-mobile.png.
+- Producción/VPS pendiente de verificación; ningún anuncio ni generación reales en pruebas.

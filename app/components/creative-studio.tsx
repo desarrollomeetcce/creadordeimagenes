@@ -76,6 +76,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [notice, setNotice] = useState(""),
     [zone, setZone] = useState("canvas"),
     [inventoryId, setInventoryId] = useState(""),
+    [withoutInventory, setWithoutInventory] = useState(false),
+    [addingCustomTopic, setAddingCustomTopic] = useState(false),
     [inventoryFocusRequest, setInventoryFocusRequest] = useState(0),
     [pendingSelection, setPendingSelection] = useState<any>(null),
     [manualName, setManualName] = useState(""),
@@ -89,6 +91,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [allPrompt, setAllPrompt] = useState(false),
     [commonPrompt, setCommonPrompt] = useState("");
   const temporaryMode = ownMode && uploadStorage === "campaign";
+  const customTopics = temporaryMode && withoutInventory && !pendingSelection;
   const workspaceSubs = product?.subproducts ?? [];
   const savedWorkspaces = useRef(new Map<string, any>());
   const temporaryRequests = useRef(new Map<string, string>());
@@ -152,6 +155,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
   useEffect(() => {
     try {
       setOwnMode(localStorage.getItem("studio-own-mode:" + userId) === "own");
+      setWithoutInventory(
+        localStorage.getItem("studio-without-inventory:" + userId) === "true",
+      );
     } catch {}
   }, [userId]);
   function preparationMode(own: boolean) {
@@ -375,6 +381,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
   }
   async function removeSubproduct(sub: any) {
     if (
+      !product.campaignTemporary &&
       !confirm(
         `¿Desfijar «${sub.name}» de este espacio de trabajo? Sus afiches, carpeta y campañas se conservarán. Puedes volver a seleccionarlo desde grupos.`,
       )
@@ -400,7 +407,11 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setActiveSub(remaining[0]?.id ?? "");
       setPage(1);
     }
-    setNotice("Desfijado. Sus afiches y carpeta se conservan.");
+    setNotice(
+      product.campaignTemporary
+        ? "Tema quitado de esta preparación."
+        : "Desfijado. Sus afiches y carpeta se conservan.",
+    );
   }
   async function chooseProduct(
     id: string,
@@ -680,6 +691,10 @@ export function CreativeStudio({ userId }: { userId: string }) {
     [userId],
   );
   function focusInventorySelector() {
+    if (customTopics) {
+      setAddingCustomTopic(true);
+      return;
+    }
     setZone("project");
     setInventoryFocusRequest((n) => n + 1);
   }
@@ -704,6 +719,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     setActiveSub(added[0].id);
     setTargetSubs((ids) => [...new Set([...ids, added[0].id])]);
     setManualName("");
+    setAddingCustomTopic(false);
     setZone("canvas");
   }
   function generationFor(id: string) {
@@ -1293,14 +1309,29 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <>
                   <div className="studio-inventory-launch">
                     <label>
-                      {ownMode ? "Lista de diplomados" : "Inventario"}
+                      {customTopics ? "Temas de campaña" : ownMode ? "Lista de diplomados" : "Inventario"}
                       <select
                         aria-label="Inventario de productos"
                         disabled={busy || !!pendingSelection}
-                        value={inventoryId}
-                        onChange={(e) => setInventoryId(e.target.value)}
+                        value={customTopics ? "__none__" : inventoryId}
+                        onChange={(e) => {
+                          const none = e.target.value === "__none__";
+                          setWithoutInventory(none);
+                          if (!none) setInventoryId(e.target.value);
+                          try {
+                            localStorage.setItem(
+                              "studio-without-inventory:" + userId,
+                              String(none),
+                            );
+                          } catch {}
+                        }}
                       >
                         <option value="">Selecciona un inventario</option>
+                        {temporaryMode && (
+                          <option value="__none__">
+                            Sin inventario
+                          </option>
+                        )}
                         {context.inventories.map((i: any) => (
                           <option key={i.id} value={i.id}>
                             {i.name}
@@ -1308,32 +1339,41 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         ))}
                       </select>
                     </label>
-                    <StudioInventorySlots
-                      manual={ownMode}
-                      key={
-                        (product?.id ?? "temporary") +
-                        ":" +
-                        inventoryId +
-                        ":" +
-                        country
-                      }
-                      listId={inventoryId}
-                      country={country}
-                      existingNames={workspaceSubs.map((s: any) => s.name)}
-                      predefined={!!pendingSelection || targetSubs.length > 0}
-                      disabled={busy || !!pendingSelection}
-                      focusRequest={inventoryFocusRequest}
-                      loadDirectory={loadInventoryDirectory}
-                      onChoose={(ids) => run(() => addItems(ids, country))}
-                    />
+                    {!customTopics && (
+                      <StudioInventorySlots
+                        manual={ownMode}
+                        key={
+                          (product?.id ?? "temporary") +
+                          ":" +
+                          inventoryId +
+                          ":" +
+                          country
+                        }
+                        listId={inventoryId}
+                        country={country}
+                        existingNames={workspaceSubs.map((s: any) => s.name)}
+                        predefined={!!pendingSelection || targetSubs.length > 0}
+                        disabled={busy || !!pendingSelection}
+                        focusRequest={inventoryFocusRequest}
+                        loadDirectory={loadInventoryDirectory}
+                        onChoose={(ids) => run(() => addItems(ids, country))}
+                      />
+                    )}
+                    {customTopics && (
+                      <small className="muted">
+                        Añade los temas que necesites con su propio nombre.
+                      </small>
+                    )}
                   </div>
                   <div className="studio-add-sub">
                     <input
                       aria-label="Nombre nuevo"
                       placeholder={
-                        temporaryMode
-                          ? "O escribe un nombre temporal…"
-                          : "O escribe un nombre…"
+                        customTopics
+                          ? "Nombre personalizado del tema…"
+                          : temporaryMode
+                            ? "O escribe un nombre temporal…"
+                            : "O escribe un nombre…"
                       }
                       value={manualName}
                       onChange={(e) => setManualName(e.target.value)}
@@ -1359,18 +1399,20 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         key={s.id}
                         className={activeSub === s.id ? "active" : ""}
                       >
-                        {!ownMode && <input
-                          type="checkbox"
-                          aria-label={"Generar en " + s.name}
-                          checked={targetSubs.includes(s.id)}
-                          onChange={() =>
-                            setTargetSubs((ids) =>
-                              ids.includes(s.id)
-                                ? ids.filter((x) => x !== s.id)
-                                : [...ids, s.id],
-                            )
-                          }
-                        />}
+                        {!ownMode && (
+                          <input
+                            type="checkbox"
+                            aria-label={"Generar en " + s.name}
+                            checked={targetSubs.includes(s.id)}
+                            onChange={() =>
+                              setTargetSubs((ids) =>
+                                ids.includes(s.id)
+                                  ? ids.filter((x) => x !== s.id)
+                                  : [...ids, s.id],
+                              )
+                            }
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -1514,14 +1556,18 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       </small>
                     )}
                     {selected[s.id]?.length ? (
-                      <span className="studio-tab-selection">{selected[s.id].length} ✓</span>
+                      <span className="studio-tab-selection">
+                        {selected[s.id].length} ✓
+                      </span>
                     ) : null}
                   </button>
                   <button
                     type="button"
                     className="studio-remove-tab"
-                    aria-label={"Desfijar " + s.name}
-                    title={"Desfijar " + s.name}
+                    aria-label={
+                      (temporaryMode ? "Quitar " : "Desfijar ") + s.name
+                    }
+                    title={(temporaryMode ? "Quitar " : "Desfijar ") + s.name}
                     disabled={busy}
                     onClick={() => void run(() => removeSubproduct(s))}
                   >
@@ -1532,13 +1578,57 @@ export function CreativeStudio({ userId }: { userId: string }) {
               <button
                 type="button"
                 className="studio-add-tab"
-                disabled={!inventoryId || busy}
+                disabled={(!inventoryId && !customTopics) || busy}
                 onClick={focusInventorySelector}
-                aria-label="Elegir más del inventario"
+                aria-label={
+                  customTopics
+                    ? "Añadir tema personalizado"
+                    : "Elegir más del inventario"
+                }
+                title={
+                  customTopics
+                    ? "Añadir tema personalizado"
+                    : "Elegir más del inventario"
+                }
               >
                 ＋
               </button>
             </nav>
+          )}
+          {customTopics && addingCustomTopic && (
+            <div className="studio-add-sub">
+              <input
+                autoFocus
+                aria-label="Nombre del nuevo tema"
+                placeholder="Nombre personalizado del tema…"
+                maxLength={200}
+                value={manualName}
+                disabled={busy}
+                onChange={(e) => setManualName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && manualName.trim()) {
+                    e.preventDefault();
+                    void run(addName);
+                  }
+                  if (e.key === "Escape") setAddingCustomTopic(false);
+                }}
+              />
+              <button
+                type="button"
+                disabled={busy || !manualName.trim()}
+                onClick={() => void run(addName)}
+              >
+                Añadir tema
+              </button>
+              <button
+                type="button"
+                aria-label="Cancelar nuevo tema"
+                disabled={busy}
+                onClick={() => setAddingCustomTopic(false)}
+              >
+                ×
+              </button>
+            </div>
           )}
           {active ? (
             <>
@@ -1563,7 +1653,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       });
                     }}
                   />
-                  Seleccionar todos los recursos de este diplomado
+                  {customTopics ? "Seleccionar todos los recursos de este tema" : "Seleccionar todos los recursos de este diplomado"}
                 </label>
                 <span>
                   {gallery.total} recursos · {currentSelection.length} elegidos
