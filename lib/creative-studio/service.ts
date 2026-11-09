@@ -23,7 +23,7 @@ import {
 } from "../meta-ads/countries";
 import { defaults } from "../inheritance";
 import { recordActivity } from "../activity";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, Variation } from "@prisma/client";
 export type Actor = { id: string; role: string };
 export const json = (v: unknown) => v as Prisma.InputJsonValue;
 export const object = (v: unknown): Record<string, any> =>
@@ -831,42 +831,24 @@ export async function studioImages(
 ) {
   studioAccess(actor);
   await resourceAccess(actor, "subproduct", subproductId, "VIEW");
+  const now = new Date();
   const where = {
     subproductId,
     deletedAt: null,
     expired: false,
-    OR: [{ permanent: true }, { expiresAt: { gt: new Date() } }],
+    OR: [{ permanent: true }, { expiresAt: { gt: now } }],
   };
   const [items, total] = await db.$transaction([
-    db.variation.findMany({
-      where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      skip: (page - 1) * 24,
-      take: 24,
-      select: {
-        id: true,
-        revision: true,
-        reviewStatus: true,
-        permanent: true,
-        createdAt: true,
-        model: true,
-        mediaType: true,
-        mime: true,
-        originalName: true,
-        ownResource: true,
-        job: { select: { id: true, snapshot: true } },
-      },
-    }),
+    db.$queryRaw<(Pick<Variation,"id"|"revision"|"reviewStatus"|"permanent"|"createdAt"|"model"|"mediaType"|"mime"|"originalName"|"ownResource">&{jobId:string;isSample:boolean})[]>`
+      SELECT v.id,v.revision,v."reviewStatus",v.permanent,v."createdAt",v.model,v."mediaType",v.mime,v."originalName",v."ownResource",j.id AS "jobId",
+      COALESCE(j.snapshot->'previewFirst'='true'::jsonb AND j.snapshot->'index'='0'::jsonb,false) AS "isSample"
+      FROM "Variation" v JOIN "GenerationJob" j ON j.id=v."jobId"
+      WHERE v."subproductId"=${subproductId} AND v."deletedAt" IS NULL AND v.expired=false AND (v.permanent=true OR v."expiresAt">${now})
+      ORDER BY v."createdAt" DESC,v.id DESC LIMIT 24 OFFSET ${(page-1)*24}`,
     db.variation.count({ where }),
   ]);
   return {
-    items: items.map(({ job, ...v }) => ({
-      ...v,
-      isSample:
-        object(job.snapshot).previewFirst === true &&
-        object(job.snapshot).index === 0,
-      jobId: job.id,
-    })),
+    items,
     total,
     page,
     pages: Math.max(1, Math.ceil(total / 24)),

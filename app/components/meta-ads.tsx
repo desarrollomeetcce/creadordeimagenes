@@ -1346,6 +1346,18 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
   const campaignScopeKey = level === "campaign" ? "" : campaignScope.join(",");
   const adsetScopeKey = level === "ad" ? adsetScope.join(",") : "";
   const serial = useRef(0);
+  const reportInFlight = useRef(false);
+  const queuedReportRefresh = useRef<"full" | "metrics" | null>(null);
+  const requestBackgroundReportRefresh = useCallback((kind: "full" | "metrics") => {
+    if (reportInFlight.current) {
+      if (kind === "full" || !queuedReportRefresh.current)
+        queuedReportRefresh.current = kind;
+      return;
+    }
+    if (kind === "full") setRevision((n) => n + 1);
+    else setReportRevision((n) => n + 1);
+  }, []);
+
   const summaryScope = useRef("");
   const summaryDisplayScope = useRef("");
   const storedVersions = useRef(new Map<string, string | null>());
@@ -1444,11 +1456,14 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
     .join(",");
   useEffect(() => {
     if (!analyticsTab || !preferencesReady || !accountsLoaded) {
+      reportInFlight.current = false;
+      queuedReportRefresh.current = null;
       setLoading(false);
       return;
     }
     const controller = new AbortController();
     const current = ++serial.current;
+    reportInFlight.current = true;
     void (async () => {
       setLoading(true);
       setRefreshTargets([]);
@@ -1542,7 +1557,13 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
             setMessage(e.message);
         })
         .finally(() => {
-          if (serial.current === current) setLoading(false);
+          if (serial.current === current) {
+            setLoading(false);
+            reportInFlight.current = false;
+            const queued = queuedReportRefresh.current;
+            queuedReportRefresh.current = null;
+            if (queued) requestBackgroundReportRefresh(queued);
+          }
         });
     })();
     return () => {
@@ -1719,11 +1740,12 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
           updates.forEach((u) =>
             storedVersions.current.set(u.id, u.dataUpdatedAt ?? null),
           );
-        if (finished || historyChanged) setRevision((n) => n + 1);
-        else if (storedChanged) setReportRevision((n) => n + 1);
+        if (finished || historyChanged) requestBackgroundReportRefresh("full");
+        else if (storedChanged) requestBackgroundReportRefresh("metrics");
+        const byId = new Map(updates.map((u) => [u.id, u]));
         setAccounts((old) =>
           old.map((a) => {
-            const update = updates.find((u) => u.id === a.id);
+            const update = byId.get(a.id);
             return update ? { ...a, ...update } : a;
           }),
         );

@@ -24,7 +24,7 @@ Migraciones aditivas `202611060002_folder_sharing` y `202611060003_fixed_costs`.
 
 ## Auditoría visual
 
-Miniaturas independientes en WebP, máximo 64 KiB, plazo predeterminado de 30 días desde la creación de cada versión. La política OWNER puede cambiar el plazo. La caducidad impide mostrarlas; limpieza elimina los bytes. Eliminar la miniatura conserva el original y el registro de actividad. Abrir Auditoría no crea copias nuevas. Estas reglas no se modifican en esta entrega.
+Miniaturas independientes en WebP, máximo 64 KiB, plazo predeterminado de siete días desde la creación de cada versión. La política OWNER puede cambiar el plazo. La caducidad impide mostrarlas; limpieza elimina los bytes. Eliminar la miniatura conserva el original y el registro de actividad. Abrir Auditoría no crea copias nuevas. La actualización del 09/11 aplica el plazo de siete días también a las miniaturas anteriores y limita la vista a esa ventana.
 
 ## Cuadrícula y compatibilidad
 

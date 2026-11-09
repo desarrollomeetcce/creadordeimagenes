@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 type Result = {
+  cacheRows?: number;
   expired?: number;
   thumbnails?: number;
   deletedFiles?: number;
@@ -161,7 +162,7 @@ export function MaintenancePanel({
             void (async () => {
               const result: Result = await request("cleanup", "POST");
               setMessage(
-                `${result.expired ?? 0} afiches caducados procesados; ${result.thumbnails ?? 0} miniaturas retiradas; ${result.deletedFiles ?? 0} archivos retirados; ${result.failedFiles ?? 0} borrados pendientes de reintento; ${result.interrupted ?? 0} trabajos enviados a revisión.`,
+                `${result.cacheRows ?? 0} registros de caché caducada retirados; ${result.expired ?? 0} afiches caducados procesados; ${result.thumbnails ?? 0} miniaturas retiradas; ${result.deletedFiles ?? 0} archivos retirados; ${result.failedFiles ?? 0} borrados pendientes de reintento; ${result.interrupted ?? 0} trabajos enviados a revisión.`,
               );
               await refresh();
               await onCleaned();
@@ -218,6 +219,7 @@ export function MaintenancePanel({
                       <>
                         <br />
                         {run.result.expired ?? 0} afiches ·{" "}
+                        {run.result.cacheRows ?? 0} cachés ·{" "}
                         {run.result.thumbnails ?? 0} miniaturas ·{" "}
                         {run.result.deletedFiles ?? 0} archivos ·{" "}
                         {run.result.failedFiles ?? 0} borrados por reintentar

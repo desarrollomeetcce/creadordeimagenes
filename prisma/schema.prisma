@@ -272,6 +272,7 @@ model Variation {
   filesQueuedAt DateTime?
   createdAt DateTime @default(now())
   @@index([permanent,filesQueuedAt,expiresAt], map: "Variation_expiry_cleanup_idx")
+  @@index([subproductId,createdAt(sort: Desc),id(sort: Desc)], map:"Variation_gallery_page_idx")
 }
 model UsageLedger {
   id String @id @default(cuid())
@@ -424,7 +425,7 @@ model MailConfiguration {
 model VisualAuditPolicy {
   id String @id @default("global")
   enabled Boolean @default(true)
-  retentionDays Int @default(30)
+  retentionDays Int @default(7)
   limitMb Int @default(32)
   revision Int @default(1)
   updatedAt DateTime @updatedAt
@@ -819,6 +820,7 @@ model MetaAdDaily {
   updatedAt DateTime @updatedAt
   @@unique([objectId,day,scope])
   @@index([accountId,day])
+  @@index([accountId,scope,day,updatedAt(sort: Desc)], map:"MetaAdDaily_progress_latest_idx")
 }
 model MetaAdTotal {
   objectId String @id
@@ -862,6 +864,7 @@ model MetaAccountSource {
 }
 
 model MetaInsightCache {
+  @@index([updatedAt], map:"MetaInsightCache_cleanup_idx")
   objectId String @id
   object MetaAdObject @relation(fields:[objectId],references:[id],onDelete:Cascade)
   day String

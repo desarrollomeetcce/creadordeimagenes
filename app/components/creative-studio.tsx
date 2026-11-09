@@ -199,7 +199,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
   const production = useProductionController(
     undefined,
     { project: project?.id ?? "", product: product?.id ?? "" },
-    !!product,
+    !!product && !product.campaignTemporary,
   );
   const progressSignature = production.orders
       .filter((o) => o.completed > 0 && o.scope?.subproduct === activeSub)

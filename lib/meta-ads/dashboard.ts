@@ -1,3 +1,4 @@
+import { withProgressState } from "./progress-read";
 import { deliveryActivityWhere } from "./delivery-scope";
 import { linkedCampaignCountryCounts } from "./linked-campaign-counts";
 import { pendingInventoryCampaigns } from "./pending-campaigns";
@@ -42,8 +43,15 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
   );
   const level = params.get("level") ?? "ad";
   demand(["campaign", "adset", "ad"].includes(level), "Nivel inválido.");
-  const accounts = await db.metaAdAccount.findMany({
-    where: await accountWhere(actor),
+  const requested = (params.get("accounts") ?? "").split(",").filter(Boolean);
+  demand(requested.length <= 100, "Demasiadas cuentas.");
+  const baseAccounts = await db.metaAdAccount.findMany({
+    where: {
+      AND: [
+        await accountWhere(actor),
+        ...(requested.length ? [{ id: { in: requested } }] : []),
+      ],
+    },
     select: {
       id: true,
       name: true,
@@ -53,7 +61,6 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       targetCost: true,
       minResults: true,
       syncedAt: true,
-      syncState: true,
       realtimeState: true,
       syncError: true,
       connectionId: true,
@@ -63,8 +70,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
       businessName: true,
     },
   });
-  const requested = (params.get("accounts") ?? "").split(",").filter(Boolean);
-  demand(requested.length <= 100, "Demasiadas cuentas.");
+  const accounts = await withProgressState(baseAccounts);
   if (requested.length)
     demand(
       requested.every((id) => accounts.some((a) => a.id === id)),

@@ -12,7 +12,7 @@ type Actor = { id: string; role: string };
 const defaults = {
   id: "global",
   enabled: true,
-  retentionDays: 30,
+  retentionDays: 7,
   limitMb: 32,
   revision: 0,
 };
@@ -318,7 +318,7 @@ export async function listAuditThumbnails(
       .min(1)
       .max(10000)
       .parse(params.get("page") ?? 1);
-  const where: Prisma.AuditThumbnailWhereInput = q
+  const searchWhere: Prisma.AuditThumbnailWhereInput = q
     ? {
         OR: [
           "actorName",
@@ -329,6 +329,12 @@ export async function listAuditThumbnails(
         ].map((field) => ({ [field]: { contains: q, mode: "insensitive" } })),
       }
     : {};
+  const policy = (await db.visualAuditPolicy.findUnique({ where: { id: "global" } })) ?? defaults;
+  const since = new Date(Date.now() - policy.retentionDays * 86400000);
+  const where: Prisma.AuditThumbnailWhereInput = {
+    ...searchWhere,
+    createdAt: { gte: since },
+  };
   const [rows, total] = await db.$transaction([
     db.auditThumbnail.findMany({
       where,
@@ -341,6 +347,7 @@ export async function listAuditThumbnails(
   ]);
   const ownWhere: Prisma.AuditEventWhereInput = {
     action: "RECURSO_PROPIO_SUBIDO",
+    createdAt: { gte: since },
     ...(q
       ? {
           OR: [

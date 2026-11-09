@@ -56,6 +56,7 @@ export async function maintenanceStatus() {
       ...run,
       result: Object.fromEntries(
         [
+          "cacheRows",
           "expired",
           "thumbnails",
           "deletedFiles",
@@ -96,6 +97,7 @@ export async function runMaintenance(
     await (await import("./meta-ads/schedule")).recoverMetaSchedules();
     const result = {
       ...(await cleanupStorage()),
+      ...(await (await import("./maintenance-cache")).cleanupDerivedCaches()),
       interrupted: await recoverInterrupted(),
     };
     const status = result.failedFiles ? "PARTIAL" : "COMPLETED";

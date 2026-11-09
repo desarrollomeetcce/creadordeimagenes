@@ -1,3 +1,4 @@
+import { withProgressState } from "./progress-read";
 async function metaEditorOnly(
   actor: Actor,
   tx?: import("@prisma/client").Prisma.TransactionClient,
@@ -2261,10 +2262,11 @@ export async function metaRoutes(
   }
   if (path === "accounts" && method === "GET") {
     const light = req.nextUrl.searchParams.get("light") === "1";
-    const rows = await db.metaAdAccount.findMany({
+    const baseRows = await db.metaAdAccount.findMany({
       where: await accountWhere(actor),
       select: {
         ...accountSelect,
+        syncState: false,
         connection: {
           select: {
             transport: true,
@@ -2297,6 +2299,7 @@ export async function metaRoutes(
       },
       orderBy: { name: "asc" },
     });
+    const rows = await withProgressState(baseRows);
     const [activity, stored, totals] = await Promise.all([
       light ? Promise.resolve(new Map()) : accountActivities(rows),
       light
@@ -2380,7 +2383,7 @@ export async function metaRoutes(
         ids.every((id) => /^\d{1,40}$/.test(id)),
       "Selección de cuentas inválida.",
     );
-    const rows = await db.metaAdAccount.findMany({
+    const baseRows = await db.metaAdAccount.findMany({
       where: { AND: [await accountWhere(actor), { id: { in: ids } }] },
       select: {
         id: true,
@@ -2389,9 +2392,9 @@ export async function metaRoutes(
         syncedAt: true,
         nextSyncAt: true,
         syncError: true,
-        syncState: true,
       },
     });
+    const rows = await withProgressState(baseRows);
     demand(
       rows.length === ids.length,
       "Hay cuentas no autorizadas en la selección.",

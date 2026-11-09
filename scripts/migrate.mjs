@@ -33,6 +33,30 @@ try {
         throw new Error("Una migración aplicada fue modificada: " + name);
       continue;
     }
+    if (sql.startsWith("-- @online-index\n")) {
+      const statement = sql.slice("-- @online-index\n".length).trim();
+      const match =
+        /^CREATE INDEX CONCURRENTLY IF NOT EXISTS "([A-Za-z0-9_]+)" ON "[A-Za-z0-9_]+"[^;]*;?$/.exec(
+          statement,
+        );
+      if (!match)
+        throw new Error(
+          "La migración de índice en línea debe contener una sola instrucción CREATE INDEX CONCURRENTLY.",
+        );
+      const index = await client.query(
+        "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relname=$1 AND n.nspname=current_schema()",
+        [match[1]],
+      );
+      if (index.rows[0] && !index.rows[0].indisvalid)
+        await client.query('DROP INDEX CONCURRENTLY "' + match[1] + '"');
+      await client.query(statement);
+      await client.query(
+        "INSERT INTO schema_migrations(name,checksum) VALUES($1,$2)",
+        [name, checksum],
+      );
+      console.log("Índice en línea aplicado: " + name);
+      continue;
+    }
     await client.query("BEGIN");
     try {
       await client.query(sql);
