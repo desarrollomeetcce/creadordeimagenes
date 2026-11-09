@@ -1339,6 +1339,8 @@ export function CoursesAI() {
     [newGroup, setNewGroup] = useState<CourseGroupId>("adults");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
+  const [moduleLoadError, setModuleLoadError] = useState("");
+  const [moduleRetry, setModuleRetry] = useState(0);
   const [groups, setGroups] = useState<LibraryCategory[]>(defaultCategories),
     [libraryOnly, setLibraryOnly] = useState(true),
     [fullGroup, setFullGroup] = useState<CourseGroupId | "">("");
@@ -1505,9 +1507,61 @@ export function CoursesAI() {
       if (mounted.current) setBusy(false);
     }
   }
+  function openModule(mod: Module) {
+    setError("");
+    setModuleLoadError("");
+    setModuleId(mod.id);
+    setPreview(false);
+    setWindow("module");
+  }
+  function removeModule(mod: Module) {
+    if (busyRef.current || working || !course) return;
+    if (
+      !confirm(
+        "¿Eliminar el módulo «" +
+          mod.title +
+          "» y sus materiales? Esta acción no se puede deshacer.",
+      )
+    )
+      return;
+    void run(async () => {
+      const result = await request(
+        "/" + course.id + "/modules/" + mod.id,
+        {
+          revision: course.revision,
+          moduleRevision: mod.revision,
+        },
+        "DELETE",
+      );
+      setResources((prev) => withoutResourceModule(prev, mod.id));
+      setModuleSelection((prev) =>
+        prev === "all" ? prev : prev.filter((id) => id !== mod.id),
+      );
+      setModulePage((p) =>
+        Math.min(
+          p,
+          Math.max(1, Math.ceil((course.modules.length - 1) / moduleSize)),
+        ),
+      );
+      if (moduleId === mod.id) {
+        setWindow(null);
+        setModuleDetail(null);
+        setModuleId("");
+      }
+      await refresh();
+      if (result.cleanupPending)
+        setError(
+          "El módulo se eliminó. Algunos archivos no pudieron liberarse del almacenamiento.",
+        );
+    });
+  }
+  const selectedModules = (course?.modules ?? []).filter(
+    (mod) => moduleSelection === "all" || moduleSelection.includes(mod.id),
+  );
   useEffect(() => {
     if (window !== "module" || !selected || !moduleId) return;
     const ac = new AbortController();
+    setModuleLoadError("");
     setModuleDetail((old) => (old?.id === moduleId ? old : null));
     void request(
       "/" + selected + "/modules/" + moduleId,
@@ -1519,10 +1573,10 @@ export function CoursesAI() {
         if (!ac.signal.aborted) setModuleDetail(m);
       })
       .catch((e) => {
-        if (!ac.signal.aborted) setError(e.message);
+        if (!ac.signal.aborted) setModuleLoadError(e.message);
       });
     return () => ac.abort();
-  }, [window, selected, moduleId, course?.revision]);
+  }, [window, selected, moduleId, course?.revision, moduleRetry]);
   const m = moduleDetail?.id === moduleId ? moduleDetail : null,
     parsed = m ? lessonSchema.safeParse(m.lesson) : null,
     lesson = parsed?.success ? parsed.data : null;
@@ -2002,12 +2056,31 @@ export function CoursesAI() {
                     >
                       Seleccionar esta página
                     </button>
-                    <span>
-                      {moduleSelection === "all"
-                        ? course.modules.length
-                        : moduleSelection.length}{" "}
-                      seleccionados
-                    </span>
+                    <span>{selectedModules.length} seleccionados</span>
+                    <div className="course-module-selection-actions">
+                      <button
+                        type="button"
+                        className="course-primary"
+                        disabled={busy || selectedModules.length !== 1}
+                        onClick={() => openModule(selectedModules[0])}
+                      >
+                        Editar módulo
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          busy || working || selectedModules.length !== 1
+                        }
+                        onClick={() => removeModule(selectedModules[0])}
+                      >
+                        Eliminar módulo
+                      </button>
+                    </div>
+                    {selectedModules.length !== 1 && (
+                      <small>
+                        Elige un solo módulo para editar o eliminar.
+                      </small>
+                    )}
                     <label>
                       Ver por página
                       <select
@@ -2094,63 +2167,16 @@ export function CoursesAI() {
                               <button
                                 type="button"
                                 className="course-primary"
-                                onClick={() => {
-                                  setModuleId(mod.id);
-                                  setPreview(false);
-                                  setWindow("module");
-                                }}
+                                disabled={busy}
+                                onClick={() => openModule(mod)}
                               >
-                                ✎ Editar / ver
+                                ✎ Editar módulo
                               </button>
                               <button
                                 type="button"
                                 disabled={busy || working}
                                 aria-label={"Eliminar módulo " + mod.title}
-                                onClick={() => {
-                                  if (
-                                    !confirm(
-                                      "¿Eliminar el módulo «" +
-                                        mod.title +
-                                        "» y sus materiales? Esta acción no se puede deshacer.",
-                                    )
-                                  )
-                                    return;
-                                  void run(async () => {
-                                    const result = await request(
-                                      "/" + course.id + "/modules/" + mod.id,
-                                      {
-                                        revision: course.revision,
-                                        moduleRevision: mod.revision,
-                                      },
-                                      "DELETE",
-                                    );
-                                    setResources((prev) =>
-                                      withoutResourceModule(prev, mod.id),
-                                    );
-                                    setModuleSelection((prev) =>
-                                      prev === "all"
-                                        ? prev
-                                        : prev.filter((id) => id !== mod.id),
-                                    );
-                                    setModulePage((p) =>
-                                      Math.min(
-                                        p,
-                                        Math.max(
-                                          1,
-                                          Math.ceil(
-                                            (course.modules.length - 1) /
-                                              moduleSize,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                    await refresh();
-                                    if (result.cleanupPending)
-                                      setError(
-                                        "El módulo se eliminó. Algunos archivos no pudieron liberarse del almacenamiento.",
-                                      );
-                                  });
-                                }}
+                                onClick={() => removeModule(mod)}
                               >
                                 Eliminar módulo
                               </button>
@@ -2420,493 +2446,93 @@ export function CoursesAI() {
           />
         </Window>
       )}
-      {window === "module" && m && course && (
-        <Window title={m.title} onClose={() => setWindow(null)}>
-          <div className="course-workbench">
-            <div className="course-workbench-bar">
-              <span className="course-tag">
-                {styleLabels[m.style] ?? styleLabels[course.settings.style]}
-              </span>
+      {window === "module" && course && (
+        <Window
+          title={
+            m?.title ??
+            course.modules.find((mod) => mod.id === moduleId)?.title ??
+            "Editar módulo"
+          }
+          onClose={() => setWindow(null)}
+        >
+          {error && <div className="course-error" role="alert">{error}</div>}
+          {moduleLoadError && (
+            <div className="course-error" role="alert">
+              {moduleLoadError}
               <button
                 type="button"
-                className="course-primary"
-                disabled={busy || working || !course.settings.model}
-                onClick={() => {
-                  if (
-                    lesson &&
-                    !confirm(
-                      "¿Generar una nueva versión de este módulo? La versión actual será reemplazada; el video necesitará nueva voz.",
-                    )
-                  )
-                    return;
-                  void task("LESSON", m);
-                }}
+                onClick={() => setModuleRetry((n) => n + 1)}
               >
-                {lesson
-                  ? "✦ Nueva versión del contenido"
-                  : "✦ Desarrollar módulo"}
+                Reintentar carga
               </button>
-              {lesson && (
-                <button type="button" onClick={() => setPreview(!preview)}>
-                  {preview ? "Ocultar presentación" : "▶ Presentación y video"}
-                </button>
-              )}
             </div>
-            <details open={!lesson}>
-              <summary>Prompt y ajustes del módulo · opcional</summary>
-              <form
-                key={m.id + ":" + m.revision}
-                className="course-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  void run(async () => {
-                    await request(
-                      "/" + course.id + "/modules/" + m.id,
-                      {
-                        revision: m.revision,
-                        data: {
-                          title: f.get("title"),
-                          brief: f.get("brief"),
-                          minutes: Number(f.get("minutes")),
-                          style: f.get("style"),
-                          mixStyles:
-                            f.get("mixStyles") === "inherit"
-                              ? null
-                              : f.get("mixStyles") === "yes",
-                        },
-                      },
-                      "PATCH",
-                    );
-                    await refresh();
-                  });
-                }}
-              >
-                <label>
-                  Título
-                  <input
-                    name="title"
-                    required
-                    defaultValue={m.title}
-                    maxLength={200}
-                  />
-                </label>
-                <label>
-                  Prompt del módulo · opcional
-                  <textarea
-                    name="brief"
-                    rows={4}
-                    maxLength={12000}
-                    defaultValue={m.brief}
-                    placeholder="Indicaciones adicionales para este módulo. Si lo dejas vacío, se usa el prompt general del curso."
-                  />
-                </label>
-                <p className="muted">
-                  Este prompt añade información específica al prompt general.
-                  Los documentos y enlaces se incorporan en Referencias del
-                  curso, a la izquierda; los recursos se eligen a la derecha.
-                </p>
-                <div className="course-grid">
-                  <Select
-                    name="mixStyles"
-                    label="Combinación de formatos"
-                    value={
-                      m.mixStyles == null
-                        ? "inherit"
-                        : m.mixStyles
-                          ? "yes"
-                          : "no"
-                    }
-                    options={[
-                      { value: "inherit", label: "Usar configuración general" },
-                      { value: "yes", label: "Combinar según instrucciones" },
-                      { value: "no", label: "Mantener el estilo elegido" },
-                    ]}
-                  />
-                  <Select
-                    name="style"
-                    label="Estilo"
-                    value={m.style}
-                    options={[
-                      { value: "inherit", label: "Usar estilo general" },
-                      ...styles.map((value) => ({
-                        value,
-                        label: styleLabels[value],
-                      })),
-                    ]}
-                  />
-                  <label>
-                    Minutos objetivo
-                    <input
-                      type="number"
-                      name="minutes"
-                      defaultValue={m.minutes}
-                      required
-                      min={1}
-                      max={60}
-                    />
-                  </label>
-                </div>
-                <button disabled={busy || working}>Guardar ajustes</button>
-                {lesson && (
-                  <p className="muted">
-                    Cambiar instrucciones prepara una nueva versión; vuelve a
-                    desarrollar el contenido para aplicarlas.
-                  </p>
-                )}
-              </form>
-            </details>
-            {lesson && (
-              <>
-                {preview && (
-                  <CoursePlayer
-                    key={m.id + ":" + m.revision}
-                    lesson={lesson}
-                    assets={m.assets}
-                    revision={m.revision}
-                    title={m.title}
-                    resolution={course.settings.exportResolution ?? "720p"}
-                    aspect={course.settings.exportAspect}
-                  />
-                )}
-                <div className="course-toolbar">
-                  <button type="button" onClick={() => void print()}>
-                    PDF / Imprimir
-                  </button>
-                  <a href={exportURL("docx")}>↓ Word</a>
-                  <a href={exportURL("pptx")}>↓ PowerPoint</a>
-                  <a href={exportURL("json")}>↓ Contenido JSON</a>
-                  {lesson.scenes.some((s) => s.columns.length > 0) && (
-                    <a href={exportURL("csv")}>↓ Tablas CSV</a>
-                  )}
-                  {lesson.scenes.some((s) => !!s.code) && (
-                    <a href={exportURL("code")}>↓ Código</a>
-                  )}
-                </div>
-                <details>
-                  <summary>Objetivos y práctica</summary>
-                  <ul>
-                    {lesson.objectives.map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                  </ul>
-                  <p className="course-pre">{lesson.exercise}</p>
-                  <details>
-                    <summary>Ver solución docente</summary>
-                    <p className="course-pre">{lesson.solution}</p>
-                  </details>
-                </details>
-                <div className="course-scenes">
-                  <h3>Escenas · voz e ilustraciones</h3>
+          )}
+          {!m && !moduleLoadError && <p role="status">Cargando módulo…</p>}
+          {m && (
+            <>
+              <div className="course-module-editor-actions">
+                <button
+                  type="button"
+                  disabled={busy || working}
+                  onClick={() => removeModule(m)}
+                >
+                  Eliminar módulo
+                </button>
+              </div>
+              <div className="course-workbench">
+                <div className="course-workbench-bar">
+                  <span className="course-tag">
+                    {styleLabels[m.style] ?? styleLabels[course.settings.style]}
+                  </span>
                   <button
                     type="button"
-                    disabled={
-                      busy ||
-                      working ||
-                      !course.settings.voiceId ||
-                      !course.settings.voiceModel ||
-                      lesson.scenes.every((_, i) =>
-                        m.assets.some(
-                          (a) =>
-                            a.revision === m.revision &&
-                            a.scene === i &&
-                            a.kind === "SPEECH",
-                        ),
+                    className="course-primary"
+                    disabled={busy || working || !course.settings.model}
+                    onClick={() => {
+                      if (
+                        lesson &&
+                        !confirm(
+                          "¿Generar una nueva versión de este módulo? La versión actual será reemplazada; el video necesitará nueva voz.",
+                        )
                       )
-                    }
-                    onClick={() => void batch("SPEECH")}
+                        return;
+                      void task("LESSON", m);
+                    }}
                   >
-                    ♪ Generar voces pendientes
+                    {lesson
+                      ? "✦ Nueva versión del contenido"
+                      : "✦ Desarrollar módulo"}
                   </button>
-                  <p className="muted">
-                    Revisa primero el contenido. Genera una voz por escena para
-                    probarla y luego completa las demás. La duración final
-                    depende del audio, no de los minutos objetivo. Código y
-                    tablas son demostraciones simuladas; no ejecutan programas.
-                  </p>
-                  {lesson.scenes.map((s, i) => {
-                    const audio = m.assets.find(
-                        (a) =>
-                          a.revision === m.revision &&
-                          a.scene === i &&
-                          a.kind === "SPEECH",
-                      ),
-                      image = m.assets.find(
-                        (a) =>
-                          a.revision === m.revision &&
-                          a.scene === i &&
-                          a.kind === "IMAGE",
-                      );
-                    return (
-                      <details key={i}>
-                        <summary>
-                          {i + 1}. {s.title}{" "}
-                          <span className="course-tag">
-                            {styleLabels[s.kind]}
-                          </span>{" "}
-                          {audio ? "♪" : ""}
-                        </summary>
-                        <p className="course-pre">{s.narration}</p>
-                        <ol>
-                          {s.steps.map((s, j) => (
-                            <li key={j}>{s}</li>
-                          ))}
-                        </ol>
-                        <details>
-                          <summary>Corregir esta escena sin IA</summary>
-                          <form
-                            key={m.revision + ":scene:" + i}
-                            className="course-form"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const f = new FormData(e.currentTarget);
-                              void run(async () => {
-                                const next = {
-                                  ...lesson,
-                                  scenes: lesson.scenes.map((old, j) =>
-                                    j === i
-                                      ? {
-                                          ...old,
-                                          title: String(f.get("title")),
-                                          narration: String(f.get("narration")),
-                                          steps: String(f.get("steps"))
-                                            .split("\n")
-                                            .map((x) => x.trim())
-                                            .filter(Boolean),
-                                          code: String(f.get("code")),
-                                        }
-                                      : old,
-                                  ),
-                                };
-                                await request(
-                                  "/" + course.id + "/modules/" + m.id,
-                                  {
-                                    revision: m.revision,
-                                    data: {
-                                      title: m.title,
-                                      brief: m.brief,
-                                      minutes: m.minutes,
-                                      style: m.style,
-                                      mixStyles: m.mixStyles ?? null,
-                                      lesson: next,
-                                    },
-                                  },
-                                  "PATCH",
-                                );
-                                await refresh();
-                              });
-                            }}
-                          >
-                            <label>
-                              Título
-                              <input
-                                name="title"
-                                required
-                                maxLength={180}
-                                defaultValue={s.title}
-                              />
-                            </label>
-                            <label>
-                              Narración
-                              <textarea
-                                name="narration"
-                                rows={5}
-                                required
-                                maxLength={4000}
-                                defaultValue={s.narration}
-                              />
-                            </label>
-                            <label>
-                              Pasos · uno por línea
-                              <textarea
-                                name="steps"
-                                rows={5}
-                                required
-                                defaultValue={s.steps.join("\n")}
-                              />
-                            </label>
-                            <label>
-                              Código, si corresponde
-                              <textarea
-                                name="code"
-                                rows={4}
-                                maxLength={6000}
-                                defaultValue={s.code}
-                              />
-                            </label>
-                            <button disabled={busy || working}>
-                              Guardar corrección · requiere nueva voz
-                            </button>
-                          </form>
-                        </details>
-                        {s.code && <pre>{s.code}</pre>}
-                        {s.columns.length > 0 && (
-                          <div className="course-table-scroll">
-                            <table>
-                              <thead>
-                                <tr>
-                                  {s.columns.map((c, j) => (
-                                    <th key={j}>{c}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {s.rows.map((r, j) => (
-                                  <tr key={j}>
-                                    {r.map((c, k) => (
-                                      <td key={k}>{c}</td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                        <div className="course-toolbar">
-                          {m.assets.find(
-                            (a) =>
-                              a.revision === m.revision &&
-                              a.scene === i &&
-                              a.kind === "VIDEO",
-                          ) ? (
-                            <video
-                              controls
-                              preload="none"
-                              className="course-generated-video"
-                              src={
-                                "/api/courses-ai/assets/" +
-                                m.assets.find(
-                                  (a) =>
-                                    a.revision === m.revision &&
-                                    a.scene === i &&
-                                    a.kind === "VIDEO",
-                                )!.id
-                              }
-                            />
-                          ) : (
-                            <details className="course-video-action">
-                              <summary>
-                                Crear una escena de video con IA
-                              </summary>
-                              <form
-                                onSubmit={(e) => {
-                                  e.preventDefault();
-                                  const f = new FormData(e.currentTarget);
-                                  void task("VIDEO", m, {
-                                    scene: i,
-                                    prompt: String(f.get("prompt")),
-                                  });
-                                }}
-                              >
-                                <label>
-                                  Escena visual
-                                  <textarea
-                                    name="prompt"
-                                    maxLength={4000}
-                                    rows={3}
-                                    required
-                                    defaultValue={
-                                      s.illustrationPrompt ||
-                                      s.title + " — " + s.narration
-                                    }
-                                  />
-                                </label>
-                                <p className="muted">
-                                  Proveedor:{" "}
-                                  {course.settings.videoProvider ?? "gemini"} ·{" "}
-                                  {course.settings.videoModel ||
-                                    "Configura un modelo de video en el programa"}
-                                  . Esta solicitud puede generar un cargo.
-                                </p>
-                                <button
-                                  type="submit"
-                                  disabled={
-                                    busy ||
-                                    working ||
-                                    !course.settings.videoModel
-                                  }
-                                >
-                                  Generar esta escena de video
-                                </button>
-                              </form>
-                            </details>
-                          )}
-                          {audio ? (
-                            <audio
-                              controls
-                              preload="none"
-                              src={"/api/courses-ai/assets/" + audio.id}
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={
-                                busy ||
-                                working ||
-                                !course.settings.voiceId ||
-                                !course.settings.voiceModel
-                              }
-                              onClick={() =>
-                                void task("SPEECH", m, { scene: i })
-                              }
-                            >
-                              ♪ Generar voz
-                            </button>
-                          )}
-                          {s.illustrationPrompt && !image && (
-                            <button
-                              type="button"
-                              disabled={
-                                busy || working || !course.settings.imageModel
-                              }
-                              onClick={() =>
-                                void task("IMAGE", m, { scene: i })
-                              }
-                            >
-                              ✦ Generar ilustración
-                            </button>
-                          )}
-                          {image && (
-                            <a
-                              href={"/api/courses-ai/assets/" + image.id}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Ver ilustración
-                            </a>
-                          )}
-                        </div>
-                      </details>
-                    );
-                  })}
+                  {lesson && (
+                    <button type="button" onClick={() => setPreview(!preview)}>
+                      {preview
+                        ? "Ocultar presentación"
+                        : "▶ Presentación y video"}
+                    </button>
+                  )}
                 </div>
-                <details>
-                  <summary>Editar contenido y narración</summary>
-                  <p className="muted">
-                    El JSON permite corregir pasos, narración, código y tablas
-                    sin consumir IA. Guardar crea una versión y requerirá
-                    generar de nuevo su voz.
-                  </p>
+                <details open={!lesson}>
+                  <summary>Prompt y ajustes del módulo · opcional</summary>
                   <form
-                    key={"lesson:" + m.revision}
+                    key={m.id + ":" + m.revision}
+                    className="course-form"
                     onSubmit={(e) => {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
                       void run(async () => {
-                        const edited = lessonSchema.parse(
-                          JSON.parse(String(f.get("lesson"))),
-                        );
                         await request(
                           "/" + course.id + "/modules/" + m.id,
                           {
                             revision: m.revision,
                             data: {
-                              title: m.title,
-                              brief: m.brief,
-                              minutes: m.minutes,
-                              style: m.style,
-                              mixStyles: m.mixStyles ?? null,
-                              lesson: edited,
+                              title: f.get("title"),
+                              brief: f.get("brief"),
+                              minutes: Number(f.get("minutes")),
+                              style: f.get("style"),
+                              mixStyles:
+                                f.get("mixStyles") === "inherit"
+                                  ? null
+                                  : f.get("mixStyles") === "yes",
                             },
                           },
                           "PATCH",
@@ -2916,77 +2542,444 @@ export function CoursesAI() {
                     }}
                   >
                     <label>
-                      Contenido estructurado
-                      <textarea
-                        name="lesson"
-                        rows={14}
-                        defaultValue={JSON.stringify(lesson, null, 2)}
+                      Título
+                      <input
+                        name="title"
+                        required
+                        defaultValue={m.title}
+                        maxLength={200}
                       />
                     </label>
-                    <button disabled={busy || working}>
-                      Guardar correcciones
-                    </button>
+                    <label>
+                      Prompt del módulo · opcional
+                      <textarea
+                        name="brief"
+                        rows={4}
+                        maxLength={12000}
+                        defaultValue={m.brief}
+                        placeholder="Indicaciones adicionales para este módulo. Si lo dejas vacío, se usa el prompt general del curso."
+                      />
+                    </label>
+                    <p className="muted">
+                      Este prompt añade información específica al prompt
+                      general. Los documentos y enlaces se incorporan en
+                      Referencias del curso, a la izquierda; los recursos se
+                      eligen a la derecha.
+                    </p>
+                    <div className="course-grid">
+                      <Select
+                        name="mixStyles"
+                        label="Combinación de formatos"
+                        value={
+                          m.mixStyles == null
+                            ? "inherit"
+                            : m.mixStyles
+                              ? "yes"
+                              : "no"
+                        }
+                        options={[
+                          {
+                            value: "inherit",
+                            label: "Usar configuración general",
+                          },
+                          {
+                            value: "yes",
+                            label: "Combinar según instrucciones",
+                          },
+                          { value: "no", label: "Mantener el estilo elegido" },
+                        ]}
+                      />
+                      <Select
+                        name="style"
+                        label="Estilo"
+                        value={m.style}
+                        options={[
+                          { value: "inherit", label: "Usar estilo general" },
+                          ...styles.map((value) => ({
+                            value,
+                            label: styleLabels[value],
+                          })),
+                        ]}
+                      />
+                      <label>
+                        Minutos objetivo
+                        <input
+                          type="number"
+                          name="minutes"
+                          defaultValue={m.minutes}
+                          required
+                          min={1}
+                          max={60}
+                        />
+                      </label>
+                    </div>
+                    <button disabled={busy || working}>Guardar ajustes</button>
+                    {lesson && (
+                      <p className="muted">
+                        Cambiar instrucciones prepara una nueva versión; vuelve
+                        a desarrollar el contenido para aplicarlas.
+                      </p>
+                    )}
                   </form>
                 </details>
-              </>
-            )}
-            {m.materials.length > 0 && (
-              <div className="course-materials">
-                <h3>Resultados del módulo</h3>
-                <p className="muted">
-                  Aquí puedes consultar y descargar los materiales creados.
-                  Elige los recursos del módulo en la columna derecha del curso.
-                </p>
-                {m.materials.map((mat) => (
-                  <details key={mat.id}>
-                    <summary>
-                      {labels[mat.kind]} · {mat.title}{" "}
-                      <span className="course-tag">
-                        {mat.content.sections ? "Listo" : "Por generar"}
-                      </span>
-                    </summary>
-                    <p>{mat.instructions}</p>
+                {lesson && (
+                  <>
+                    {preview && (
+                      <CoursePlayer
+                        key={m.id + ":" + m.revision}
+                        lesson={lesson}
+                        assets={m.assets}
+                        revision={m.revision}
+                        title={m.title}
+                        resolution={course.settings.exportResolution ?? "720p"}
+                        aspect={course.settings.exportAspect}
+                      />
+                    )}
+                    <div className="course-toolbar">
+                      <button type="button" onClick={() => void print()}>
+                        PDF / Imprimir
+                      </button>
+                      <a href={exportURL("docx")}>↓ Word</a>
+                      <a href={exportURL("pptx")}>↓ PowerPoint</a>
+                      <a href={exportURL("json")}>↓ Contenido JSON</a>
+                      {lesson.scenes.some((s) => s.columns.length > 0) && (
+                        <a href={exportURL("csv")}>↓ Tablas CSV</a>
+                      )}
+                      {lesson.scenes.some((s) => !!s.code) && (
+                        <a href={exportURL("code")}>↓ Código</a>
+                      )}
+                    </div>
                     <details>
-                      <summary>Editar instrucciones y contenido</summary>
+                      <summary>Objetivos y práctica</summary>
+                      <ul>
+                        {lesson.objectives.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                      <p className="course-pre">{lesson.exercise}</p>
+                      <details>
+                        <summary>Ver solución docente</summary>
+                        <p className="course-pre">{lesson.solution}</p>
+                      </details>
+                    </details>
+                    <div className="course-scenes">
+                      <h3>Escenas · voz e ilustraciones</h3>
+                      <button
+                        type="button"
+                        disabled={
+                          busy ||
+                          working ||
+                          !course.settings.voiceId ||
+                          !course.settings.voiceModel ||
+                          lesson.scenes.every((_, i) =>
+                            m.assets.some(
+                              (a) =>
+                                a.revision === m.revision &&
+                                a.scene === i &&
+                                a.kind === "SPEECH",
+                            ),
+                          )
+                        }
+                        onClick={() => void batch("SPEECH")}
+                      >
+                        ♪ Generar voces pendientes
+                      </button>
+                      <p className="muted">
+                        Revisa primero el contenido. Genera una voz por escena
+                        para probarla y luego completa las demás. La duración
+                        final depende del audio, no de los minutos objetivo.
+                        Código y tablas son demostraciones simuladas; no
+                        ejecutan programas.
+                      </p>
+                      {lesson.scenes.map((s, i) => {
+                        const audio = m.assets.find(
+                            (a) =>
+                              a.revision === m.revision &&
+                              a.scene === i &&
+                              a.kind === "SPEECH",
+                          ),
+                          image = m.assets.find(
+                            (a) =>
+                              a.revision === m.revision &&
+                              a.scene === i &&
+                              a.kind === "IMAGE",
+                          );
+                        return (
+                          <details key={i}>
+                            <summary>
+                              {i + 1}. {s.title}{" "}
+                              <span className="course-tag">
+                                {styleLabels[s.kind]}
+                              </span>{" "}
+                              {audio ? "♪" : ""}
+                            </summary>
+                            <p className="course-pre">{s.narration}</p>
+                            <ol>
+                              {s.steps.map((s, j) => (
+                                <li key={j}>{s}</li>
+                              ))}
+                            </ol>
+                            <details>
+                              <summary>Corregir esta escena sin IA</summary>
+                              <form
+                                key={m.revision + ":scene:" + i}
+                                className="course-form"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const f = new FormData(e.currentTarget);
+                                  void run(async () => {
+                                    const next = {
+                                      ...lesson,
+                                      scenes: lesson.scenes.map((old, j) =>
+                                        j === i
+                                          ? {
+                                              ...old,
+                                              title: String(f.get("title")),
+                                              narration: String(
+                                                f.get("narration"),
+                                              ),
+                                              steps: String(f.get("steps"))
+                                                .split("\n")
+                                                .map((x) => x.trim())
+                                                .filter(Boolean),
+                                              code: String(f.get("code")),
+                                            }
+                                          : old,
+                                      ),
+                                    };
+                                    await request(
+                                      "/" + course.id + "/modules/" + m.id,
+                                      {
+                                        revision: m.revision,
+                                        data: {
+                                          title: m.title,
+                                          brief: m.brief,
+                                          minutes: m.minutes,
+                                          style: m.style,
+                                          mixStyles: m.mixStyles ?? null,
+                                          lesson: next,
+                                        },
+                                      },
+                                      "PATCH",
+                                    );
+                                    await refresh();
+                                  });
+                                }}
+                              >
+                                <label>
+                                  Título
+                                  <input
+                                    name="title"
+                                    required
+                                    maxLength={180}
+                                    defaultValue={s.title}
+                                  />
+                                </label>
+                                <label>
+                                  Narración
+                                  <textarea
+                                    name="narration"
+                                    rows={5}
+                                    required
+                                    maxLength={4000}
+                                    defaultValue={s.narration}
+                                  />
+                                </label>
+                                <label>
+                                  Pasos · uno por línea
+                                  <textarea
+                                    name="steps"
+                                    rows={5}
+                                    required
+                                    defaultValue={s.steps.join("\n")}
+                                  />
+                                </label>
+                                <label>
+                                  Código, si corresponde
+                                  <textarea
+                                    name="code"
+                                    rows={4}
+                                    maxLength={6000}
+                                    defaultValue={s.code}
+                                  />
+                                </label>
+                                <button disabled={busy || working}>
+                                  Guardar corrección · requiere nueva voz
+                                </button>
+                              </form>
+                            </details>
+                            {s.code && <pre>{s.code}</pre>}
+                            {s.columns.length > 0 && (
+                              <div className="course-table-scroll">
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      {s.columns.map((c, j) => (
+                                        <th key={j}>{c}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {s.rows.map((r, j) => (
+                                      <tr key={j}>
+                                        {r.map((c, k) => (
+                                          <td key={k}>{c}</td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            <div className="course-toolbar">
+                              {m.assets.find(
+                                (a) =>
+                                  a.revision === m.revision &&
+                                  a.scene === i &&
+                                  a.kind === "VIDEO",
+                              ) ? (
+                                <video
+                                  controls
+                                  preload="none"
+                                  className="course-generated-video"
+                                  src={
+                                    "/api/courses-ai/assets/" +
+                                    m.assets.find(
+                                      (a) =>
+                                        a.revision === m.revision &&
+                                        a.scene === i &&
+                                        a.kind === "VIDEO",
+                                    )!.id
+                                  }
+                                />
+                              ) : (
+                                <details className="course-video-action">
+                                  <summary>
+                                    Crear una escena de video con IA
+                                  </summary>
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      const f = new FormData(e.currentTarget);
+                                      void task("VIDEO", m, {
+                                        scene: i,
+                                        prompt: String(f.get("prompt")),
+                                      });
+                                    }}
+                                  >
+                                    <label>
+                                      Escena visual
+                                      <textarea
+                                        name="prompt"
+                                        maxLength={4000}
+                                        rows={3}
+                                        required
+                                        defaultValue={
+                                          s.illustrationPrompt ||
+                                          s.title + " — " + s.narration
+                                        }
+                                      />
+                                    </label>
+                                    <p className="muted">
+                                      Proveedor:{" "}
+                                      {course.settings.videoProvider ??
+                                        "gemini"}{" "}
+                                      ·{" "}
+                                      {course.settings.videoModel ||
+                                        "Configura un modelo de video en el programa"}
+                                      . Esta solicitud puede generar un cargo.
+                                    </p>
+                                    <button
+                                      type="submit"
+                                      disabled={
+                                        busy ||
+                                        working ||
+                                        !course.settings.videoModel
+                                      }
+                                    >
+                                      Generar esta escena de video
+                                    </button>
+                                  </form>
+                                </details>
+                              )}
+                              {audio ? (
+                                <audio
+                                  controls
+                                  preload="none"
+                                  src={"/api/courses-ai/assets/" + audio.id}
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={
+                                    busy ||
+                                    working ||
+                                    !course.settings.voiceId ||
+                                    !course.settings.voiceModel
+                                  }
+                                  onClick={() =>
+                                    void task("SPEECH", m, { scene: i })
+                                  }
+                                >
+                                  ♪ Generar voz
+                                </button>
+                              )}
+                              {s.illustrationPrompt && !image && (
+                                <button
+                                  type="button"
+                                  disabled={
+                                    busy ||
+                                    working ||
+                                    !course.settings.imageModel
+                                  }
+                                  onClick={() =>
+                                    void task("IMAGE", m, { scene: i })
+                                  }
+                                >
+                                  ✦ Generar ilustración
+                                </button>
+                              )}
+                              {image && (
+                                <a
+                                  href={"/api/courses-ai/assets/" + image.id}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Ver ilustración
+                                </a>
+                              )}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                    <details>
+                      <summary>Editar contenido y narración</summary>
+                      <p className="muted">
+                        El JSON permite corregir pasos, narración, código y
+                        tablas sin consumir IA. Guardar crea una versión y
+                        requerirá generar de nuevo su voz.
+                      </p>
                       <form
-                        key={mat.id + ":" + mat.revision}
-                        className="course-form"
+                        key={"lesson:" + m.revision}
                         onSubmit={(e) => {
                           e.preventDefault();
                           const f = new FormData(e.currentTarget);
                           void run(async () => {
+                            const edited = lessonSchema.parse(
+                              JSON.parse(String(f.get("lesson"))),
+                            );
                             await request(
-                              "/" +
-                                course.id +
-                                "/modules/" +
-                                m.id +
-                                "/materials/" +
-                                mat.id,
+                              "/" + course.id + "/modules/" + m.id,
                               {
-                                revision: mat.revision,
+                                revision: m.revision,
                                 data: {
-                                  title: f.get("title"),
-                                  kind: f.get("kind"),
-                                  instructions: f.get("instructions"),
-                                  ...(mat.content.sections
-                                    ? {
-                                        content: {
-                                          sections: mat.content.sections.map(
-                                            (old, i) => ({
-                                              title: String(
-                                                f.get("sectionTitle" + i),
-                                              ),
-                                              body: String(
-                                                f.get("sectionBody" + i),
-                                              ),
-                                            }),
-                                          ),
-                                          answerKey: String(
-                                            f.get("answerKey") ?? "",
-                                          ),
-                                        },
-                                      }
-                                    : {}),
+                                  title: m.title,
+                                  brief: m.brief,
+                                  minutes: m.minutes,
+                                  style: m.style,
+                                  mixStyles: m.mixStyles ?? null,
+                                  lesson: edited,
                                 },
                               },
                               "PATCH",
@@ -2996,130 +2989,220 @@ export function CoursesAI() {
                         }}
                       >
                         <label>
-                          Nombre
-                          <input
-                            name="title"
-                            required
-                            maxLength={200}
-                            defaultValue={mat.title}
-                          />
-                        </label>
-                        <Select
-                          name="kind"
-                          label="Tipo"
-                          value={mat.kind}
-                          options={[
-                            "guide",
-                            "book",
-                            "workshop",
-                            "exam",
-                            "slides",
-                          ].map((value) => ({ value, label: labels[value] }))}
-                        />
-                        <label>
-                          Indicaciones del recurso
+                          Contenido estructurado
                           <textarea
-                            name="instructions"
-                            maxLength={8000}
-                            defaultValue={mat.instructions}
+                            name="lesson"
+                            rows={14}
+                            defaultValue={JSON.stringify(lesson, null, 2)}
                           />
                         </label>
-                        {mat.content.sections?.map((s, i) => (
-                          <fieldset key={i}>
-                            <legend>Sección {i + 1}</legend>
-                            <label>
-                              Título
-                              <input
-                                name={"sectionTitle" + i}
-                                required
-                                maxLength={200}
-                                defaultValue={s.title}
-                              />
-                            </label>
-                            <label>
-                              Contenido
-                              <textarea
-                                rows={7}
-                                name={"sectionBody" + i}
-                                maxLength={16000}
-                                defaultValue={s.body}
-                              />
-                            </label>
-                          </fieldset>
-                        ))}
-                        {mat.content.sections && (
-                          <label>
-                            Solucionario del docente
-                            <textarea
-                              name="answerKey"
-                              maxLength={16000}
-                              rows={4}
-                              defaultValue={mat.content.answerKey ?? ""}
-                            />
-                          </label>
-                        )}
                         <button disabled={busy || working}>
-                          Guardar material · sin consumir IA
+                          Guardar correcciones
                         </button>
                       </form>
                     </details>
-                    <div className="course-toolbar">
-                      <button
-                        type="button"
-                        disabled={busy || working || !course.settings.model}
-                        onClick={() => {
-                          if (
-                            mat.content.sections &&
-                            !confirm("¿Volver a generar este material?")
-                          )
-                            return;
-                          void task("MATERIAL", m, { materialId: mat.id });
-                        }}
-                      >
-                        ✦{" "}
-                        {mat.content.sections
-                          ? "Regenerar"
-                          : "Generar material"}
-                      </button>
-                      {mat.content.sections && (
-                        <>
+                  </>
+                )}
+                {m.materials.length > 0 && (
+                  <div className="course-materials">
+                    <h3>Resultados del módulo</h3>
+                    <p className="muted">
+                      Aquí puedes consultar y descargar los materiales creados.
+                      Elige los recursos del módulo en la columna derecha del
+                      curso.
+                    </p>
+                    {m.materials.map((mat) => (
+                      <details key={mat.id}>
+                        <summary>
+                          {labels[mat.kind]} · {mat.title}{" "}
+                          <span className="course-tag">
+                            {mat.content.sections ? "Listo" : "Por generar"}
+                          </span>
+                        </summary>
+                        <p>{mat.instructions}</p>
+                        <details>
+                          <summary>Editar instrucciones y contenido</summary>
+                          <form
+                            key={mat.id + ":" + mat.revision}
+                            className="course-form"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const f = new FormData(e.currentTarget);
+                              void run(async () => {
+                                await request(
+                                  "/" +
+                                    course.id +
+                                    "/modules/" +
+                                    m.id +
+                                    "/materials/" +
+                                    mat.id,
+                                  {
+                                    revision: mat.revision,
+                                    data: {
+                                      title: f.get("title"),
+                                      kind: f.get("kind"),
+                                      instructions: f.get("instructions"),
+                                      ...(mat.content.sections
+                                        ? {
+                                            content: {
+                                              sections:
+                                                mat.content.sections.map(
+                                                  (old, i) => ({
+                                                    title: String(
+                                                      f.get("sectionTitle" + i),
+                                                    ),
+                                                    body: String(
+                                                      f.get("sectionBody" + i),
+                                                    ),
+                                                  }),
+                                                ),
+                                              answerKey: String(
+                                                f.get("answerKey") ?? "",
+                                              ),
+                                            },
+                                          }
+                                        : {}),
+                                    },
+                                  },
+                                  "PATCH",
+                                );
+                                await refresh();
+                              });
+                            }}
+                          >
+                            <label>
+                              Nombre
+                              <input
+                                name="title"
+                                required
+                                maxLength={200}
+                                defaultValue={mat.title}
+                              />
+                            </label>
+                            <Select
+                              name="kind"
+                              label="Tipo"
+                              value={mat.kind}
+                              options={[
+                                "guide",
+                                "book",
+                                "workshop",
+                                "exam",
+                                "slides",
+                              ].map((value) => ({
+                                value,
+                                label: labels[value],
+                              }))}
+                            />
+                            <label>
+                              Indicaciones del recurso
+                              <textarea
+                                name="instructions"
+                                maxLength={8000}
+                                defaultValue={mat.instructions}
+                              />
+                            </label>
+                            {mat.content.sections?.map((s, i) => (
+                              <fieldset key={i}>
+                                <legend>Sección {i + 1}</legend>
+                                <label>
+                                  Título
+                                  <input
+                                    name={"sectionTitle" + i}
+                                    required
+                                    maxLength={200}
+                                    defaultValue={s.title}
+                                  />
+                                </label>
+                                <label>
+                                  Contenido
+                                  <textarea
+                                    rows={7}
+                                    name={"sectionBody" + i}
+                                    maxLength={16000}
+                                    defaultValue={s.body}
+                                  />
+                                </label>
+                              </fieldset>
+                            ))}
+                            {mat.content.sections && (
+                              <label>
+                                Solucionario del docente
+                                <textarea
+                                  name="answerKey"
+                                  maxLength={16000}
+                                  rows={4}
+                                  defaultValue={mat.content.answerKey ?? ""}
+                                />
+                              </label>
+                            )}
+                            <button disabled={busy || working}>
+                              Guardar material · sin consumir IA
+                            </button>
+                          </form>
+                        </details>
+                        <div className="course-toolbar">
                           <button
                             type="button"
-                            onClick={() => void print(mat.id)}
+                            disabled={busy || working || !course.settings.model}
+                            onClick={() => {
+                              if (
+                                mat.content.sections &&
+                                !confirm("¿Volver a generar este material?")
+                              )
+                                return;
+                              void task("MATERIAL", m, { materialId: mat.id });
+                            }}
                           >
-                            PDF / Imprimir
+                            ✦{" "}
+                            {mat.content.sections
+                              ? "Regenerar"
+                              : "Generar material"}
                           </button>
-                          <a href={exportURL("docx", mat.id)}>↓ Word</a>
-                          {mat.kind === "slides" && (
-                            <a href={exportURL("pptx", mat.id)}>↓ PowerPoint</a>
+                          {mat.content.sections && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void print(mat.id)}
+                              >
+                                PDF / Imprimir
+                              </button>
+                              <a href={exportURL("docx", mat.id)}>↓ Word</a>
+                              {mat.kind === "slides" && (
+                                <a href={exportURL("pptx", mat.id)}>
+                                  ↓ PowerPoint
+                                </a>
+                              )}
+                              {mat.content.answerKey && (
+                                <button
+                                  type="button"
+                                  onClick={() => void print(mat.id, true)}
+                                >
+                                  PDF con solucionario
+                                </button>
+                              )}
+                            </>
                           )}
-                          {mat.content.answerKey && (
-                            <button
-                              type="button"
-                              onClick={() => void print(mat.id, true)}
-                            >
-                              PDF con solucionario
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {mat.content.sections?.map((s, i) => (
-                      <section key={i}>
-                        <h4>{s.title}</h4>
-                        <p className="course-pre">{s.body}</p>
-                      </section>
+                        </div>
+                        {mat.content.sections?.map((s, i) => (
+                          <section key={i}>
+                            <h4>{s.title}</h4>
+                            <p className="course-pre">{s.body}</p>
+                          </section>
+                        ))}
+                      </details>
                     ))}
-                  </details>
-                ))}
+                  </div>
+                )}
+                {working && (
+                  <p role="status" className="course-status">
+                    ◌ Hay una generación en curso. Puedes minimizar esta
+                    ventana.
+                  </p>
+                )}
               </div>
-            )}
-            {working && (
-              <p role="status" className="course-status">
-                ◌ Hay una generación en curso. Puedes minimizar esta ventana.
-              </p>
-            )}
-          </div>
+            </>
+          )}
         </Window>
       )}
     </section>

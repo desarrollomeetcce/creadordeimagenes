@@ -161,3 +161,10 @@ Cada clip conserva guion/voz y permite reproducción y exportación local con el
 Plan y activos propios en AICoursePromo/AICoursePromoAsset, migraciones aditivas005(referencias tipo/revisión) y006(clips). Workflow secuencial, máximo2 llamadas globales/1curso, idempotencia y snapshots de credenciales; permisos/clave se revalidan antes de llamar/publicar. Cola pública no admite tareas internas de clip. Detener conserva resultados y espera lo ya enviado; error/cargo incierto no produce reintento automático. No hay generación desde GET/poll. Borrar un módulo elimina sus avances/archivos, conservando tráileres globales e historial.
 
 Documentación consultada: [Google, modelos de imagen/Nano Banana](https://ai.google.dev/gemini-api/docs/image-generation), [Mistral](https://docs.mistral.ai/api/endpoint/chat), [Cartesia TTS](https://docs.cartesia.ai/api-reference/tts/bytes). OpenAI [retiró Videos API/Sora el24/09/2026](https://developers.openai.com/api/docs/deprecations); no se ofrece como integración operativa. Google/fal.ai mantienen las opciones de escenas compatibles con cuenta/esquema. Suscripción de chat y saldo/API son conceptos distintos.
+
+
+## Editar y eliminar módulos
+
+Cada tarjeta dispone de **Editar módulo** y **Eliminar módulo**. También puedes desmarcar Todos los módulos, seleccionar uno y utilizar las mismas acciones junto al contador. Las selecciones múltiples siguen sirviendo para generar recursos y no eliminan varios módulos de una vez.
+
+El editor abre con indicador de carga y ofrece Reintentar carga si falla la lectura. Permite guardar título, instrucciones y duración sin generar IA; los controles de contenido desarrollado siguen disponibles. Eliminar pide confirmación y afecta solo a ese módulo y sus materiales, respetando revisiones y bloqueos por trabajos activos o inciertos.
