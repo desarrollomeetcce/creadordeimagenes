@@ -1500,6 +1500,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
         </aside>
         <section
           className="studio-pane studio-canvas"
+          data-campaign-field="items"
           aria-label="Afiches del producto"
         >
           <header className="studio-pane-title">

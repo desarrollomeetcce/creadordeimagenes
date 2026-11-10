@@ -346,7 +346,10 @@ export function StudioCampaignAudience({
     }
   }
   return (
-    <article className="studio-audience-card">
+    <article
+      className="studio-audience-card"
+      data-campaign-audience-index={index}
+    >
       <header>
         <span className="studio-stage-number">{index + 1}</span>
         <strong>

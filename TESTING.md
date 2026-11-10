@@ -2799,3 +2799,10 @@ Chromium verifica cinco flujos: Crear campaña primero y fichas CO2/PE1/PY1 en l
 - npm test:321 aprobadas; typecheck y build producción aprobados (/tmp/course-module-build.txt).
 - Chromium1500×1000/390×844 con curso sintético de3 módulos en delivery_qa: seleccionar1 habilita acciones; fallo GET503 simulado tras600ms muestra ventana/carga/error y Reintentar obtiene datos reales. PATCH de título/brief/minutos se verifica en SQL y tarjeta; revisión obsoleta409 sin sobrescribir. Cancelar confirmación conserva3; aceptar elimina solo el elegido y reordena posiciones0/1. Edición directa por tarjeta y eliminación dentro del editor dejan1 módulo y cierran ventana. Sin erroresJS, POST de tareas/builds/promos ni AICourseTask creado; no IA/cargos. Evidencia /tmp/course-module-browser.txt y capturas /tmp/course-module-desktop.png, /tmp/course-module-mobile.png.
 - Sin nueva migración ni API; se conservan autorización OWNER y guardas existentes de trabajo activo/incierto. El VPS/reinicio productivo no fue verificado.
+
+
+## 10/11 — Validación de campañas por campo
+
+Proyectos conserva y presenta los campos devueltos por el servidor en errores de preparación. Resumen en español con enlaces, marcas rojas y aria-invalid/describedby, apertura de secciones y configuraciones guardadas, foco al control exacto (incluye edad de cada público), navegación a recursos desde vista maximizada y limpieza al editar o iniciar otra campaña. No cambia las reglas de Meta ni omite validación.
+
+Verificación: 331 pruebas generales y 24 pruebas dirigidas; typecheck/build y Chromium sintético en escritorio/móvil para error remoto estructurado, traducción y navegación a Público 1/edad máxima y Texto principal. El POST de preparación se intercepta y no crea campañas ni hace llamadas pagadas. No se verificó el dato que falla en la campaña real del usuario ni el despliegue productivo.

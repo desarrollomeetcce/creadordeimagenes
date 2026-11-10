@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { groupAvailabilityLabels } from "../../lib/meta-ads/inventory-group-availability";
+import { StudioRequestError } from "../../lib/creative-studio/campaign-validation";
 import { financialRequest } from "./financial-request";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import { countryOptions } from "../../lib/meta-ads/countries";
@@ -22,7 +23,11 @@ export async function studioRequest(
     body: body ? JSON.stringify(body) : undefined,
   });
   const b = await r.json();
-  if (!r.ok) throw Error(b.error ?? "No se pudo completar la operación.");
+  if (!r.ok)
+    throw new StudioRequestError(
+      b.error ?? "No se pudo completar la operación.",
+      b.fields,
+    );
   return b;
 }
 export function InventoryMetaPicker({

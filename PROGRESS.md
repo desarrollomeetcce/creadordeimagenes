@@ -3115,3 +3115,10 @@ Multianunciante deja de ser una casilla forzada deshabilitada: defaultfalse y ac
 Se incorporaron acciones Editar módulo y Eliminar módulo junto al contador de selección; se habilitan con un único módulo seleccionado. Las casillas múltiples conservan su función para generación. Cada tarjeta mantiene acciones directas y el diseño se adapta al ancho real de la columna, ubicándolas debajo cuando no caben a la derecha.
 
 El editor ahora abre inmediatamente y muestra carga; un GET fallido queda dentro de la ventana con Reintentar carga, en vez de no abrir nada hasta tener datos. Lecturas canceladas/obsoletas se ignoran como antes. Edición de título/brief/minutos y contenido usa PATCH con revisión existente; errores de guardado se ven también en ventana. Eliminar desde selección/tarjeta/editor comparte la operación validada existente, con confirmación, revisión de curso y módulo, bloqueo de trabajos activos/inciertos y actualización de selección/recursos/paginación. El editor se cierra al eliminar su módulo. Sin cambios de API, permisos, persistencia SQL ni llamadas de IA.
+
+
+## 10/11 — Validación de campañas por campo
+
+Proyectos conserva y presenta los campos devueltos por el servidor en errores de preparación. Resumen en español con enlaces, marcas rojas y aria-invalid/describedby, apertura de secciones y configuraciones guardadas, foco al control exacto (incluye edad de cada público), navegación a recursos desde vista maximizada y limpieza al editar o iniciar otra campaña. No cambia las reglas de Meta ni omite validación.
+
+Verificación: 331 pruebas generales y 24 pruebas dirigidas; typecheck/build y Chromium sintético en escritorio/móvil para error remoto estructurado, traducción y navegación a Público 1/edad máxima y Texto principal. El POST de preparación se intercepta y no crea campañas ni hace llamadas pagadas. No se verificó el dato que falla en la campaña real del usuario ni el despliegue productivo.

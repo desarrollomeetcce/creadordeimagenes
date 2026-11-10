@@ -13,6 +13,9 @@ const StudioMaxContext = createContext<{
   maximized: string;
   setMaximized: (value: string) => void;
 }>({ maximized: "", setMaximized: () => {} });
+export function useStudioColumns() {
+  return useContext(StudioMaxContext);
+}
 export function StudioMaximize({
   pane,
   label,

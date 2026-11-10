@@ -981,3 +981,44 @@
 .studio-configuration-status{font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0}.studio-choice-switch.has-configuration:has(.studio-configuration-selected){grid-template-columns:minmax(0,1fr)}.studio-choice-switch.has-configuration:has(.studio-configuration-selected)>button{display:none}.studio-configuration-selected .search-select-input input{border-color:var(--accent)}
 
 .studio-configuration-status{padding:2px 5px;border-radius:4px;background:#2cc6a317;color:var(--accent);font-weight:600}
+
+.studio-validation-summary ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.studio-validation-summary li + li {
+  margin-top: 6px;
+}
+.studio-validation-summary li button {
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.studio-validation-summary li button:focus-visible {
+  outline: 2px solid #ff9aab;
+  outline-offset: 3px;
+}
+.studio-field-invalid {
+  outline: 2px solid #e15b70 !important;
+  outline-offset: 3px;
+  border-radius: 7px;
+}
+.studio-field-invalid input,
+.studio-field-invalid select,
+.studio-field-invalid textarea {
+  border-color: #e15b70 !important;
+}
+.studio-stage-invalid {
+  border-color: #e15b70 !important;
+}
+.studio-stage-invalid > summary::after {
+  content: "Revisar";
+  color: #f18a99;
+  font-size: 11px;
+  margin-left: auto;
+}

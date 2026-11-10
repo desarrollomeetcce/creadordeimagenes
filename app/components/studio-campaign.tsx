@@ -1,10 +1,22 @@
 "use client";
 import { useContext, useEffect, useRef, useState } from "react";
+import {
+  StudioRequestError,
+  campaignFieldPath,
+  campaignProblemLabel,
+  campaignProblemMessage,
+  campaignMessageProblem,
+  type CampaignFieldProblem,
+} from "../../lib/creative-studio/campaign-validation";
 import { CurrentUserId } from "./role-guide";
 import { metaPageWhatsAppNumber } from "../../lib/creative-studio/page-whatsapp";
 import { StudioCampaignHistory } from "./studio-campaign-history";
 import { StudioPagePicker } from "./studio-page-picker";
-import { StudioMaximize, StudioRestore } from "./studio-columns";
+import {
+  StudioMaximize,
+  StudioRestore,
+  useStudioColumns,
+} from "./studio-columns";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   campaignText,
@@ -123,6 +135,14 @@ export function StudioCampaign({
   onRestore: (items: CampaignItem[]) => void;
 }) {
   const userId = useContext(CurrentUserId);
+  const { setMaximized } = useStudioColumns();
+  const validationRoot = useRef<HTMLElement>(null);
+  const validationSummary = useRef<HTMLDivElement>(null);
+  const validationAnnounce = useRef(false);
+  const [fieldProblems, setFieldProblems] = useState<CampaignFieldProblem[]>(
+    [],
+  );
+
   const [mode, setMode] = useState<"TRADITIONAL" | "AI">(
       workspaceState?.mode ?? "TRADITIONAL",
     ),
@@ -376,6 +396,7 @@ export function StudioCampaign({
   useEffect(() => {
     if (lastCategory.current === categoryId) return;
     lastCategory.current = categoryId;
+    setFieldProblems([]);
     setDraft(null);
     setReview(false);
     setError("");
@@ -904,6 +925,7 @@ export function StudioCampaign({
   const leavingBlocked =
     busy || aiBusy || (draft?.status === "PUBLISHING" && !halted);
   function closeNotice() {
+    setFieldProblems([]);
     try {
       const id = draft?.id ?? latestLaunchId;
       if (id) {
@@ -996,11 +1018,162 @@ export function StudioCampaign({
       setBusy(false);
     }
   }
+  function problemTarget(problem: CampaignFieldProblem): HTMLElement | null {
+    const path = campaignFieldPath(problem.field),
+      root = path.split(".")[0];
+    const labels: Record<string, string> = {
+      accountId: "Cuenta publicitaria principal",
+      pageId: "Buscar página de Facebook",
+      country: "País de la campaña",
+      dailyBudget: "Presupuesto diario por campaña",
+      adsetDailyBudget: "Presupuesto diario por conjunto",
+      campaignName: "Nombre de campaña",
+      objective: "Objetivo de campaña",
+      body: "Texto principal",
+      headline: "Headline del anuncio",
+      description: "Descripción del anuncio",
+      website: "Página web de destino",
+      leadFormId: "Formulario de clientes potenciales",
+      conversation: "Plantilla de conversación",
+      beneficiary: "Beneficiario",
+      payor: "Pagador",
+      specialCategory: "Categoría publicitaria",
+      targetStatus: "Estado de publicación",
+    };
+    const parts = path.split(".");
+    let label =
+      root === "dailyBudget" && form.existingCampaignId
+        ? labels.adsetDailyBudget
+        : labels[root];
+    if (root === "audiences" && /^\d+$/.test(parts[1] ?? "")) {
+      const audienceLabels: Record<string, string> = {
+        ageMin: "Edad mínima del público",
+        ageMax: "Edad máxima del público",
+        name: "Nombre del conjunto",
+        gender: "Género del público",
+      };
+      if (audienceLabels[parts[2]])
+        label = audienceLabels[parts[2]] + " " + (Number(parts[1]) + 1);
+    }
+    if (label) {
+      const control = [
+        ...(validationRoot.current?.querySelectorAll<HTMLElement>(
+          "[aria-label]",
+        ) ?? []),
+      ].find((el) => el.getAttribute("aria-label") === label);
+      if (control) return control;
+    }
+    if (root === "audiences" && /^\d+$/.test(parts[1] ?? "")) {
+      const card = validationRoot.current?.querySelector<HTMLElement>(
+        `[data-campaign-audience-index="${parts[1]}"]`,
+      );
+      if (card) return card;
+    }
+    if (root === "items" || root === "categoryId")
+      return document.querySelector<HTMLElement>(
+        '[data-campaign-field="items"]',
+      );
+    const group = ["platforms", "placements"].includes(root)
+      ? "placements"
+      : [
+            "audiences",
+            "distribution",
+            "existingAdsetId",
+            "existingAdsetIds",
+          ].includes(root)
+        ? "audiences"
+        : ["beneficiary", "payor", "specialCategory"].includes(root)
+          ? "legal"
+          : ["body", "headline", "description", "conversation"].includes(root)
+            ? mode === "AI"
+              ? "ai"
+              : "ads"
+            : root === "ai"
+              ? "ai"
+              : "campaign";
+    return (
+      validationRoot.current?.querySelector<HTMLElement>(
+        `[data-campaign-field="${group}"]`,
+      ) ?? validationRoot.current
+    );
+  }
+  function goToProblem(problem: CampaignFieldProblem) {
+    if (
+      ["items", "categoryId"].includes(
+        campaignFieldPath(problem.field).split(".")[0],
+      )
+    )
+      setMaximized("");
+    campaignConfiguration.setEditing(true);
+    adConfiguration.setEditing(true);
+    requestAnimationFrame(() => {
+      const target = problemTarget(problem);
+      if (!target) return;
+      for (
+        let node: HTMLElement | null = target;
+        node;
+        node = node.parentElement
+      ) {
+        if (node instanceof HTMLDetailsElement) node.open = true;
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const focus = target.matches("input,select,textarea,button,[tabindex]")
+        ? target
+        : target.querySelector<HTMLElement>(
+            "input:not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled])",
+          );
+      if (focus) focus.focus({ preventScroll: true });
+      else {
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
+    });
+  }
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    fieldProblems.forEach((problem, index) => {
+      const target = problemTarget(problem);
+      if (!target) return;
+      const box = target.closest<HTMLElement>("label") ?? target;
+      box.classList.add("studio-field-invalid");
+      const previous = target.getAttribute("aria-invalid"),
+        described = target.getAttribute("aria-describedby");
+      target.setAttribute("aria-invalid", "true");
+      target.setAttribute(
+        "aria-describedby",
+        [described, `campaign-issue-${index}`].filter(Boolean).join(" "),
+      );
+      const stage = target.closest("details");
+      stage?.classList.add("studio-stage-invalid");
+      cleanups.push(() => {
+        box.classList.remove("studio-field-invalid");
+        stage?.classList.remove("studio-stage-invalid");
+        if (previous === null) target.removeAttribute("aria-invalid");
+        else target.setAttribute("aria-invalid", previous);
+        if (described === null) target.removeAttribute("aria-describedby");
+        else target.setAttribute("aria-describedby", described);
+      });
+    });
+    if (fieldProblems.length && validationAnnounce.current) {
+      validationAnnounce.current = false;
+      validationSummary.current?.focus({ preventScroll: true });
+      validationSummary.current?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    }
+    return () => cleanups.reverse().forEach((cleanup) => cleanup());
+  }, [
+    fieldProblems,
+    campaignConfiguration.collapsed,
+    adConfiguration.collapsed,
+  ]);
   async function prepare(open: boolean) {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setError("");
+    setFieldProblems([]);
     try {
       if (
         mode === "AI" &&
@@ -1013,30 +1186,21 @@ export function StudioCampaign({
         planVersion: 2,
       });
       if (!checked.success) {
-        const names: Record<string, string> = {
-          dailyBudget: "presupuesto",
-          pageId: "página de Facebook",
-          accountId: "cuenta publicitaria",
-          country: "país de destino",
-          body: "texto principal",
-          headline: "headline",
-          audiences: "públicos y cantidad de conjuntos",
-          platforms: "plataformas",
-          existingAdsetIds: "conjuntos existentes",
-          conversation: "plantilla de conversación",
-        };
-        throw Error(
-          "Revisa: " +
-            [
-              ...new Set(
-                checked.error.issues.map(
-                  (i) => names[String(i.path[0])] ?? String(i.path[0]),
-                ),
-              ),
-            ].join(", ") +
-            ".",
+        throw new StudioRequestError(
+          "Corrige los campos indicados para continuar.",
+          checked.error.issues.map((issue) => ({
+            field: issue.path.join("."),
+            message: issue.message,
+          })),
         );
       }
+      if (!checked.data.existingCampaignId && checked.data.dailyBudget <= 0)
+        throw new StudioRequestError("Indica el presupuesto de la campaña.", [
+          {
+            field: "dailyBudget",
+            message: "Indica un presupuesto mayor que cero.",
+          },
+        ]);
       if (!items.length)
         throw Error("Selecciona los afiches de este diplomado.");
       items.forEach((i) => {
@@ -1057,7 +1221,35 @@ export function StudioCampaign({
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "No se pudo preparar la campaña.";
-      setError(message);
+      const fields =
+        e instanceof StudioRequestError && e.fields.length
+          ? e.fields
+          : [campaignMessageProblem(message)].filter(
+              (p): p is CampaignFieldProblem => !!p,
+            );
+      if (
+        fields.some((p) =>
+          /^(campaignName|objective|platforms|placements|website|leadFormId)/.test(
+            campaignFieldPath(p.field),
+          ),
+        )
+      )
+        campaignConfiguration.setEditing(true);
+      if (
+        fields.some((p) =>
+          /^(body|headline|description|conversation)/.test(
+            campaignFieldPath(p.field),
+          ),
+        )
+      )
+        adConfiguration.setEditing(true);
+      validationAnnounce.current = true;
+      setFieldProblems(fields);
+      setError(
+        fields.length
+          ? "Corrige los campos indicados para continuar."
+          : message,
+      );
       if (/beneficiario|pagador|edades|público/i.test(message))
         setAdvanced(true);
     } finally {
@@ -1088,6 +1280,18 @@ export function StudioCampaign({
   }
   return (
     <aside
+      ref={validationRoot}
+      onChangeCapture={(event) => {
+        if (!fieldProblems.length) return;
+        const remaining = fieldProblems.filter((problem) => {
+          const target = problemTarget(problem);
+          return !target || !target.contains(event.target as Node);
+        });
+        if (remaining.length !== fieldProblems.length) {
+          setFieldProblems(remaining);
+          if (!remaining.length) setError("");
+        }
+      }}
       className="studio-pane studio-campaign"
       aria-label="Preparar y publicar campaña"
     >
@@ -1145,7 +1349,10 @@ export function StudioCampaign({
         disabled={locked}
         className="studio-campaign-fields studio-workbench-fields"
       >
-        <section className="studio-campaign-identity">
+        <section
+          className="studio-campaign-identity"
+          data-campaign-field="identity"
+        >
           <label>
             Cuenta publicitaria principal
             <select
@@ -1385,6 +1592,7 @@ export function StudioCampaign({
         />
         <details
           className="studio-campaign-stage stage-campaign"
+          data-campaign-field="campaign"
           hidden={campaignConfiguration.collapsed}
           open
           ref={(el) => {
@@ -1505,6 +1713,7 @@ export function StudioCampaign({
         </details>
         <details
           className="studio-campaign-stage stage-placements"
+          data-campaign-field="placements"
           hidden={campaignConfiguration.collapsed}
           ref={(el) => {
             stages.current.placements = el;
@@ -1548,6 +1757,7 @@ export function StudioCampaign({
         <NamedConfigurationSave model={campaignConfiguration} />
         <section
           className="studio-campaign-method"
+          data-campaign-field="ai"
           aria-label="Método de preparación"
         >
           <div
@@ -1704,6 +1914,7 @@ export function StudioCampaign({
         </section>
         <details
           className="studio-campaign-stage stage-audiences"
+          data-campaign-field="audiences"
           ref={(el) => {
             stages.current.audiences = el;
           }}
@@ -1881,6 +2092,7 @@ export function StudioCampaign({
         <NamedConfigurationPicker model={adConfiguration} />
         <details
           className="studio-campaign-stage stage-ads"
+          data-campaign-field="ads"
           hidden={adConfiguration.collapsed}
           ref={(el) => {
             stages.current.ads = el;
@@ -1968,11 +2180,12 @@ export function StudioCampaign({
             <NamedConfigurationSave model={adConfiguration} />
           </div>
         </details>
-        <details className="studio-legal-options">
+        <details className="studio-legal-options" data-campaign-field="legal">
           <summary>Configuración legal</summary>
           <label>
             Categoría publicitaria
             <select
+              aria-label="Categoría publicitaria"
               value={form.specialCategory}
               disabled={!!form.existingCampaignId}
               onChange={(e) => update("specialCategory", e.target.value)}
@@ -1990,6 +2203,7 @@ export function StudioCampaign({
               <label>
                 Beneficiario
                 <input
+                  aria-label="Beneficiario"
                   value={form.beneficiary}
                   onChange={(e) => update("beneficiary", e.target.value)}
                 />
@@ -1997,6 +2211,7 @@ export function StudioCampaign({
               <label>
                 Pagador
                 <input
+                  aria-label="Pagador"
                   value={form.payor}
                   onChange={(e) => update("payor", e.target.value)}
                 />
@@ -2017,9 +2232,27 @@ export function StudioCampaign({
         </label>
       </fieldset>
       {error && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
+        <div
+          ref={validationSummary}
+          className="notice error studio-validation-summary"
+          role="alert"
+          tabIndex={-1}
+        >
+          <strong>{error}</strong>
+          {fieldProblems.length > 0 && (
+            <ul>
+              {fieldProblems.map((problem, index) => (
+                <li key={problem.field + index} id={`campaign-issue-${index}`}>
+                  <button type="button" onClick={() => goToProblem(problem)}>
+                    <strong>{campaignProblemLabel(problem)}</strong>:{" "}
+                    {campaignProblemMessage(problem)}{" "}
+                    <span aria-hidden="true">↗</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {draft && (
         <div
