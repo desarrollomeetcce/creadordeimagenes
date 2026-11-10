@@ -20,6 +20,7 @@ enum AccountStatus {
   SUSPENDED
 }
 model User {
+  diplomaApiKeys DiplomaApiKey[]
   fixedCostGrant FixedCostGrant?
   libraryFolderMemberships LibraryFolderMember[]
   aiAccessEnabled Boolean @default(true)
@@ -1085,6 +1086,7 @@ model MetaAdvisorSalesApproval {
 }
 
 model MetaEffectivenessSheet {
+ apiKeyLists DiplomaApiKeyList[]
  trialGroups MetaInventoryTrialGroup[]
  inventoryItems MetaInventoryItem[]
  categoryRevision Int @default(0)
@@ -1102,6 +1104,30 @@ model MetaEffectivenessSheet {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([kind,createdAt])
+}
+
+model DiplomaApiKey {
+ id String @id @default(cuid())
+ ownerId String
+ owner User @relation(fields:[ownerId],references:[id],onDelete:Cascade)
+ name String
+ tokenHash String @unique
+ mask String
+ expiresAt DateTime?
+ revokedAt DateTime?
+ lastUsedAt DateTime?
+ createdAt DateTime @default(now())
+ lists DiplomaApiKeyList[]
+ @@index([ownerId,createdAt])
+}
+
+model DiplomaApiKeyList {
+ keyId String
+ listId String
+ key DiplomaApiKey @relation(fields:[keyId],references:[id],onDelete:Cascade)
+ list MetaEffectivenessSheet @relation(fields:[listId],references:[id],onDelete:Cascade)
+ @@id([keyId,listId])
+ @@index([listId])
 }
 
 model MetaInventoryCategory {

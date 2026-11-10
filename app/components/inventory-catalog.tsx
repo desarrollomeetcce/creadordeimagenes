@@ -19,7 +19,9 @@ import {
   inventoryParameters,
 } from "./inventory-column-visibility";
 import {InventoryGroupSelect} from "./inventory-group-select";
-import { CurrentUserId } from "./role-guide";
+import "./inventory-api.css";
+const InventoryApiPanel = dynamic(() => import("./inventory-api-panel").then(m => m.InventoryApiPanel));
+import { CurrentRole, CurrentUserId } from "./role-guide";
 import { readGroupDirectory } from "./inventory-group-directory-cache";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
 import {
@@ -191,6 +193,8 @@ export function InventoryCatalog({
     "",
   );
   const groupUserId = useContext(CurrentUserId);
+  const apiOwnerRole = useContext(CurrentRole);
+  const [apiAccessOpen, setApiAccessOpen] = useState(false);
   const groupLoad = useRef<{listId:string; promise:Promise<void>} | null>(null);
   const activeGroupList = useRef(listId); activeGroupList.current = listId;
   const [groupLoadError, setGroupLoadError] = useState("");
@@ -1758,6 +1762,7 @@ export function InventoryCatalog({
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {apiAccessOpen && apiOwnerRole === "OWNER" && <InventoryApiPanel listId={listId} onClose={() => setApiAccessOpen(false)} />}
       {fullDetailContent}
       {activationHistory && (
         <InventorySheetHistory
@@ -1885,6 +1890,7 @@ export function InventoryCatalog({
         aria-label="Acciones del inventario"
       >
         <div className="row sheet-toolbar-controls">
+          {apiOwnerRole === "OWNER" && <button type="button" onClick={() => setApiAccessOpen(true)}>API de consulta</button>}
           {!!sheetDirectory?.countryIssues?.length && sheetDirectory.canCorrectCountry && <button type="button" disabled={busy} onClick={() => setCountryCorrection(sheetDirectory.countryIssues!.map(i => ({aliasId:i.aliasId,country:i.country})))}>Revisar asociaciones</button>}
           <button
             type="button"

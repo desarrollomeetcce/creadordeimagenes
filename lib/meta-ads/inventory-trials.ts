@@ -263,7 +263,7 @@ async function directoryConfiguration(tx:Prisma.TransactionClient,listId:string)
   demand(rows.length,"Inventario no disponible.",404);
   return rows[0].config;
 }
-async function catalog(
+export async function catalog(
   tx: Prisma.TransactionClient,
   listId: string,
   suppliedConfig?: Prisma.JsonValue,

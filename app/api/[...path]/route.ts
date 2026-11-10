@@ -319,6 +319,7 @@ async function handle(
       return send(result);
     }
     const user = await actor();
+    if (parts[0] === "diploma-api") return await (await import("@/lib/diploma-api")).diplomaApiManagement(req,parts,user,()=>body(req));
     if(parts[0]==="fixed-costs")return await (await import("@/lib/fixed-costs")).fixedCostRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="creative-studio")return await (await import("@/lib/creative-studio/routes")).creativeStudioRoutes(req,parts,user,()=>body(req));
     if(parts[0]==="courses-ai")return await (await import("@/lib/courses/routes")).courseRoutes(req,parts,user,()=>body(req));
