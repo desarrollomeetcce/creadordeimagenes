@@ -1004,21 +1004,16 @@
   outline-offset: 3px;
 }
 .studio-field-invalid {
-  outline: 2px solid #e15b70 !important;
-  outline-offset: 3px;
-  border-radius: 7px;
-}
-.studio-field-invalid input,
-.studio-field-invalid select,
-.studio-field-invalid textarea {
   border-color: #e15b70 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
-.studio-stage-invalid {
-  border-color: #e15b70 !important;
-}
-.studio-stage-invalid > summary::after {
+.studio-stage-has-issues > summary::after {
   content: "Revisar";
   color: #f18a99;
   font-size: 11px;
   margin-left: auto;
 }
+.studio-conversation-length { display: block; overflow-wrap: anywhere; color: var(--muted); }
+.studio-conversation-length.is-invalid { color: #f18a99; }
+.studio-inline-validation { display: block; width: 100%; color: #f18a99 !important; font-size: 11px; line-height: 1.45; margin-top: 4px; font-weight: 500; overflow-wrap: anywhere; }

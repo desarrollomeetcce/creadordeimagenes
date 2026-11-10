@@ -1,3 +1,10 @@
+import {
+  campaignConfigSchema,
+  validateCampaignText,
+  validateRenderedConversation,
+  type CampaignConfig,
+  type CampaignItem,
+} from "./campaign-policy";
 export type CampaignFieldProblem = {
   field: string;
   message: string;
@@ -35,7 +42,9 @@ const names: Record<string, string> = {
   description: "Descripción",
   platforms: "Plataformas",
   placements: "Ubicaciones",
-  audiences: "Públicos",
+  audiences: "Cantidad de conjuntos de anuncios",
+  code: "Variable {codigo} guardada",
+  name: "Nombre de configuración guardada",
   existingCampaignId: "Campaña existente",
   existingAdsetId: "Conjunto existente",
   existingAdsetIds: "Conjuntos existentes",
@@ -55,10 +64,21 @@ const names: Record<string, string> = {
   requestId: "Preparación de la campaña",
 };
 export function campaignFieldPath(field: string) {
-  return field.replace(/^config\./, "");
+  const path = field.replace(/^config\./, "");
+  return ["autofill", "greeting"].includes(path)
+    ? "conversation." + path
+    : path;
 }
 export function campaignProblemLabel(problem: CampaignFieldProblem) {
   const path = campaignFieldPath(problem.field).split(".");
+  if (path[0] === "conversation" && path[1]) {
+    const labels: Record<string, string> = {
+      autofill: "Mensaje inicial del interesado",
+      greeting: "Saludo de la conversación",
+      name: "Nombre de la plantilla",
+    };
+    return labels[path[1]] ?? "Plantilla de conversación";
+  }
   if (path[0] === "audiences" && /^\d+$/.test(path[1] ?? "")) {
     const suffix: Record<string, string> = {
       ageMin: "edad mínima",
@@ -123,4 +143,67 @@ export function campaignMessageProblem(
   ];
   const match = rules.find(([pattern]) => pattern.test(message));
   return match ? { field: match[1], message } : null;
+}
+
+/** Values relevant to a validation issue; age limits depend on both ends. */
+export function campaignProblemValue(
+  config: Record<string, any>,
+  problem: CampaignFieldProblem,
+) {
+  const parts = campaignFieldPath(problem.field).split(".");
+  if (
+    parts[0] === "audiences" &&
+    /^\d+$/.test(parts[1] ?? "") &&
+    (!parts[2] || ["ageMin", "ageMax"].includes(parts[2]))
+  ) {
+    const audience = config.audiences?.[Number(parts[1])];
+    return JSON.stringify([audience?.ageMin, audience?.ageMax]);
+  }
+  if (parts[0] === "conversation")
+    return JSON.stringify([
+      parts[1] ? config.conversation?.[parts[1]] : config.conversation,
+      config.country,
+    ]);
+  let value: any = config;
+  for (const part of parts) value = value?.[part];
+  return JSON.stringify(value);
+}
+
+/** Same campaign rules as preparation; only local checks, no API or paid calls. */
+export function collectCampaignProblems(
+  config: Record<string, unknown>,
+  items: CampaignItem[],
+): CampaignFieldProblem[] {
+  const parsed = campaignConfigSchema.safeParse({ ...config, planVersion: 2 });
+  const problems: CampaignFieldProblem[] = parsed.success
+    ? []
+    : parsed.error.issues.map((issue) => ({
+        field: issue.path.join("."),
+        message: issue.message,
+      }));
+  for (const item of items) {
+    try {
+      if (parsed.success) validateCampaignText(item, parsed.data);
+      else if (config.conversation && typeof config.country === "string")
+        validateRenderedConversation(item, config as CampaignConfig);
+    } catch (error) {
+      if (error && typeof error === "object" && "issues" in error) {
+        for (const issue of (
+          error as { issues: { path: PropertyKey[]; message: string }[] }
+        ).issues)
+          problems.push({
+            field: issue.path.join("."),
+            message: issue.message,
+          });
+      } else if (error instanceof Error) {
+        const problem = campaignMessageProblem(error.message);
+        if (problem) problems.push(problem);
+      }
+    }
+  }
+  return [
+    ...new Map(
+      problems.map((problem) => [campaignFieldPath(problem.field), problem]),
+    ).values(),
+  ];
 }

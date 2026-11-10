@@ -69,3 +69,22 @@ test("preserves explicit reasons and locates budget, distribution and destinatio
   );
   assert.equal(campaignMessageProblem("El servidor no está disponible."), null);
 });
+
+test("names the exact conversation control, including legacy server paths", () => {
+  assert.equal(campaignFieldPath("autofill"), "conversation.autofill");
+  assert.equal(
+    campaignProblemLabel({ field: "autofill", message: "Too big" }),
+    "Mensaje inicial del interesado",
+  );
+  assert.equal(
+    campaignProblemLabel({
+      field: "config.conversation.greeting",
+      message: "Too big",
+    }),
+    "Saludo de la conversación",
+  );
+  assert.equal(
+    campaignProblemLabel({ field: "code", message: "Too big" }),
+    "Variable {codigo} guardada",
+  );
+});

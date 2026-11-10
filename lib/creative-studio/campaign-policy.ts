@@ -35,7 +35,10 @@ export const audienceSchema = z
       .optional(),
   })
   .strict()
-  .refine((a) => a.ageMax >= a.ageMin, "El rango de edades no es válido.");
+  .refine((a) => a.ageMax >= a.ageMin, {
+    message: "El rango de edades no es válido.",
+    path: ["ageMax"],
+  });
 export const campaignConfigSchema = z
   .object({
     planVersion: z.literal(2).optional(),
@@ -648,12 +651,40 @@ export function validateCampaignText(item: CampaignItem, c: CampaignConfig) {
           known.has(match[1] ?? match[2]),
           `Falta definir la variable {${match[1] ?? match[2]}}.`,
         );
-    conversationSchema.parse({
-      ...c.conversation,
-      greeting: campaignText(c.conversation.greeting, item, c),
-      autofill: campaignText(c.conversation.autofill, item, c),
-    });
+    validateRenderedConversation(item, c);
   }
+}
+/** The resolved message limit is independent of budget/page form completion. */
+export function validateRenderedConversation(
+  item: CampaignItem,
+  c: CampaignConfig,
+) {
+  if (!c.conversation) return;
+  const renderedConversation = {
+    ...c.conversation,
+    greeting: campaignText(c.conversation.greeting, item, c),
+    autofill: campaignText(c.conversation.autofill, item, c),
+  };
+  const conversation = conversationSchema.safeParse(renderedConversation);
+  if (!conversation.success)
+    throw new z.ZodError(
+      conversation.error.issues.map((issue) => {
+        const field = String(issue.path[0]);
+        const maximum =
+          field === "autofill" ? 80 : field === "greeting" ? 1024 : 80;
+        const text =
+          renderedConversation[field as keyof typeof renderedConversation] ??
+          "";
+        return {
+          ...issue,
+          path: ["conversation", ...issue.path],
+          message:
+            text.length > maximum
+              ? `${field === "autofill" ? "El mensaje inicial del interesado" : field === "greeting" ? "El saludo" : "El nombre de la plantilla"} de ${item.name} supera ${maximum} caracteres al reemplazar las variables (${text.length}/${maximum}). Acorta ese texto.`
+              : issue.message,
+        };
+      }),
+    );
 }
 
 export function campaignDisplayName(item: CampaignItem, c: CampaignConfig) {

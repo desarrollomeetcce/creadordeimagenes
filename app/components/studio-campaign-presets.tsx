@@ -1,5 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import {
+  campaignText,
+  type CampaignConfig,
+  type CampaignItem,
+} from "../../lib/creative-studio/campaign-policy";
 import { studioRequest } from "./inventory-meta-picker";
 import {
   reusableCampaignSettings,
@@ -8,7 +13,12 @@ import {
 } from "../../lib/creative-studio/campaign-workbench-policy";
 
 export function useCampaignPresets(categoryId: string) {
-  const [data, setData] = useState<any>({ presets: [], conversations: [], campaignConfigurations: [], adConfigurations: [] }),
+  const [data, setData] = useState<any>({
+      presets: [],
+      conversations: [],
+      campaignConfigurations: [],
+      adConfigurations: [],
+    }),
     [loading, setLoading] = useState(false),
     [error, setError] = useState("");
   const request = useRef<Promise<any> | null>(null),
@@ -191,15 +201,29 @@ export function StudioConversationEditor({
   onChange,
   store,
   disabled = false,
+  previewContext,
 }: {
   categoryId: string;
   value?: ConversationTemplate;
   onChange: (v: ConversationTemplate | undefined) => void;
   store: ReturnType<typeof useCampaignPresets>;
   disabled?: boolean;
+  previewContext?: { config: CampaignConfig; items: CampaignItem[] };
 }) {
   const [saving, setSaving] = useState(false),
     [notice, setNotice] = useState("");
+  const preview =
+    value && previewContext?.items.length
+      ? previewContext.items
+          .map((item) => ({
+            item: item.name,
+            autofill: campaignText(value.autofill, item, previewContext.config),
+            greeting: campaignText(value.greeting, item, previewContext.config),
+          }))
+          .reduce((longest, next) =>
+            next.autofill.length > longest.autofill.length ? next : longest,
+          )
+      : null;
   const pending = useRef<{ fingerprint: string; id: string } | null>(null);
   const edit = (key: keyof ConversationTemplate, text: string) =>
     onChange({
@@ -337,9 +361,21 @@ export function StudioConversationEditor({
               onChange={(e) => edit("autofill", e.target.value)}
             />
             <small>
-              {value.autofill.length}/80 · Puedes usar [diplomado] y [pais].
+              Plantilla: {value.autofill.length}/80 · Puedes usar [diplomado] y
+              [pais].
             </small>
           </label>
+          {preview && (
+            <small
+              className={
+                preview.autofill.length > 80 || preview.greeting.length > 1024
+                  ? "studio-conversation-length is-invalid"
+                  : "studio-conversation-length"
+              }
+            >
+              Mensaje final: {preview.autofill.length}/80 caracteres.
+            </small>
+          )}
           <button
             type="button"
             disabled={
@@ -354,8 +390,12 @@ export function StudioConversationEditor({
             {saving ? "Guardando…" : "Guardar en plataforma"}
           </button>
           <div className="studio-conversation-preview">
-            <span>{value.greeting || "Saludo del negocio"}</span>
-            <span>{value.autofill || "Mensaje del interesado"}</span>
+            <span>
+              {preview?.greeting || value.greeting || "Saludo del negocio"}
+            </span>
+            <span>
+              {preview?.autofill || value.autofill || "Mensaje del interesado"}
+            </span>
           </div>
         </div>
       )}

@@ -2806,3 +2806,10 @@ Chromium verifica cinco flujos: Crear campaña primero y fichas CO2/PE1/PY1 en l
 Proyectos conserva y presenta los campos devueltos por el servidor en errores de preparación. Resumen en español con enlaces, marcas rojas y aria-invalid/describedby, apertura de secciones y configuraciones guardadas, foco al control exacto (incluye edad de cada público), navegación a recursos desde vista maximizada y limpieza al editar o iniciar otra campaña. No cambia las reglas de Meta ni omite validación.
 
 Verificación: 331 pruebas generales y 24 pruebas dirigidas; typecheck/build y Chromium sintético en escritorio/móvil para error remoto estructurado, traducción y navegación a Público 1/edad máxima y Texto principal. El POST de preparación se intercepta y no crea campañas ni hace llamadas pagadas. No se verificó el dato que falla en la campaña real del usuario ni el despliegue productivo.
+
+
+## 10/11 — Edición fluida y validación local de campañas
+
+Cantidad de conjuntos admite borrar1 y teclear2, sin coerción prematura. Validación local durante la edición y al cargar configuraciones, mensajes junto a cada control, un borde en el control inválido y actualización al corregir valores/rangos; conserva errores remotos hasta cambiar los datos relevantes. Las variables reservadas se resuelven con país e ítem actuales. Se muestra nombre de campaña y conversación resueltos; el límite de80 del mensaje inicial se verifica tras sustituir variables, con ruta exacta y tamaño final. No truncar ni cambiar el límite; se conserva la plantilla.
+
+336 pruebas generales y28 dirigidas; build/typecheck. Chromium sintético: borrar1 y teclear2 crea2 públicos, error inline de mensaje expandido antes de enviar, un único control rojo sin paneles rojos, corregir elimina error sin submit ni pérdida de foco, rango corregido desde edad mínima limpia edad máxima, vistas escritorio/móvil y ausencia de escrituras Meta/IA/publicación. No se verificó la configuración real del usuario ni el despliegue productivo.

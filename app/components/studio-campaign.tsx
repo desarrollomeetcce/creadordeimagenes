@@ -1,11 +1,15 @@
 "use client";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ZodError } from "zod";
 import {
   StudioRequestError,
   campaignFieldPath,
   campaignProblemLabel,
   campaignProblemMessage,
   campaignMessageProblem,
+  campaignProblemValue,
+  collectCampaignProblems,
   type CampaignFieldProblem,
 } from "../../lib/creative-studio/campaign-validation";
 import { CurrentUserId } from "./role-guide";
@@ -25,6 +29,7 @@ import {
   launchSummary,
   campaignConfigSchema,
   validateCampaignDestination,
+  validateCampaignText,
   type CampaignConfig,
   type CampaignItem,
 } from "../../lib/creative-studio/campaign-policy";
@@ -139,6 +144,17 @@ export function StudioCampaign({
   const validationRoot = useRef<HTMLElement>(null);
   const validationSummary = useRef<HTMLDivElement>(null);
   const validationAnnounce = useRef(false);
+  const validationSnapshot = useRef<CampaignConfig | null>(null);
+  const validationItemsSnapshot = useRef("");
+  const [showLegacyCode, setShowLegacyCode] = useState(false);
+  const [touchedFields, setTouchedFields] = useState<string[]>([]);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [inlineErrors, setInlineErrors] = useState<
+    { container: HTMLElement; problem: CampaignFieldProblem; id: string }[]
+  >([]);
+  const [audienceCountInput, setAudienceCountInput] = useState<string | null>(
+    null,
+  );
   const [fieldProblems, setFieldProblems] = useState<CampaignFieldProblem[]>(
     [],
   );
@@ -688,6 +704,9 @@ export function StudioCampaign({
     }
   }
   function update(key: keyof CampaignConfig, value: unknown) {
+    setTouchedFields((fields) =>
+      fields.includes(key) ? fields : [...fields, key],
+    );
     if (key === "accountId") {
       setSelectedCampaign(undefined);
       setSelectedAdsets([]);
@@ -857,6 +876,9 @@ export function StudioCampaign({
     update("distribution", {});
   }
   function applyConfig(patch: Partial<CampaignConfig>) {
+    setTouchedFields((fields) => [
+      ...new Set([...fields, ...Object.keys(patch)]),
+    ]);
     setForm((f) => ({ ...f, ...patch }));
     if (draft?.status === "DRAFT") setDraft(null);
     setAiRequest(null);
@@ -925,6 +947,9 @@ export function StudioCampaign({
   const leavingBlocked =
     busy || aiBusy || (draft?.status === "PUBLISHING" && !halted);
   function closeNotice() {
+    setTouchedFields([]);
+    setValidationAttempted(false);
+    setShowLegacyCode(false);
     setFieldProblems([]);
     try {
       const id = draft?.id ?? latestLaunchId;
@@ -1018,10 +1043,34 @@ export function StudioCampaign({
       setBusy(false);
     }
   }
+  const liveProblems = useMemo(
+    () => collectCampaignProblems(form, items),
+    [form, items],
+  );
+  const displayedProblems = useMemo(() => {
+    const visible = liveProblems.filter(
+      (problem) =>
+        validationAttempted ||
+        touchedFields.includes(
+          campaignFieldPath(problem.field).split(".")[0],
+        ) ||
+        campaignFieldPath(problem.field).startsWith("conversation."),
+    );
+    return [
+      ...new Map(
+        [...fieldProblems, ...visible].map((problem) => [
+          campaignFieldPath(problem.field),
+          problem,
+        ]),
+      ).values(),
+    ];
+  }, [fieldProblems, liveProblems, touchedFields, validationAttempted]);
   function problemTarget(problem: CampaignFieldProblem): HTMLElement | null {
     const path = campaignFieldPath(problem.field),
       root = path.split(".")[0];
     const labels: Record<string, string> = {
+      code: "Variable codigo anterior",
+      audiences: "Cantidad de conjuntos de anuncios",
       accountId: "Cuenta publicitaria principal",
       pageId: "Buscar página de Facebook",
       country: "País de la campaña",
@@ -1045,6 +1094,14 @@ export function StudioCampaign({
       root === "dailyBudget" && form.existingCampaignId
         ? labels.adsetDailyBudget
         : labels[root];
+    if (root === "conversation" && parts[1]) {
+      const conversationLabels: Record<string, string> = {
+        name: "Nombre de la plantilla",
+        greeting: "Saludo de la conversación",
+        autofill: "Mensaje inicial del interesado",
+      };
+      label = conversationLabels[parts[1]] ?? label;
+    }
     if (root === "audiences" && /^\d+$/.test(parts[1] ?? "")) {
       const audienceLabels: Record<string, string> = {
         ageMin: "Edad mínima del público",
@@ -1131,30 +1188,44 @@ export function StudioCampaign({
   }
   useEffect(() => {
     const cleanups: (() => void)[] = [];
-    fieldProblems.forEach((problem, index) => {
+    const inline: {
+      container: HTMLElement;
+      problem: CampaignFieldProblem;
+      id: string;
+    }[] = [];
+    displayedProblems.forEach((problem, index) => {
       const target = problemTarget(problem);
       if (!target) return;
-      const box = target.closest<HTMLElement>("label") ?? target;
-      box.classList.add("studio-field-invalid");
+      const box = target.matches("input,select,textarea,[role=combobox]")
+        ? target
+        : null;
+      box?.classList.add("studio-field-invalid");
+      const id = `campaign-inline-issue-${index}`;
+      const container =
+        box?.closest<HTMLElement>("label") ?? box?.parentElement;
+      if (container) inline.push({ container, problem, id });
       const previous = target.getAttribute("aria-invalid"),
         described = target.getAttribute("aria-describedby");
       target.setAttribute("aria-invalid", "true");
       target.setAttribute(
         "aria-describedby",
-        [described, `campaign-issue-${index}`].filter(Boolean).join(" "),
+        [described, container ? id : `campaign-issue-${index}`]
+          .filter(Boolean)
+          .join(" "),
       );
       const stage = target.closest("details");
-      stage?.classList.add("studio-stage-invalid");
+      stage?.classList.add("studio-stage-has-issues");
       cleanups.push(() => {
-        box.classList.remove("studio-field-invalid");
-        stage?.classList.remove("studio-stage-invalid");
+        box?.classList.remove("studio-field-invalid");
+        stage?.classList.remove("studio-stage-has-issues");
         if (previous === null) target.removeAttribute("aria-invalid");
         else target.setAttribute("aria-invalid", previous);
         if (described === null) target.removeAttribute("aria-describedby");
         else target.setAttribute("aria-describedby", described);
       });
     });
-    if (fieldProblems.length && validationAnnounce.current) {
+    setInlineErrors(inline);
+    if (displayedProblems.length && validationAnnounce.current) {
       validationAnnounce.current = false;
       validationSummary.current?.focus({ preventScroll: true });
       validationSummary.current?.scrollIntoView({
@@ -1164,11 +1235,69 @@ export function StudioCampaign({
     }
     return () => cleanups.reverse().forEach((cleanup) => cleanup());
   }, [
-    fieldProblems,
+    displayedProblems,
     campaignConfiguration.collapsed,
     adConfiguration.collapsed,
   ]);
+  useEffect(() => {
+    const snapshot = validationSnapshot.current;
+    if (!snapshot || !fieldProblems.length) return;
+    const checked = campaignConfigSchema.safeParse({ ...form, planVersion: 2 });
+    const current = checked.success ? [] : checked.error.issues;
+    const remaining = fieldProblems.flatMap((problem) => {
+      const field = campaignFieldPath(problem.field);
+      const itemsChanged =
+        validationItemsSnapshot.current !== JSON.stringify(items);
+      if (field.startsWith("items") && itemsChanged)
+        return items.length >= 1 &&
+          items.length <= 10 &&
+          items.every(
+            (item) =>
+              item.variationIds.length >= 1 && item.variationIds.length <= 50,
+          )
+          ? []
+          : [problem];
+      if (
+        campaignProblemValue(snapshot, problem) ===
+          campaignProblemValue(form, problem) &&
+        !(field.startsWith("conversation") && itemsChanged)
+      )
+        return [problem];
+      const path = campaignFieldPath(problem.field);
+      const issue = current.find((candidate) => {
+        const field = candidate.path.join(".");
+        return (
+          field === path ||
+          field.startsWith(path + ".") ||
+          path.startsWith(field + ".")
+        );
+      });
+      if (issue) return [{ ...problem, message: issue.message }];
+      if (checked.success && path.startsWith("conversation")) {
+        try {
+          items.forEach((item) => validateCampaignText(item, checked.data));
+        } catch (e) {
+          if (e && typeof e === "object" && "issues" in e) {
+            const issues = (
+              e as { issues: { path: PropertyKey[]; message: string }[] }
+            ).issues;
+            const existing = issues.find(
+              (issue) => issue.path.join(".") === path,
+            );
+            if (existing) return [{ ...problem, message: existing.message }];
+          }
+          return [problem];
+        }
+      }
+      return [];
+    });
+    if (JSON.stringify(remaining) !== JSON.stringify(fieldProblems)) {
+      setFieldProblems(remaining);
+      if (!remaining.length) setError("");
+    }
+  }, [form, items, fieldProblems]);
   async function prepare(open: boolean) {
+    setValidationAttempted(true);
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
@@ -1206,6 +1335,7 @@ export function StudioCampaign({
       items.forEach((i) => {
         imageDistribution(i, checked.data);
         validateCampaignDestination(checked.data);
+        validateCampaignText(i, checked.data);
       });
       const d = await studioRequest("/launches", "POST", {
         requestId: crypto.randomUUID(),
@@ -1224,9 +1354,14 @@ export function StudioCampaign({
       const fields =
         e instanceof StudioRequestError && e.fields.length
           ? e.fields
-          : [campaignMessageProblem(message)].filter(
-              (p): p is CampaignFieldProblem => !!p,
-            );
+          : e instanceof ZodError
+            ? e.issues.map((issue) => ({
+                field: issue.path.join("."),
+                message: issue.message,
+              }))
+            : [campaignMessageProblem(message)].filter(
+                (p): p is CampaignFieldProblem => !!p,
+              );
       if (
         fields.some((p) =>
           /^(campaignName|objective|platforms|placements|website|leadFormId)/.test(
@@ -1237,12 +1372,16 @@ export function StudioCampaign({
         campaignConfiguration.setEditing(true);
       if (
         fields.some((p) =>
-          /^(body|headline|description|conversation)/.test(
+          /^(body|headline|description|conversation|code)/.test(
             campaignFieldPath(p.field),
           ),
         )
       )
         adConfiguration.setEditing(true);
+      validationSnapshot.current = form;
+      validationItemsSnapshot.current = JSON.stringify(items);
+      if (fields.some((problem) => campaignFieldPath(problem.field) === "code"))
+        setShowLegacyCode(true);
       validationAnnounce.current = true;
       setFieldProblems(fields);
       setError(
@@ -1281,17 +1420,7 @@ export function StudioCampaign({
   return (
     <aside
       ref={validationRoot}
-      onChangeCapture={(event) => {
-        if (!fieldProblems.length) return;
-        const remaining = fieldProblems.filter((problem) => {
-          const target = problemTarget(problem);
-          return !target || !target.contains(event.target as Node);
-        });
-        if (remaining.length !== fieldProblems.length) {
-          setFieldProblems(remaining);
-          if (!remaining.length) setError("");
-        }
-      }}
+
       className="studio-pane studio-campaign"
       aria-label="Preparar y publicar campaña"
     >
@@ -1622,10 +1751,17 @@ export function StudioCampaign({
                 disabled={
                   !!form.existingAdsetId || !!form.existingAdsetIds?.length
                 }
-                value={form.audiences.length}
-                onChange={(e) =>
-                  changeAudienceCount(Number(e.target.value) || 1)
+                value={audienceCountInput ?? String(form.audiences.length)}
+                onFocus={() =>
+                  setAudienceCountInput(String(form.audiences.length))
                 }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setAudienceCountInput(value);
+                  if (/^(?:[1-9]|10)$/.test(value))
+                    changeAudienceCount(Number(value));
+                }}
+                onBlur={() => setAudienceCountInput(null)}
               />
             </label>
 
@@ -1643,6 +1779,16 @@ export function StudioCampaign({
                 onChange={(e) => update("campaignName", e.target.value)}
               />
               <small>Variables: [pais] · [diplomado]</small>
+              {!form.existingCampaignId && items[0] && form.country && (
+                <small>
+                  Vista previa:{" "}
+                  {campaignText(
+                    form.campaignName || "{pais} · {diplomado}",
+                    items[0],
+                    form,
+                  )}
+                </small>
+              )}
             </label>
             <label>
               Objetivo de campaña
@@ -2174,9 +2320,24 @@ export function StudioCampaign({
                   value={form.conversation}
                   onChange={(value) => update("conversation", value)}
                   store={presets}
+                  previewContext={{ config: form, items }}
                   disabled={locked}
                 />
               )}
+            {showLegacyCode && (
+              <label>
+                Variable [codigo] de la configuración anterior
+                <input
+                  aria-label="Variable codigo anterior"
+                  value={form.code}
+                  maxLength={80}
+                  onChange={(event) => update("code", event.target.value)}
+                />
+                <small>
+                  {form.code.length}/80 · Corrige este valor heredado.
+                </small>
+              </label>
+            )}
             <NamedConfigurationSave model={adConfiguration} />
           </div>
         </details>
@@ -2231,17 +2392,17 @@ export function StudioCampaign({
           </select>
         </label>
       </fieldset>
-      {error && (
+      {(error || displayedProblems.length > 0) && (
         <div
           ref={validationSummary}
           className="notice error studio-validation-summary"
           role="alert"
           tabIndex={-1}
         >
-          <strong>{error}</strong>
-          {fieldProblems.length > 0 && (
+          <strong>{error || "Revisa los datos indicados."}</strong>
+          {displayedProblems.length > 0 && (
             <ul>
-              {fieldProblems.map((problem, index) => (
+              {displayedProblems.map((problem, index) => (
                 <li key={problem.field + index} id={`campaign-issue-${index}`}>
                   <button type="button" onClick={() => goToProblem(problem)}>
                     <strong>{campaignProblemLabel(problem)}</strong>:{" "}
@@ -2253,6 +2414,15 @@ export function StudioCampaign({
             </ul>
           )}
         </div>
+      )}
+      {inlineErrors.map(({ container, problem, id }) =>
+        createPortal(
+          <small className="studio-inline-validation" id={id}>
+            {campaignProblemMessage(problem)}
+          </small>,
+          container,
+          campaignFieldPath(problem.field),
+        ),
       )}
       {draft && (
         <div
