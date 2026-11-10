@@ -305,3 +305,137 @@ test("Configuración admite idiomas, estilos por módulo y proveedores opcionale
   assert.equal(s.exportAspect, "9:16");
   assert.equal(s.style, "per-module");
 });
+
+test("Cursos: ajustes globales solo técnicos; público, minutos y temario son independientes", async () => {
+  const { technicalSettings, initialCourseSettings, technicalSettingsSchema } =
+    await import("../lib/courses/technical-settings");
+  const old = settingsSchema.parse({
+    provider: "gemini",
+    model: "gemini-2.5-flash",
+    audience: "children",
+    moduleCount: 12,
+    minutes: 45,
+    style: "animation",
+    promoSeconds: 60,
+    mixStyles: true,
+    voiceMode: "teacher",
+  });
+  const next = initialCourseSettings(old);
+  assert.equal(next.provider, "gemini");
+  assert.equal(next.model, "gemini-2.5-flash");
+  assert.equal(next.moduleCount, 6);
+  assert.equal(next.minutes, 10);
+  assert.equal(next.audience, "professionals");
+  assert.equal(next.mixStyles, false);
+  assert.equal(next.style, "slides");
+  assert(!("audience" in technicalSettings(old)));
+  assert(!("videoDuration" in technicalSettings(old)));
+  assert.throws(() =>
+    technicalSettingsSchema.parse({ ...technicalSettings(old), minutes: 20 }),
+  );
+  assert.equal(old.audience, "children");
+  assert.equal(old.minutes, 45);
+});
+test("Cursos OpenAI: texto sin formato opcional incompatible y diagnóstico sin secretos", async () => {
+  const { openAITextRequest, openAIRequestDetail } =
+    await import("../lib/courses/openai-text");
+  const body = openAITextRequest("gpt-5-mini", "Devuelve JSON", "Tema");
+  assert.equal(body.model, "gpt-5-mini");
+  assert(!("text" in body));
+  assert.match(
+    openAIRequestDetail({
+      error: {
+        code: "unsupported_parameter",
+        param: "text.format",
+        message: "SECRET_KEY",
+      },
+    }),
+    /text.format/,
+  );
+  assert.equal(
+    openAIRequestDetail({
+      error: { code: "SECRET", param: "SECRET", message: "SECRET" },
+    }),
+    "",
+  );
+  const { providerJSON } = await import("../lib/providers/http");
+  const oldFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json(
+      {
+        error: {
+          code: "unsupported_parameter",
+          param: "text.format",
+          message: "SECRET",
+        },
+      },
+      { status: 400 },
+    );
+  };
+  try {
+    await assert.rejects(
+      () =>
+        providerJSON(
+          "openai",
+          "https://example.invalid",
+          {},
+          10000,
+          openAIRequestDetail,
+        ),
+      (e) =>
+        e instanceof Error &&
+        e.message.includes("HTTP 400") &&
+        e.message.includes("text.format") &&
+        !e.message.includes("SECRET"),
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("Cursos: normaliza opcionales nulos y celdas numéricas sin inventar contenido", async () => {
+  const { generatedIssueSummary } = await import("../lib/courses/schema");
+  const raw = {
+    objectives: ["Analizar"],
+    scenes: [
+      {
+        title: "Datos",
+        kind: "spreadsheet",
+        narration: "Explicación",
+        steps: ["Comparar"],
+        code: null,
+        columns: ["Zona", "Importe"],
+        rows: [["Norte", 12.5]],
+        illustrationPrompt: null,
+        drawings: null,
+      },
+    ],
+    exercise: "Calcular",
+    solution: "Comprobar",
+    references: null,
+    practice: null,
+  };
+  const result = parseGenerated(JSON.stringify(raw), lessonSchema);
+  assert.equal(result.scenes[0].rows[0][1], "12.5");
+  assert.equal(result.scenes[0].code, "");
+  assert.deepEqual(result.practice, []);
+  assert.throws(
+    () =>
+      parseGenerated(
+        JSON.stringify({
+          ...raw,
+          scenes: [{ ...raw.scenes[0], narration: null }],
+        }),
+        lessonSchema,
+      ),
+    (e) => {
+      const detail = generatedIssueSummary(e);
+      assert(detail?.includes("scenes.0.narration"));
+      assert(!detail?.includes("Explicación"));
+      return true;
+    },
+  );
+});

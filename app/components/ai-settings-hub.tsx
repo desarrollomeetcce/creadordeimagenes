@@ -363,7 +363,7 @@ function UnifiedConnections() {
                                 { query },
                               );
                               setMessage(
-                                "Catálogo de cursos actualizado. Elige el modelo en Parámetros de cursos o en cada curso.",
+                                "Catálogo de cursos actualizado. Elige el modelo en Proveedores para cursos o en cada curso.",
                               );
                             })
                           }

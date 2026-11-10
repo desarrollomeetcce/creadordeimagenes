@@ -159,5 +159,115 @@ export function parseGenerated<T>(raw: string, schema: z.ZodType<T>): T {
     .trim()
     .replace(/^```(?:json)?\s*/, "")
     .replace(/\s*```$/, "");
-  return schema.parse(JSON.parse(text));
+  let value = JSON.parse(text);
+  if (
+    Object.is(schema, lessonSchema) &&
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    if (
+      Object.keys(value).length === 1 &&
+      value.lesson &&
+      typeof value.lesson === "object"
+    )
+      value = value.lesson;
+    value = { ...value };
+    for (const key of ["references", "practice"])
+      if (value[key] === null) delete value[key];
+    if (Array.isArray(value.scenes))
+      value.scenes = value.scenes.map((scene: unknown) => {
+        if (!scene || typeof scene !== "object" || Array.isArray(scene))
+          return scene;
+        const s = { ...scene } as Record<string, unknown>;
+        for (const key of [
+          "code",
+          "columns",
+          "rows",
+          "illustrationPrompt",
+          "drawings",
+        ])
+          if (s[key] === null) delete s[key];
+        if (Array.isArray(s.rows))
+          s.rows = s.rows.map((row) =>
+            Array.isArray(row)
+              ? row.map((cell) =>
+                  typeof cell === "number" && Number.isFinite(cell)
+                    ? String(cell)
+                    : cell,
+                )
+              : row,
+          );
+        return s;
+      });
+  }
+  return schema.parse(value);
+}
+
+export function generatedIssueSummary(error: unknown) {
+  if (error instanceof z.ZodError) {
+    const allowed = new Set([
+      "objectives",
+      "scenes",
+      "title",
+      "kind",
+      "narration",
+      "steps",
+      "code",
+      "columns",
+      "rows",
+      "illustrationPrompt",
+      "drawings",
+      "exercise",
+      "solution",
+      "references",
+      "practice",
+      "modules",
+      "brief",
+      "minutes",
+      "style",
+      "mixStyles",
+      "sections",
+      "body",
+      "answerKey",
+      "question",
+      "options",
+      "answer",
+      "expression",
+      "explanation",
+      "label",
+      "x",
+      "y",
+      "size",
+      "color",
+      "step",
+      "motion",
+    ]);
+    const detail = error.issues
+      .slice(0, 3)
+      .map((issue) => {
+        const path =
+          issue.path
+            .filter((k) => typeof k === "number" || allowed.has(String(k)))
+            .join(".") || "estructura";
+        const reason =
+          issue.code === "too_big"
+            ? "supera el límite"
+            : issue.code === "too_small"
+              ? "está vacío o incompleto"
+              : issue.code === "unrecognized_keys"
+                ? "incluye campos no admitidos"
+                : "formato no válido";
+        return path + ": " + reason;
+      })
+      .join("; ");
+    return (
+      "Revisar contenido IA: " +
+      detail +
+      ". Se conserva la versión anterior; no se reintentó."
+    );
+  }
+  if (error instanceof SyntaxError)
+    return "La IA no devolvió un JSON completo válido. Se conserva la versión anterior; no se reintentó.";
+  return null;
 }

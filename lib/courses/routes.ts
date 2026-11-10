@@ -6,6 +6,7 @@ import { load } from "../storage";
 import { z } from "zod";
 import {
   courseOwner,
+  courseTransactionOwner,
   courseList,
   courseDetail,
   courseOverview,
@@ -22,6 +23,10 @@ import {
 } from "./service";
 import { courseConnections, useSharedCredential } from "./shared-credentials";
 import { settingsSchema } from "./schema";
+import {
+  technicalSettingsSchema,
+  initialCourseSettings,
+} from "./technical-settings";
 import { saveCredential, discover, providerSchema } from "./providers";
 import { lessonSchema, materialOutput } from "./schema";
 import {
@@ -168,16 +173,20 @@ export async function courseRoutes(
       });
       return send({
         revision: c?.revision ?? 0,
-        settings: settingsSchema.parse(c?.settings ?? {}),
+        settings: initialCourseSettings(c?.settings ?? {}),
       });
     }
     if (method === "POST") {
       const b = z
-        .object({ revision: z.number().int(), settings: settingsSchema })
+        .object({
+          revision: z.number().int(),
+          settings: technicalSettingsSchema,
+        })
         .parse(await body());
       return send(
         await db.$transaction(async (tx) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(893127)`;
+          await courseTransactionOwner(tx, u);
           const c = await tx.aICourseDefaults.findUnique({
             where: { id: "global" },
           });
@@ -186,11 +195,21 @@ export async function courseRoutes(
             "La configuración cambió. Actualiza antes de guardar.",
             409,
           );
-          return tx.aICourseDefaults.upsert({
+          const saved = await tx.aICourseDefaults.upsert({
             where: { id: "global" },
             create: { id: "global", settings: b.settings },
-            update: { settings: b.settings, revision: { increment: 1 } },
+            update: {
+              settings: {
+                ...settingsSchema.parse(c?.settings ?? {}),
+                ...b.settings,
+              },
+              revision: { increment: 1 },
+            },
           });
+          return {
+            revision: saved.revision,
+            settings: initialCourseSettings(saved.settings),
+          };
         }),
       );
     }

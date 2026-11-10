@@ -21,6 +21,7 @@ import {
   outlineSchema,
   materialOutput,
   parseGenerated,
+  generatedIssueSummary,
 } from "./schema";
 import {
   generateText,
@@ -1118,7 +1119,11 @@ export async function processCourseTask(id: string) {
           "\nBasado en el módulo desarrollado: " +
           JSON.stringify(b.module) +
           '\nDevuelve {"sections":[{"title":"...","body":"Contenido completo, no instrucciones para escribirlo"}],"answerKey":"Solucionario separado si corresponde"}. Libro: capítulos desarrollados. Taller/examen: ejercicios completos con espacio indicado para responder; soluciones solo en answerKey. Diapositivas: una sección por diapositiva. No afirmes ser psicólogo ni diagnostiques; ofrece orientación educativa y búsqueda de apoyo cuando corresponde.';
-      if (t.kind === "LESSON") prompt += "\n" + classroomInstructions;
+      if (t.kind === "LESSON")
+        prompt +=
+          "\n" +
+          classroomInstructions +
+          "\nContrato JSON: objectives de 1 a 12 textos de hasta 400 caracteres; scenes de 1 a 16 escenas. Cada narration es texto de 1 a 4000 caracteres; steps de 1 a 12 textos de hasta 600 caracteres. code e illustrationPrompt son textos (vacíos si no aplican); columns y cada celda de rows son textos; no uses null. exercise y solution son textos desarrollados, no objetos. No añadas claves fuera del ejemplo y los campos drawings/practice descritos.";
       const r = await generateText(
         b.settings.provider,
         b.settings.model,
@@ -1216,7 +1221,8 @@ export async function processCourseTask(id: string) {
         error:
           e instanceof AppError
             ? e.message
-            : "El contenido no pudo validarse. Se conserva la versión anterior. Puede haber cargos; no se reintentó.",
+            : (generatedIssueSummary(e) ??
+              "El contenido no pudo validarse. Se conserva la versión anterior. Puede haber cargos; no se reintentó."),
         usage: json(usage ?? {}),
         leaseToken: null,
       },

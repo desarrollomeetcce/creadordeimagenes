@@ -28,7 +28,7 @@ Las claves anteriores de Cursos IA no se sobrescriben: si existe una distinta, l
 ## Parámetros por uso
 
 - **Afiches:** conserva los controles existentes de proveedor/modelo/calidad/resolución y las pruebas autorizadas. El formulario se despliega al solicitarlo; no se monta ni sondea mientras estás en Conexiones o Cursos.
-- **Cursos · texto, voz y video:** configura valores iniciales para nuevos programas. No cambia cursos anteriores. Cada programa permite ajustar después su propia configuración.
+- **Cursos · proveedores:** solo proveedores, modelos y calidad técnica para nuevos programas. Público, nivel, enfoque, módulos, minutos, estilo y clips promocionales se eligen dentro de cada curso. Los cursos existentes se conservan.
 - **Texto:** OpenAI/Gemini/Claude/Mistral; dificultad, enfoque, público, idioma y objetivos pedagógicos.
 - **Voz:** OpenAI, Gemini TTS, ElevenLabs o Cartesia; modelo y voz disponibles. OpenAI admite velocidad; el tono se transmite donde la API lo permite. La clonación integrada sigue siendo ElevenLabs, con consentimiento y posible verificación del proveedor.
 - **Ilustraciones:** OpenAI, Google o fal.ai; Nano Banana/FLUX pertenecen a imagen, no se muestran como video. Calidad baja/media/alta de ilustraciones OpenAI; Google usa los parámetros compatibles del adaptador existente.
@@ -38,7 +38,7 @@ Las claves anteriores de Cursos IA no se sobrescriben: si existe una distinta, l
 ## Flujo de trabajo sencillo
 
 1. **Crear carpeta del programa.** Solo nombre, tipo (curso/diplomado/programa/taller/seminario), descripción breve y público. Incluye Otro público con texto personalizado. No pide prompt largo ni modelos; no llama a IA. La carpeta muestra descripción y destinatarios.
-2. **Entrar → Temario.** Elige Generar con IA o Pegar módulos. Objetivo, dificultad, enfoque, cantidad y demás parámetros se editan dentro del programa, sin un formulario emergente de configuración. Guarda los cambios antes de generar.
+2. **Entrar → Temario.** Elige Generar con IA o Pegar módulos. Objetivo, dificultad, enfoque, cantidad y demás parámetros se editan dentro del programa, sin un formulario emergente de configuración. La ventana de temario permite elegir proveedor/modelo verificado, cantidad y minutos, guardando los datos de ese curso antes de generar.
 3. **Pegar temario.** Un título por línea o encabezados Módulo1/Unidad1/Tema1 con descripciones debajo. Crea módulos independientes y ordenados en una transacción, sin IA. Añade al temario existente; no lo sustituye. Hasta200 módulos por programa.
 4. **Generar temario.** Propone hasta100 módulos según el objetivo y los parámetros guardados. Solo cuando la carpeta no tiene módulos; nunca reemplaza un temario ya definido.
 5. **Desarrollar.** Individualmente o por lotes de hasta24 pendientes. Los ya desarrollados se conservan; puedes reordenar y añadir módulos. El lote se registra atómicamente antes de arrancar.
@@ -170,3 +170,12 @@ Documentación consultada: [Google, modelos de imagen/Nano Banana](https://ai.go
 Cada tarjeta dispone de **Editar módulo** y **Eliminar módulo**. También puedes desmarcar Todos los módulos, seleccionar uno y utilizar las mismas acciones junto al contador. Las selecciones múltiples siguen sirviendo para generar recursos y no eliminan varios módulos de una vez.
 
 El editor abre con indicador de carga y ofrece Reintentar carga si falla la lectura. Permite guardar título, instrucciones y duración sin generar IA; los controles de contenido desarrollado siguen disponibles. Eliminar pide confirmación y afecta solo a ese módulo y sus materiales, respetando revisiones y bloqueos por trabajos activos o inciertos.
+
+
+### Ajustes y validación del 10/11
+
+OpenAI y Gemini pueden estar conectados simultáneamente; la generación usa solo el proveedor/modelo elegido para ese curso. No hay cambio automático de proveedor ante un fallo. Los segundos de clips IA opcionales son límites reales del modelo y no limitan la duración de la videoclase. Los minutos por módulo son objetivos editoriales independientes.
+
+Las preferencias técnicas globales no trasladan público, módulos, duración ni estilo a nuevos cursos. Se conservan los registros históricos y los programas ya creados. La ventana de temario conserva también el prompt y ajustes pendientes del formulario. Guardar no genera contenido; pulsar Generar sí solicita texto a la API.
+
+La petición OpenAI Responses no fuerza el modo JSON opcional, incompatible con algunos modelos; el contenido sigue validándose localmente sin reintento automático. Un rechazo muestra HTTP y, cuando son reconocidos, código/parámetro seguros. La validación de lecciones acepta opcionales nulos y números como texto de celdas, sin rellenar narración/ejercicios faltantes. Si falla otro campo, se muestra su ruta segura en vez de una explicación genérica, manteniendo el temario y versión anterior. No se afirma haber identificado el motivo exacto de un rechazo histórico de producción sin sus datos.

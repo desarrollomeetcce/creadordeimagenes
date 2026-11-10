@@ -43,6 +43,7 @@ export async function providerJSON(
   url: string,
   init: RequestInit = {},
   max = 20000000,
+  errorDetail?: (value: unknown) => string,
 ) {
   let response: Response;
   try {
@@ -58,7 +59,21 @@ export async function providerJSON(
       502,
     );
   }
-  demand(response.ok, safeProviderError(name, response.status), 502);
+  if (!response.ok) {
+    let detail = "";
+    if (errorDetail) {
+      try {
+        const bytes = await boundedBytes(new Response(response.body), 16384);
+        detail = errorDetail(JSON.parse(bytes.toString("utf8")));
+      } catch {}
+    }
+    throw new AppError(
+      safeProviderError(name, response.status) +
+        (errorDetail ? ` HTTP ${response.status}.` : "") +
+        (detail ? " " + detail : ""),
+      502,
+    );
+  }
   try {
     return JSON.parse((await boundedBytes(response, max)).toString("utf8"));
   } catch (e) {

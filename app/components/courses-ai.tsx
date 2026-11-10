@@ -36,6 +36,7 @@ import {
   type LibraryCategory,
   type LibraryHandle,
 } from "@/lib/courses/library-shared";
+import { technicalSettings } from "@/lib/courses/technical-settings";
 import { parseCourseOutline } from "@/lib/courses/outline";
 import "./courses-ai.css";
 import "./course-studio.css";
@@ -508,6 +509,49 @@ function CourseHeading({
     </div>
   );
 }
+function readCourseSettings(f: FormData, s: CourseSettings) {
+  const settings: Record<string, unknown> = {
+    ...s,
+    provider: f.get("contentProvider") ?? s.provider,
+    voiceProvider: f.get("voiceProvider") ?? s.voiceProvider,
+    imageProvider: f.get("imageProvider") ?? s.imageProvider,
+    videoProvider: f.get("videoProvider") ?? s.videoProvider,
+    videoModel: f.get("videoModel") ?? s.videoModel,
+  };
+  for (const k of [
+    "libraryGroup",
+    "voiceMode",
+    "audience",
+    "audienceDetail",
+    "level",
+    "approach",
+    "style",
+    "language",
+    "model",
+    "tone",
+    "voiceId",
+    "voiceModel",
+    "imageModel",
+    "imageQuality",
+    "videoResolution",
+    "videoAspect",
+    "exportResolution",
+    "exportAspect",
+    "promoScope",
+    "promoCTA",
+  ])
+    settings[k] = f.get(k) ?? s[k as keyof CourseSettings];
+  for (const k of [
+    "moduleCount",
+    "minutes",
+    "voiceSpeed",
+    "videoDuration",
+    "promoSeconds",
+  ])
+    settings[k] = Number(f.get(k) ?? s[k as keyof CourseSettings]);
+  settings.mixStyles = f.get("mixStyles") === "on";
+  return settingsSchema.parse(settings);
+}
 function CourseForm({
   course,
   providers,
@@ -549,50 +593,11 @@ function CourseForm({
     opts = v?.options;
   function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const f = new FormData(e.currentTarget),
-      settings: Record<string, unknown> = {
-        resources: s.resources,
-        provider,
-        voiceProvider: voice,
-        imageProvider: image,
-        videoProvider: video,
-        videoModel,
-      };
-    for (const k of [
-      "libraryGroup",
-      "voiceMode",
-      "audience",
-      "audienceDetail",
-      "level",
-      "approach",
-      "style",
-      "language",
-      "model",
-      "tone",
-      "voiceId",
-      "voiceModel",
-      "imageModel",
-      "imageQuality",
-      "videoResolution",
-      "videoAspect",
-      "exportResolution",
-      "exportAspect",
-      "promoScope",
-      "promoCTA",
-    ])
-      settings[k] = f.get(k) ?? s[k as keyof CourseSettings];
-    for (const k of [
-      "moduleCount",
-      "minutes",
-      "voiceSpeed",
-      "videoDuration",
-      "promoSeconds",
-    ])
-      settings[k] = Number(f.get(k) ?? s[k as keyof CourseSettings]);
-    settings.mixStyles = f.get("mixStyles") === "on";
+    const f = new FormData(e.currentTarget);
+    const settings = readCourseSettings(f, s);
     submit(
       settingsOnly
-        ? { settings }
+        ? { settings: technicalSettings(settings) }
         : {
             title: course?.title,
             kind: course?.kind,
@@ -621,123 +626,113 @@ function CourseForm({
           />
         </label>
       )}
-      <label className="course-mix-toggle">
-        <input type="checkbox" name="mixStyles" defaultChecked={s.mixStyles} />{" "}
-        Combinar formatos de video según el tema
-      </label>
-      <small className="muted">
-        Permite alternar profesor, pizarra, código, tablas o ilustraciones.
-        Describe la combinación en el prompt.
-      </small>
-      <div className="course-grid">
-        {settingsOnly && (
-          <>
+      {!settingsOnly && (
+        <>
+          <label className="course-mix-toggle">
+            <input
+              type="checkbox"
+              name="mixStyles"
+              defaultChecked={s.mixStyles}
+            />{" "}
+            Combinar formatos de video según el tema
+          </label>
+          <small className="muted">
+            Permite alternar profesor, pizarra, código, tablas o ilustraciones.
+            Describe la combinación en el prompt.
+          </small>
+          <div className="course-grid">
             <Select
-              name="audience"
-              label="Público objetivo"
-              value={s.audience}
-              options={Object.entries(audienceLabels).map(([value, label]) => ({
-                value,
-                label,
-              }))}
+              name="level"
+              label="Dificultad del curso"
+              value={s.level}
+              options={[
+                { value: "basic", label: "Básico" },
+                { value: "intermediate", label: "Intermedio" },
+                { value: "advanced", label: "Avanzado" },
+              ]}
+            />
+            <Select
+              name="approach"
+              label="Enfoque"
+              value={s.approach}
+              options={[
+                { value: "theory", label: "Teórico" },
+                { value: "practice", label: "Práctico" },
+                { value: "mixed", label: "Teoría + práctica" },
+              ]}
             />
             <label>
-              Detalle del público · opcional
+              Cantidad de módulos al generar con IA
               <input
-                name="audienceDetail"
-                maxLength={200}
-                defaultValue={s.audienceDetail}
+                name="moduleCount"
+                type="number"
+                required
+                min={1}
+                max={100}
+                defaultValue={s.moduleCount}
               />
             </label>
-          </>
-        )}
-        <Select
-          name="level"
-          label="Dificultad del curso"
-          value={s.level}
-          options={[
-            { value: "basic", label: "Básico" },
-            { value: "intermediate", label: "Intermedio" },
-            { value: "advanced", label: "Avanzado" },
-          ]}
-        />
-        <Select
-          name="approach"
-          label="Enfoque"
-          value={s.approach}
-          options={[
-            { value: "theory", label: "Teórico" },
-            { value: "practice", label: "Práctico" },
-            { value: "mixed", label: "Teoría + práctica" },
-          ]}
-        />
-        <label>
-          Cantidad de módulos al generar con IA
-          <input
-            name="moduleCount"
-            type="number"
-            required
-            min={1}
-            max={100}
-            defaultValue={s.moduleCount}
-          />
-        </label>
-        <label>
-          Minutos objetivo por módulo
-          <input
-            name="minutes"
-            type="number"
-            required
-            min={1}
-            max={60}
-            defaultValue={s.minutes}
-          />
-        </label>
-        <Select
-          name="style"
-          label="Estilo inicial"
-          value={s.style}
-          options={[
-            { value: "per-module", label: "Se decidirá en cada módulo" },
-            ...styles.map((value) => ({ value, label: styleLabels[value] })),
-          ]}
-        />
-        <label>
-          Idioma
-          <select name="language" defaultValue={s.language}>
-            {[
-              "Español latinoamericano",
-              "Español de España",
-              "English",
-              "Português",
-              "Français",
-              "Deutsch",
-              "Italiano",
-              "中文",
-              "日本語",
-              "العربية",
-              ...(![
-                "Español latinoamericano",
-                "Español de España",
-                "English",
-                "Português",
-                "Français",
-                "Deutsch",
-                "Italiano",
-                "中文",
-                "日本語",
-                "العربية",
-              ].includes(s.language)
-                ? [s.language]
-                : []),
-            ].map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+            <label>
+              Minutos objetivo por módulo
+              <input
+                name="minutes"
+                type="number"
+                required
+                min={1}
+                max={60}
+                defaultValue={s.minutes}
+              />
+            </label>
+            <Select
+              name="style"
+              label="Estilo inicial"
+              value={s.style}
+              options={[
+                { value: "per-module", label: "Se decidirá en cada módulo" },
+                ...styles.map((value) => ({
+                  value,
+                  label: styleLabels[value],
+                })),
+              ]}
+            />
+            <label>
+              Idioma
+              <select name="language" defaultValue={s.language}>
+                {[
+                  "Español latinoamericano",
+                  "Español de España",
+                  "English",
+                  "Português",
+                  "Français",
+                  "Deutsch",
+                  "Italiano",
+                  "中文",
+                  "日本語",
+                  "العربية",
+                  ...(![
+                    "Español latinoamericano",
+                    "Español de España",
+                    "English",
+                    "Português",
+                    "Français",
+                    "Deutsch",
+                    "Italiano",
+                    "中文",
+                    "日本語",
+                    "العربية",
+                  ].includes(s.language)
+                    ? [s.language]
+                    : []),
+                ].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </>
+      )}
       <button
         type="button"
         disabled={busy}
@@ -787,46 +782,57 @@ function CourseForm({
         Puedes usar una suite o combinar proveedores. Cada parte utiliza el
         modelo y la clave que selecciones.
       </small>
-      <details className="course-promo-options">
-        <summary>Clips promocionales · opcional</summary>
-        <Select
-          name="promoScope"
-          label="Qué clip quieres preparar"
-          value={s.promoScope}
-          options={[
-            { value: "none", label: "Sin clips promocionales" },
-            {
-              value: "course",
-              label: "Tráiler del diplomado / curso completo",
-            },
-            { value: "modules", label: "Avance de cada módulo seleccionado" },
-          ]}
-        />
-        <label>
-          Duración objetivo del clip · segundos
-          <input
-            type="number"
-            name="promoSeconds"
-            min={15}
-            max={90}
-            defaultValue={s.promoSeconds}
-          />
-        </label>
-        <label>
-          Llamada a la acción
-          <input name="promoCTA" maxLength={300} defaultValue={s.promoCTA} />
-        </label>
-        <small className="muted">
-          Usa los temas, el público y la voz seleccionada. El formato final se
-          elige en Video. Generar el clip consume texto y voz; guardar esta
-          opción no genera nada.
-        </small>
-        {!settingsOnly && (
-          <button type="submit" data-action="promo" disabled={busy}>
-            ✦ Generar clips promocionales
-          </button>
-        )}
-      </details>
+      {!settingsOnly && (
+        <>
+          <details className="course-promo-options">
+            <summary>Clips promocionales · opcional</summary>
+            <Select
+              name="promoScope"
+              label="Qué clip quieres preparar"
+              value={s.promoScope}
+              options={[
+                { value: "none", label: "Sin clips promocionales" },
+                {
+                  value: "course",
+                  label: "Tráiler del diplomado / curso completo",
+                },
+                {
+                  value: "modules",
+                  label: "Avance de cada módulo seleccionado",
+                },
+              ]}
+            />
+            <label>
+              Duración objetivo del clip · segundos
+              <input
+                type="number"
+                name="promoSeconds"
+                min={15}
+                max={90}
+                defaultValue={s.promoSeconds}
+              />
+            </label>
+            <label>
+              Llamada a la acción
+              <input
+                name="promoCTA"
+                maxLength={300}
+                defaultValue={s.promoCTA}
+              />
+            </label>
+            <small className="muted">
+              Usa los temas, el público y la voz seleccionada. El formato final
+              se elige en Video. Generar el clip consume texto y voz; guardar
+              esta opción no genera nada.
+            </small>
+            {!settingsOnly && (
+              <button type="submit" data-action="promo" disabled={busy}>
+                ✦ Generar clips promocionales
+              </button>
+            )}
+          </details>
+        </>
+      )}
       <details open={!s.model}>
         <summary>Texto · desarrollar clases y materiales</summary>
         <div className="course-grid">
@@ -860,26 +866,30 @@ function CourseForm({
       </details>
       <details>
         <summary>Voz · narrar las clases</summary>
-        <Select
-          name="voiceMode"
-          label="Forma de narrar"
-          value={s.voiceMode}
-          options={[
-            {
-              value: "voiceover",
-              label: "Voz en off · narrador fuera de pantalla",
-            },
-            {
-              value: "teacher",
-              label: "Voz del profesor · explicación en primera persona",
-            },
-          ]}
-        />
-        <p className="muted">
-          Ambas opciones usan la voz elegida. Para ver al profesor, selecciona
-          Profesor en pantalla y genera sus escenas de video; esta voz no
-          sincroniza sus labios.
-        </p>
+        {!settingsOnly && (
+          <>
+            <Select
+              name="voiceMode"
+              label="Forma de narrar"
+              value={s.voiceMode}
+              options={[
+                {
+                  value: "voiceover",
+                  label: "Voz en off · narrador fuera de pantalla",
+                },
+                {
+                  value: "teacher",
+                  label: "Voz del profesor · explicación en primera persona",
+                },
+              ]}
+            />
+            <p className="muted">
+              Ambas opciones usan la voz elegida. Para ver al profesor,
+              selecciona Profesor en pantalla y genera sus escenas de video;
+              esta voz no sincroniza sus labios.
+            </p>
+          </>
+        )}
         <div className="course-grid">
           <label>
             Proveedor
@@ -938,10 +948,12 @@ function CourseForm({
               />
             </label>
           )}
-          <label>
-            Tono del profesor
-            <input name="tone" maxLength={300} defaultValue={s.tone} />
-          </label>
+          {!settingsOnly && (
+            <label>
+              Tono del profesor
+              <input name="tone" maxLength={300} defaultValue={s.tone} />
+            </label>
+          )}
         </div>
       </details>
       <details>
@@ -993,11 +1005,10 @@ function CourseForm({
         </div>
       </details>
       <details>
-        <summary>Video · escenas generadas y exportación</summary>
+        <summary>Video · proveedor y clips opcionales</summary>
         <p className="muted">
-          La clase puede usar diapositivas y voz. Opcionalmente puedes añadir
-          escenas de video cortas creadas con IA; se generan solo cuando las
-          solicitas.
+          Los clips IA son escenas cortas adicionales. La duración del módulo se
+          define en minutos dentro de cada curso.
         </p>
         <div className="course-grid">
           <label>
@@ -1017,6 +1028,7 @@ function CourseForm({
           <label>
             Modelo de video
             <select
+              name="videoModel"
               value={videoModel}
               onChange={(e) => setVideoModel(e.target.value)}
             >
@@ -1038,45 +1050,52 @@ function CourseForm({
                 : [{ value: "", label: "Automática del modelo" }]
             }
           />
-          <Select
-            key={videoModel + "duration"}
-            name="videoDuration"
-            label="Duración de la escena de video"
-            value={s.videoDuration}
-            options={
-              opts?.durations.length
-                ? opts.durations.map((n) => ({
-                    value: String(n),
-                    label: n + " segundos",
-                  }))
-                : [
-                    {
-                      value: String(s.videoDuration),
-                      label: "Automática del modelo",
-                    },
-                  ]
-            }
-          />
-          <Select
-            key={videoModel + "aspect"}
-            name="videoAspect"
-            label="Formato de la escena de video"
-            value={s.videoAspect}
-            options={
-              opts?.aspects.length
-                ? opts.aspects
-                : [{ value: "16:9", label: "Automático del modelo" }]
-            }
-          />
-          <Select
-            name="exportAspect"
-            label="Formato de la videoclase"
-            value={s.exportAspect}
-            options={[
-              { value: "16:9", label: "Horizontal · YouTube / cursos" },
-              { value: "9:16", label: "Vertical · TikTok / Reels / Shorts" },
-            ]}
-          />
+          {!settingsOnly && (
+            <>
+              <Select
+                key={videoModel + "duration"}
+                name="videoDuration"
+                label="Segundos del clip IA opcional"
+                value={s.videoDuration}
+                options={
+                  opts?.durations.length
+                    ? opts.durations.map((n) => ({
+                        value: String(n),
+                        label: n + " segundos",
+                      }))
+                    : [
+                        {
+                          value: String(s.videoDuration),
+                          label: "Automática del modelo",
+                        },
+                      ]
+                }
+              />
+              <Select
+                key={videoModel + "aspect"}
+                name="videoAspect"
+                label="Formato del clip IA opcional"
+                value={s.videoAspect}
+                options={
+                  opts?.aspects.length
+                    ? opts.aspects
+                    : [{ value: "16:9", label: "Automático del modelo" }]
+                }
+              />
+              <Select
+                name="exportAspect"
+                label="Formato de la videoclase"
+                value={s.exportAspect}
+                options={[
+                  { value: "16:9", label: "Horizontal · YouTube / cursos" },
+                  {
+                    value: "9:16",
+                    label: "Vertical · TikTok / Reels / Shorts",
+                  },
+                ]}
+              />
+            </>
+          )}
           <Select
             name="exportResolution"
             label="Exportación de la clase narrada"
@@ -1098,7 +1117,7 @@ function CourseForm({
           {busy
             ? "Guardando…"
             : settingsOnly
-              ? "Guardar valores para nuevos programas"
+              ? "Guardar configuración técnica"
               : "Guardar configuración"}
         </button>
         <span className="muted">Guardar no consume IA.</span>
@@ -1106,6 +1125,166 @@ function CourseForm({
     </form>
   );
 }
+function CourseOutlineSetup({
+  course,
+  defaults,
+  providers,
+  busy,
+  submit,
+  reload,
+}: {
+  course: Course;
+  defaults: CourseSettings;
+  providers: Provider[];
+  busy: boolean;
+  submit: (
+    patch: Pick<
+      CourseSettings,
+      "provider" | "model" | "moduleCount" | "minutes"
+    >,
+  ) => Promise<void>;
+  reload: () => Promise<void>;
+}) {
+  const [provider, setProvider] = useState<CourseSettings["provider"]>(
+    course.settings.model ? course.settings.provider : defaults.provider,
+  );
+  const available =
+    providers
+      .find((p) => p.provider === provider && p.verifiedAt)
+      ?.models.filter((m) => m.kind === "text") ?? [];
+  const initial = course.settings.model || defaults.model;
+  const [model, setModel] = useState(initial),
+    [count, setCount] = useState(course.settings.moduleCount),
+    [minutes, setMinutes] = useState(course.settings.minutes),
+    [error, setError] = useState(""),
+    [pending, setPending] = useState(false);
+  const selected = available.some((m) => m.id === model) ? model : "";
+  return (
+    <form
+      className="course-form course-starter"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError("");
+        setPending(true);
+        try {
+          await submit({
+            provider,
+            model: selected,
+            moduleCount: count,
+            minutes,
+          });
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      <h3>Prepara el temario de este curso</h3>
+      <div className="course-grid">
+        <label>
+          Proveedor de contenido
+          <select
+            name="outlineProvider"
+            value={provider}
+            disabled={busy || pending}
+            onChange={(e) => {
+              setProvider(e.target.value as typeof provider);
+              setModel("");
+            }}
+          >
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="mistral">Mistral AI</option>
+          </select>
+        </label>
+        <label>
+          Modelo de contenido
+          <select
+            name="outlineModel"
+            value={selected}
+            required
+            disabled={busy || pending}
+            onChange={(e) => setModel(e.target.value)}
+          >
+            <option value="">Seleccionar modelo verificado</option>
+            {available.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Cantidad de módulos
+          <input
+            name="outlineModuleCount"
+            type="number"
+            min={1}
+            max={100}
+            required
+            value={count}
+            onChange={(e) => setCount(Number(e.target.value))}
+          />
+        </label>
+        <label>
+          Minutos objetivo por módulo
+          <input
+            name="outlineMinutes"
+            type="number"
+            min={1}
+            max={60}
+            required
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+          />
+        </label>
+      </div>
+      <p>
+        {count} módulos × {minutes} min = {count * minutes} min objetivo. Podrás
+        revisar el temario antes de desarrollar las clases.
+      </p>
+      {!available.length && (
+        <p>
+          Consulta los modelos de este proveedor en{" "}
+          <a
+            href="/?view=ai&aiTab=connections"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Ajustes IA → Conexiones
+          </a>
+          .{" "}
+          <button
+            type="button"
+            disabled={pending || busy}
+            onClick={() => void reload().catch((e) => setError(e.message))}
+          >
+            Actualizar modelos guardados
+          </button>
+        </p>
+      )}
+      <button
+        type="submit"
+        className="course-primary"
+        disabled={busy || pending || !selected}
+      >
+        {pending ? "Preparando solicitud…" : "✦ Generar temario"}
+      </button>
+      <small>
+        Usa el prompt y las referencias del curso. Esta acción consume la API de
+        texto elegida; no genera clips ni voz.
+      </small>
+      {error && (
+        <p role="alert" className="course-error">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export function CourseConfiguration() {
   const [providers, setProviders] = useState<Provider[]>([]),
     [defaults, setDefaults] = useState<{
@@ -1134,10 +1313,11 @@ export function CourseConfiguration() {
   }, []);
   return (
     <div className="courses-ai">
-      <h2>Parámetros de cursos</h2>
+      <h2>Proveedores para cursos</h2>
       <p className="muted">
-        Valores iniciales para nuevas carpetas. Cada programa conserva su propia
-        configuración; guardar aquí no modifica los anteriores.
+        Proveedores, modelos y calidad para nuevos cursos. El público, temario y
+        duración se definen dentro de cada curso; los existentes conservan su
+        configuración.
       </p>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
@@ -1157,7 +1337,9 @@ export function CourseConfiguration() {
                 ...b,
               });
               setDefaults(d);
-              setMessage("Valores guardados para nuevos programas.");
+              setMessage(
+                "Configuración técnica guardada. Los cursos existentes se conservan.",
+              );
             } catch (e) {
               setError(e instanceof Error ? e.message : "No se pudo guardar.");
             } finally {
@@ -1328,6 +1510,7 @@ export function CoursesAI() {
     ),
     [referencesShown, setReferencesShown] = useState(false),
     [outlineMode, setOutlineMode] = useState(""),
+    [settingsFormVersion, setSettingsFormVersion] = useState(0),
     [moduleSelection, setModuleSelection] = useState<"all" | string[]>("all"),
     [modulePage, setModulePage] = useState(1),
     [moduleSize, setModuleSize] = useState(25),
@@ -1784,7 +1967,7 @@ export function CoursesAI() {
 
                   <div className="course-inline-form">
                     <CourseForm
-                      key={course.id}
+                      key={course.id + ":" + settingsFormVersion}
                       formId="course-settings-form"
                       externalPrompt
                       course={course}
@@ -1933,29 +2116,60 @@ export function CoursesAI() {
                       title="Generar temario con IA"
                       onClose={() => setOutlineMode("")}
                     >
-                      <div className="course-starter">
-                        <h3>Primero, el mapa de aprendizaje</h3>
-                        <p>
-                          La IA propondrá {course.settings.moduleCount} módulos.
-                          Podrás cambiar títulos, orden y enfoque antes de
-                          desarrollar el contenido.
-                        </p>
-                        <button
-                          type="submit"
-                          className="course-primary"
-                          disabled={busy || working || !course.settings.model}
-                          form="course-settings-form"
-                          data-action="outline"
-                        >
-                          ✦ Generar temario
-                        </button>
-                        {!course.settings.model && (
-                          <p>
-                            Configura un modelo de contenido para generar con
-                            IA.
-                          </p>
-                        )}
-                      </div>
+                      <CourseOutlineSetup
+                        key={course.id}
+                        course={course}
+                        defaults={defaults}
+                        providers={providers}
+                        busy={busy || working}
+                        reload={async () =>
+                          setProviders(await request("/providers"))
+                        }
+                        submit={async (patch) => {
+                          if (busyRef.current) return;
+                          busyRef.current = true;
+                          setBusy(true);
+                          setError("");
+                          try {
+                            const form = document.getElementById(
+                              "course-settings-form",
+                            ) as HTMLFormElement | null;
+                            const fields = form ? new FormData(form) : null;
+                            const settings = settingsSchema.parse({
+                              ...(fields
+                                ? readCourseSettings(fields, course.settings)
+                                : course.settings),
+                              ...patch,
+                              resources,
+                            });
+                            await request("/" + course.id + "/save", {
+                              revision: course.revision,
+                              data: {
+                                title: course.title,
+                                kind: course.kind,
+                                description: course.description,
+                                prompt: String(
+                                  fields?.get("prompt") ?? course.prompt,
+                                ),
+                                settings,
+                              },
+                            });
+                            const latest = await request("/" + course.id);
+                            setCourse(latest);
+                            setSettingsFormVersion((n) => n + 1);
+                            await request("/" + course.id + "/tasks", {
+                              requestId: crypto.randomUUID(),
+                              kind: "OUTLINE",
+                              revision: latest.revision,
+                            });
+                            setOutlineMode("");
+                            await load(course.id);
+                          } finally {
+                            busyRef.current = false;
+                            if (mounted.current) setBusy(false);
+                          }
+                        }}
+                      />
                     </Window>
                   )}
                   {add && (
@@ -2455,7 +2669,11 @@ export function CoursesAI() {
           }
           onClose={() => setWindow(null)}
         >
-          {error && <div className="course-error" role="alert">{error}</div>}
+          {error && (
+            <div className="course-error" role="alert">
+              {error}
+            </div>
+          )}
           {moduleLoadError && (
             <div className="course-error" role="alert">
               {moduleLoadError}

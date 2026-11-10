@@ -8,6 +8,7 @@ import {
 } from "../providers/http";
 import { z } from "zod";
 import { sharedSource } from "./shared-credentials";
+import { openAITextRequest, openAIRequestDetail } from "./openai-text";
 import {
   googleVideoModels,
   googleSpeechModels,
@@ -97,6 +98,7 @@ async function json(
       signal: AbortSignal.timeout(body ? 180000 : 15000),
     },
     2500000,
+    provider === "openai" ? openAIRequestDetail : undefined,
   );
 }
 export async function saveCredential(raw: unknown) {
@@ -330,13 +332,12 @@ export async function generateText(
   let text = "",
     usage: unknown = {};
   if (provider === "openai") {
-    const r = await json(provider, c.key, "responses", {
-      model,
-      instructions: instruction,
-      input: prompt,
-      max_output_tokens: 14000,
-      text: { format: { type: "json_object" } },
-    });
+    const r = await json(
+      provider,
+      c.key,
+      "responses",
+      openAITextRequest(model, instruction, prompt),
+    );
     if (r.status !== "completed" || r.error)
       throw new CourseOutputError(
         "La respuesta quedó incompleta o fue rechazada. Se conserva el contenido anterior; no se reintentó.",
