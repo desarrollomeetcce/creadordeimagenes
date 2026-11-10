@@ -2627,6 +2627,8 @@ export function CoursesAI() {
                     {preview && (
                       <CoursePlayer
                         key={m.id + ":" + m.revision}
+                        courseId={course.id}
+                        moduleId={m.id}
                         lesson={lesson}
                         assets={m.assets}
                         revision={m.revision}

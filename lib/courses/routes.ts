@@ -42,6 +42,36 @@ export async function courseRoutes(
     method = req.method;
   const send = (v: unknown, status = 200) =>
     NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
+  if (p[0] === "vimeo" && p.length === 1) {
+    const vimeo = await import("./vimeo");
+    if (method === "GET") return send(await vimeo.vimeoConnection(u));
+    if (method === "POST") return send(await vimeo.saveVimeo(u, await body()));
+    if (method === "DELETE") return send(await vimeo.deleteVimeo(u));
+  }
+  if (p.length >= 4 && p[1] === "modules" && p[3] === "renders") {
+    const render = await import("./render-jobs");
+    if (p.length === 4 && method === "GET")
+      return send(await render.renderStatus(u, p[0], p[2]));
+    if (p.length === 4 && method === "POST") {
+      await rateLimit("courses:render:" + u.id, 30);
+      return send(await render.queueRender(u, p[0], p[2], await body()), 202);
+    }
+    if (p.length === 5 && method === "DELETE")
+      return send(await render.cancelRender(u, p[0], p[2], p[4]));
+  }
+  if (p.length >= 4 && p[1] === "modules" && p[3] === "vimeo") {
+    const vimeo = await import("./vimeo");
+    if (p.length === 4 && method === "GET")
+      return send(await vimeo.uploads(u, p[0], p[2]));
+    if (p.length === 4 && method === "POST") {
+      await rateLimit("courses:vimeo:" + u.id, 20);
+      return send(await vimeo.queueVimeo(u, p[0], p[2], await body()), 202);
+    }
+    if (p.length === 6 && p[5] === "resume" && method === "POST")
+      return send(await vimeo.resumeVimeo(u, p[0], p[2], p[4]));
+    if (p.length === 5 && method === "DELETE")
+      return send(await vimeo.cancelVimeo(u, p[0], p[2], p[4]));
+  }
   if (p.length === 1 && p[0] === "access" && method === "GET")
     return send({
       users: await db.user.findMany({
@@ -210,6 +240,50 @@ export async function courseRoutes(
     }
     demand(a, "Recurso no encontrado.", 404);
     const bytes = await load(a.path);
+    if (a.mime === "video/mp4") {
+      const range = req.headers.get("range");
+      const match = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+      let start = 0,
+        end = bytes.length - 1;
+      if (range) {
+        if (!match || (!match[1] && !match[2]))
+          return new NextResponse(null, {
+            status: 416,
+            headers: { "Content-Range": `bytes */${bytes.length}` },
+          });
+        start = match[1]
+          ? Number(match[1])
+          : Math.max(0, bytes.length - Number(match[2]));
+        end = match[1] && match[2] ? Math.min(end, Number(match[2])) : end;
+        if (
+          !Number.isSafeInteger(start) ||
+          !Number.isSafeInteger(end) ||
+          start < 0 ||
+          start > end ||
+          start >= bytes.length
+        )
+          return new NextResponse(null, {
+            status: 416,
+            headers: { "Content-Range": `bytes */${bytes.length}` },
+          });
+      }
+      return new NextResponse(new Uint8Array(bytes.subarray(start, end + 1)), {
+        status: range ? 206 : 200,
+        headers: {
+          "Content-Type": "video/mp4",
+          "Content-Length": String(end - start + 1),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          ...(range
+            ? { "Content-Range": `bytes ${start}-${end}/${bytes.length}` }
+            : {}),
+          ...(req.nextUrl.searchParams.get("download") === "1"
+            ? { "Content-Disposition": 'attachment; filename="videoclase.mp4"' }
+            : {}),
+        },
+      });
+    }
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "Content-Type": a.mime,

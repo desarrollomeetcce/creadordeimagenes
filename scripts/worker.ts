@@ -664,12 +664,21 @@ export async function recoverInterrupted(now = new Date()) {
 
 async function main() {
   let lastMaintenance = 0;
+  let classroomWork: Promise<unknown> | null = null;
+  let nextClassroomCheck = 0;
   while (true) {
     await recoverInterrupted();
     if (Date.now() - lastMaintenance >= 300000) {
       const { runMaintenance } = await import("../lib/maintenance");
       await runMaintenance("WORKER").catch(() => {});
       lastMaintenance = Date.now();
+    }
+    if (!classroomWork && Date.now() >= nextClassroomCheck) {
+      classroomWork = (async () => {
+        const rendered = await (await import("../lib/courses/render-jobs")).processOneRender();
+        const uploaded = await (await import("../lib/courses/vimeo")).processOneVimeo();
+        nextClassroomCheck = Date.now() + (rendered || uploaded ? 0 : 15000);
+      })().catch(() => {}).finally(() => { classroomWork = null; });
     }
     await (await import("../lib/meta-ads/service")).runDueSync(1);
     await runOne();

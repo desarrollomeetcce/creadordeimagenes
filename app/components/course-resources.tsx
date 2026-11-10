@@ -127,7 +127,7 @@ export function CourseResources({
         })}
       </div>
       <p className="course-resource-note">
-        La videoclase usa voz con diapositivas, pizarra o demostración. Podrás
+        La videoclase grabada usa voz con diapositivas, pizarra animada o demostración. Podrás
         verla y exportarla. Las ilustraciones y escenas de video IA son
         adicionales y pueden generar cargos por escena.
       </p>

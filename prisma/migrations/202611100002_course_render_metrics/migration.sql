@@ -1,0 +1,1 @@
+ALTER TABLE "AICourseRender" ADD COLUMN "durationSeconds" DOUBLE PRECISION, ADD COLUMN "sizeBytes" INTEGER;

@@ -26,6 +26,15 @@ export async function assertNoBuild(
   courseId: string,
   allowed?: string,
 ) {
+  const rendering = await tx.aICourseRender.count({
+    where: { module: { courseId }, status: { in: ["PENDING", "RUNNING"] } },
+  });
+  const uploading = await tx.aICourseVimeoUpload.count({
+    where: {
+      render: { module: { courseId } },
+      status: { in: ["PENDING", "CREATING", "UPLOADING"] },
+    },
+  });
   const allowedPromo = allowed
     ? await tx.aICoursePromo.findUnique({
         where: { id: allowed },
@@ -49,6 +58,11 @@ export async function assertNoBuild(
     where: { courseId, status: { in: activeBuildStates } },
     select: { id: true },
   });
+  demand(
+    (!rendering || (!!allowed && b?.id === allowed)) && !uploading,
+    "Espera a que termine la exportación o el envío del curso antes de editar.",
+    409,
+  );
   demand(
     !b || b.id === allowed,
     "Espera a que termine el desarrollo del curso o detenlo antes de editar.",
@@ -248,6 +262,19 @@ export async function stopBuild(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(893127)`;
     await courseTransactionOwner(tx, u);
+    const stopping = await tx.aICourseBuild.findMany({
+      where: { courseId, status: { in: ["PENDING", "RUNNING"] } },
+      select: { id: true },
+    });
+    for (const build of stopping)
+      await tx.aICourseRender.updateMany({
+        where: {
+          module: { courseId },
+          requestId: { startsWith: `build-render:${build.id}:` },
+          status: "PENDING",
+        },
+        data: { status: "CANCELLED" },
+      });
     await tx.aICourseBuild.updateMany({
       where: { courseId, status: { in: ["PENDING", "RUNNING"] } },
       data: { status: "STOPPING" },
@@ -478,6 +505,35 @@ export async function nextBuildStep(
             )
           )
             return enqueue(kind, m.id, scene);
+      }
+      if (
+        !process.env.VERCEL &&
+        chosen.some((r) => r.kind === "video") &&
+        !lesson.data.scenes.some((s) => s.kind === "presenter") &&
+        !m.assets.some((a) => a.revision === m.revision && a.kind === "VIDEO")
+      ) {
+        const requestId = `build-render:${b.id}:${m.id}:${m.revision}:${settings.exportResolution}`;
+        const existing = await tx.aICourseRender.findFirst({
+          where: {
+            moduleId: m.id,
+            revision: m.revision,
+            resolution: settings.exportResolution,
+            status: { in: ["PENDING", "RUNNING", "COMPLETED"] },
+          },
+          select: { id: true },
+        });
+        if (!existing)
+          await tx.aICourseRender.upsert({
+            where: { requestId },
+            create: {
+              moduleId: m.id,
+              actorId: b.actorId,
+              requestId,
+              revision: m.revision,
+              resolution: settings.exportResolution,
+            },
+            update: {},
+          });
       }
       await tx.aICourseBuild.update({
         where: { id },

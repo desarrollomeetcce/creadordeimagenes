@@ -1,5 +1,7 @@
 # Cursos IA y Ajustes IA
 
+Actualización10/11: [Videoclases grabadas, pizarra y Vimeo](COURSE_CLASSROOM_VIDEO.md). MP4 en servidor con recursos existentes y envío opcional a Vimeo; la exportación local se mantiene como alternativa explícita.
+
 Cursos IA sigue siendo exclusivo de OWNER aprobado, vigente y con IA habilitada. Las comprobaciones también se hacen en el servidor, en archivos y antes de generar/publicar.
 
 ## Un solo lugar para conectar proveedores

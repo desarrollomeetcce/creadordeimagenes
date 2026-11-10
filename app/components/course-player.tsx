@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Lesson } from "@/lib/courses/schema";
+import { paintClassroom } from "@/lib/courses/classroom-frame";
+import { CourseDelivery } from "./course-delivery";
 type Asset = { id: string; revision: number; scene: number; kind: string };
 const assetURL = (id: string) =>
   "/api/courses-ai/assets/" + encodeURIComponent(id);
@@ -40,6 +42,10 @@ export function drawScene(
   image?: HTMLImageElement,
   clip?: HTMLVideoElement,
 ) {
+  if (!clip && scene.kind !== "presenter") {
+    paintClassroom(ctx, scene, progress, number, total, image);
+    return;
+  }
   if (ctx.canvas.height > ctx.canvas.width) {
     ctx.setTransform(
       ctx.canvas.width / 720,
@@ -360,6 +366,8 @@ export function CoursePlayer({
   title,
   resolution = "720p",
   aspect = "16:9",
+  courseId,
+  moduleId,
 }: {
   lesson: Lesson;
   assets: Asset[];
@@ -367,6 +375,8 @@ export function CoursePlayer({
   title: string;
   resolution?: "720p" | "1080p";
   aspect?: "16:9" | "9:16";
+  courseId?: string;
+  moduleId?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     stop = useRef(false),
@@ -537,7 +547,7 @@ export function CoursePlayer({
             const p = (ctxAudio!.currentTime - start) / duration;
             drawScene(ctx, s, p, i, lesson.scenes.length, image, clip);
             if (p >= 1) resolve();
-            else requestAnimationFrame(frame);
+            else setTimeout(frame, 83);
           };
           frame();
         });
@@ -631,13 +641,11 @@ export function CoursePlayer({
         <button type="button" disabled={busy} onClick={() => void play(false)}>
           ▶ Reproducir
         </button>
-        <button
-          type="button"
-          disabled={busy || !narrated}
-          onClick={() => void play(true)}
-        >
-          ↓ Exportar video
-        </button>
+        <details className="course-local-export">
+          <summary>Exportación local opcional</summary>
+          <p>Graba en tiempo real y utiliza recursos de esta computadora. Para pizarra y demostraciones, utiliza el MP4 del servidor.</p>
+          <button type="button" disabled={busy || !narrated} onClick={() => void play(true)}>↓ Exportar en esta computadora</button>
+        </details>
         {busy && (
           <button
             type="button"
@@ -649,9 +657,12 @@ export function CoursePlayer({
           </button>
         )}
       </div>
+      {courseId && moduleId && (
+        <CourseDelivery courseId={courseId} moduleId={moduleId} revision={revision} title={title} narrated={narrated} resolution={resolution} />
+      )}
       <p className="muted">
         {narrated
-          ? "Video con voz y revelado progresivo. Exportación local en MP4 o WebM según tu navegador."
+          ? "Videoclase grabada con voz y revelado progresivo. Exportar en esta computadora utiliza recursos de tu equipo; el MP4 del servidor continúa en segundo plano."
           : "Vista previa sin narración en las escenas pendientes. Genera la voz antes de exportar video."}
       </p>
       <p role="status">{message}</p>

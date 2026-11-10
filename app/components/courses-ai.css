@@ -879,3 +879,7 @@ html.dark .course-window {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Video delivery stays compact; no student interaction or real-time capture is required. */
+.classroom-delivery{border:1px solid var(--line,#36515d);border-left:3px solid #54cbb4;border-radius:12px;padding:14px;margin:12px 0;background:color-mix(in srgb,#54cbb4 5%,transparent)}
+.classroom-delivery p{font-size:.86rem;line-height:1.5;margin:7px 0}.classroom-badge{display:inline-flex;border:1px solid #497a73;border-radius:20px;padding:3px 9px;font-size:.72rem;color:var(--accent,#176b59)}
+.classroom-delivery progress{display:block;width:100%;height:8px;accent-color:#54cbb4;margin:9px 0}.classroom-delivery details{margin-top:12px}.classroom-delivery form{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.classroom-delivery form label{flex:1;min-width:180px}.classroom-delivery input{width:100%}.classroom-delivery a{display:inline-flex;align-items:center;min-height:34px;padding:5px 9px;text-decoration:none;border:1px solid var(--line,#36515d);border-radius:7px}.classroom-delivery .course-toolbar{flex-wrap:wrap}

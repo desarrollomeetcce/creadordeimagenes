@@ -1,3 +1,4 @@
+import { calculate } from "./classroom";
 import type { Lesson } from "./schema";
 export const escape = (v: string) =>
   v.replace(
@@ -33,6 +34,14 @@ export function lessonDocument(title: string, lesson: Lesson): DocumentContent {
           .join("\n\n"),
       })),
       { title: "Práctica", body: lesson.exercise },
+      ...(lesson.practice ?? []).map((q, i) => ({
+        title: "Ejercicio " + (i + 1),
+        body:
+          q.question +
+          (q.kind === "choice"
+            ? "\n" + q.options.map((v, j) => `${j + 1}. ${v}`).join("\n")
+            : ""),
+      })),
       ...(lesson.references.length
         ? [
             {
@@ -42,7 +51,19 @@ export function lessonDocument(title: string, lesson: Lesson): DocumentContent {
           ]
         : []),
     ],
-    answerKey: lesson.solution,
+    answerKey: [
+      lesson.solution,
+      ...(lesson.practice ?? []).map((q, i) => {
+        let answer = "Revisar expresión";
+        if (q.kind === "choice") answer = q.options[q.answer];
+        else {
+          try {
+            answer = String(calculate(q.expression));
+          } catch {}
+        }
+        return `Ejercicio ${i + 1}: ${answer}\n${q.explanation}`;
+      }),
+    ].join("\n\n"),
   };
 }
 export function documentHTML(

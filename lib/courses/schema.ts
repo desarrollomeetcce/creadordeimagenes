@@ -1,5 +1,6 @@
 import { resourcePlanSchema, defaultResources } from "./resources";
 import { z } from "zod";
+import { drawingSchema, practiceSchema } from "./classroom-schema";
 export const styles = [
   "slides",
   "whiteboard",
@@ -112,6 +113,7 @@ export const sceneSchema = z
       .max(12)
       .default([]),
     illustrationPrompt: z.string().max(1500).default(""),
+    drawings: z.array(drawingSchema).max(12).default([]),
   })
   .strict();
 export const lessonSchema = z
@@ -121,6 +123,7 @@ export const lessonSchema = z
     exercise: z.string().max(10000),
     solution: z.string().max(10000),
     references: z.array(z.string().max(500)).max(15).default([]),
+    practice: z.array(practiceSchema).max(8).default([]),
   })
   .strict();
 export type Lesson = z.infer<typeof lessonSchema>;

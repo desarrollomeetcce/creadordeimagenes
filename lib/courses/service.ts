@@ -3,6 +3,8 @@ import { assertNoBuild } from "./builds";
 import { withoutResourceModule } from "./resources";
 import { assertLibraryCategory } from "./library";
 import { teachingDirection, courseVisualPrompt } from "./teaching";
+import { calculate } from "./classroom";
+import { classroomInstructions } from "./classroom-schema";
 import { parseCourseOutline } from "./outline";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -1116,6 +1118,7 @@ export async function processCourseTask(id: string) {
           "\nBasado en el módulo desarrollado: " +
           JSON.stringify(b.module) +
           '\nDevuelve {"sections":[{"title":"...","body":"Contenido completo, no instrucciones para escribirlo"}],"answerKey":"Solucionario separado si corresponde"}. Libro: capítulos desarrollados. Taller/examen: ejercicios completos con espacio indicado para responder; soluciones solo en answerKey. Diapositivas: una sección por diapositiva. No afirmes ser psicólogo ni diagnostiques; ofrece orientación educativa y búsqueda de apoyo cuando corresponde.';
+      if (t.kind === "LESSON") prompt += "\n" + classroomInstructions;
       const r = await generateText(
         b.settings.provider,
         b.settings.model,
@@ -1129,6 +1132,10 @@ export async function processCourseTask(id: string) {
           : t.kind === "LESSON"
             ? parseGenerated(r.text, lessonSchema)
             : parseGenerated(r.text, materialOutput);
+      if (t.kind === "LESSON") {
+        for (const exercise of lessonSchema.parse(output).practice)
+          if (exercise.kind === "calculation") calculate(exercise.expression);
+      }
     }
     await db.$transaction(async (tx) => {
       await lock(tx);
