@@ -2265,6 +2265,7 @@ function PosterAISettings() {
                 } as Record<string, string>
               )[latestTest.status] ?? "Sin resultado confirmado.")}
           {latestTest?.error && <p>{latestTest.error}</p>}
+          {latestTest?.warning && <p role="status">{latestTest.warning}</p>}
           {latestTest && (
             <p className="hint">
               Proveedor: {latestTest.provider}

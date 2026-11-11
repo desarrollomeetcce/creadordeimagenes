@@ -1,3 +1,4 @@
+import { nativeImageDirection } from "../lib/native-image-direction";
 import { OPENAI_IMAGE_PROMPT_LIMIT, validateOpenAIImagePrompt } from "../lib/providers/openai-input";
 import {resolveSystemReferences,type SystemReference} from "../lib/system-resources";
 import {engineConfiguration,requireEngine,propioxRuntime} from "../lib/generation-engines";
@@ -316,6 +317,7 @@ export async function runOne(filter?: {
       output: Buffer,
       creativePlan: string = "";
     let creativeRecovery = false;
+    let creativeUnavailable = false;
     const scopedBrief=oneFlyerBrief(s.prompt,s.mode,s.index);
     const exactCopy=s.mode!=="Imagen"?extractFlyerCopy(scopedBrief,s.index):null;
     let literalCopy=false;
@@ -409,22 +411,34 @@ export async function runOne(filter?: {
       await heartbeat.check();
       const directImage = s.renderMode !== "editable" && reasoningLevel(s.reasoningLevel) === "low";
       if (!directImage) called = true;
-      const plan = directImage ? {text:"", usage:null, incomplete:false} : await adapter(creative!.provider).direct(
-        decryptKey(creative!.encryptedKey),
-        c.creativeModel!,
-        s.renderMode === "editable"
-          ? creativeBrief(
-              brief,
-              s.format,
-              refs
-                .filter((a) => /logo/i.test(a.purpose))
-                .map((a) => ({ id: a.id, name: a.name })),
-            )
-          : brief,
-        s.renderMode === "editable",
-        signal,
-        reasoningLevel(s.reasoningLevel),
-      );
+      const plan = directImage
+        ? { text: "", usage: null, incomplete: false, unavailable: false }
+        : await nativeImageDirection(
+            {
+              imageProvider: c.provider,
+              imageModel: c.imageModel!,
+              creativeProvider: creative!.provider,
+              editable: s.renderMode === "editable",
+            },
+            () =>
+              adapter(creative!.provider).direct(
+                decryptKey(creative!.encryptedKey),
+                c.creativeModel!,
+                s.renderMode === "editable"
+                  ? creativeBrief(
+                      brief,
+                      s.format,
+                      refs
+                        .filter((a) => /logo/i.test(a.purpose))
+                        .map((a) => ({ id: a.id, name: a.name })),
+                    )
+                  : brief,
+                s.renderMode === "editable",
+                signal,
+                reasoningLevel(s.reasoningLevel),
+              ),
+          );
+      creativeUnavailable = plan.unavailable === true;
       creativePlan = plan.text;
       creativeUsage = plan.usage;
       const layeredPlan = s.renderMode === "editable" && !plan.incomplete
@@ -561,7 +575,7 @@ export async function runOne(filter?: {
           leaseToken: null,
           heartbeatAt: null,
           completedAt: new Date(),
-          snapshot: { ...s, creativePlan, ...(literalCopy?{literalCopy:true,renderedMode:"editable"}:{}), ...(creativeRecovery ? {creativeRecovery:"authorized-brief", renderedMode:"flat"} : {}) },
+          snapshot: { ...s, creativePlan, ...(creativeUnavailable?{creativeUnavailable:true}:{}), ...(literalCopy?{literalCopy:true,renderedMode:"editable"}:{}), ...(creativeRecovery ? {creativeRecovery:"authorized-brief", renderedMode:"flat"} : {}) },
         },
       });
       await tx.usageLedger.update({
@@ -579,6 +593,7 @@ export async function runOne(filter?: {
           actorId: candidate.actorId,
           action: "GENERACION_COMPLETADA",
           resourceId: candidate.id,
+          ...(creativeUnavailable ? { detail: { creativeRecovery: "native-image-original-brief", creativeHTTPStatus: 404 } } : {}),
         },
       });
     });

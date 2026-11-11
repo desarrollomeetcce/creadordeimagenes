@@ -34,3 +34,11 @@ Consultar modelos correctamente no prueba acceso de inferencia ni facturación. 
 Referencias: [modelos deprecados](https://ai.google.dev/gemini-api/docs/deprecations), [Flash Lite Image](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image), [diagnóstico de la API](https://ai.google.dev/gemini-api/docs/troubleshooting).
 
 Verificación: `npm test` (351 pruebas), build de producción con TypeScript y transportes simulados de generación/dirección. Sin llamadas facturables ni acceso al servidor de producción. La integración PostgreSQL de ajustes de proyecto requiere su base QA aislada y no forma parte de esta ejecución.
+
+## Recuperación de afiches Gemini ante 404 de dirección creativa
+
+Los afiches planos de Gemini pueden generarse directamente desde las instrucciones autorizadas. Si el modelo de dirección creativa devuelve un HTTP 404 completo, el worker conserva el brief original y hace la primera solicitud al mismo modelo de imagen elegido. No se repite la llamada creativa ni se sustituye ningún modelo. La recuperación no acredita acceso al modelo creativo: el rechazo remoto puede continuar existiendo.
+
+La recuperación se registra con `creativeUnavailable: true` en el snapshot completado y en la actividad; tarjeta y última prueba muestran un aviso. El uso de imagen sigue registrándose en el ledger. Los trabajos inciertos anteriores conservan estado y no se vuelven a ejecutar. Los modos editables, Imagen y otros proveedores mantienen su comportamiento. Errores de red, permisos, cuota, parámetros, 5xx y rechazos de la imagen no se recuperan por esta vía.
+
+Verificación de esta corrección: 356 pruebas automatizadas, incluida una secuencia simulada `gemini-2.5-pro` → 404 → `gemini-3-pro-image-preview` → imagen, exactamente dos solicitudes y el brief completo sin cambios. Casos negativos aseguran que no haya reintentos ni recuperación de errores distintos. Sin llamadas facturables a Google; no se ha verificado el servidor real.

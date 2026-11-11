@@ -38,6 +38,12 @@ export function safeProviderError(name: string, status: number) {
     return `${name} no admite el modelo, los archivos o los parámetros seleccionados. Consulta de nuevo sus modelos y revisa la configuración.`;
   return `${name} no está disponible. Revisa su estado antes de autorizar otro intento.`;
 }
+/** A complete HTTP rejection, distinct from a transport failure. No upstream body is retained. */
+export class ProviderHTTPError extends AppError {
+  constructor(message: string, public readonly upstreamStatus: number) {
+    super(message, 502);
+  }
+}
 export async function providerJSON(
   name: string,
   url: string,
@@ -67,11 +73,11 @@ export async function providerJSON(
         detail = errorDetail(JSON.parse(bytes.toString("utf8")));
       } catch {}
     }
-    throw new AppError(
+    throw new ProviderHTTPError(
       safeProviderError(name, response.status) +
         (errorDetail ? ` HTTP ${response.status}.` : "") +
         (detail ? " " + detail : ""),
-      502,
+      response.status,
     );
   }
   try {

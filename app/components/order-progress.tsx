@@ -14,6 +14,7 @@ export type OrderProgress = {
   canReviewConnection?:boolean;
   status: string;
   error: string | null;
+  warning?: string | null;
   createdAt: string;
   mode: string;
   requested: number;
@@ -185,6 +186,7 @@ export function OrderProgressCard({
           {date} · {modeLabels[o.mode] ?? o.mode}
         </small>
         </>}
+        {o.warning && <small role="status">{o.warning}</small>}
         {o.cancelled > 0 && (
           <small>
             {o.cancelled} canceladas · Pedido original: {o.requested} imágenes

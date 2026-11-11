@@ -1,3 +1,4 @@
+import { nativeDirectionWarning } from "./native-image-direction";
 import { isProviderVerified } from "./provider-verification";
 import type { ProviderConfiguration } from "@prisma/client";
 import { db } from "./db";
@@ -268,6 +269,7 @@ export async function latestConnectionTest() {
   const { snapshot: _privateSnapshot, ...visible } = job;
   return {
     ...visible,
+    warning: job.status === "COMPLETED" && snapshot.creativeUnavailable === true ? nativeDirectionWarning : null,
     provider:
       typeof snapshot.imageProvider === "string"
         ? snapshot.imageProvider
