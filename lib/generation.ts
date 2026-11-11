@@ -1,3 +1,5 @@
+import { effectiveImageOptions } from "./project-image-settings";
+import type { ModelCapability } from "./providers";
 import {
   generationPriceInstruction,
   generationModes,
@@ -249,6 +251,13 @@ export async function generateBatch(
   const engines = await engineConfiguration(),
     engine = requireEngine(engines, requestedEngine);
   const c = engine === "propiox" ? null : await configured(engine === "hybrid");
+  const imageCapability = (c?.models as ModelCapability[] | undefined)?.find(
+    (model) => model.kind === "image" && model.id === c?.imageModel,
+  );
+  const imageOptions =
+    c && imageCapability
+      ? effectiveImageOptions(studio ?? {}, imageCapability, c)
+      : undefined;
   const category = await db.category.findUniqueOrThrow({
     where: { id: categoryId },
     include: { subproducts: { where: { deletedAt: null } } },
@@ -371,8 +380,8 @@ export async function generateBatch(
             : {}),
           ...(studio
             ? {
-                imageQuality: studio.quality ?? c!.quality,
-                imageResolution: studio.resolution ?? c!.resolution,
+                imageQuality: imageOptions?.quality ?? c!.quality,
+                imageResolution: imageOptions?.resolution ?? c!.resolution,
               }
             : {}),
           engine,

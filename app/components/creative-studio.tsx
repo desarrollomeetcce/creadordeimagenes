@@ -1,4 +1,5 @@
 "use client";
+import { compatibleImageOverrides } from "../../lib/project-image-settings";
 import dynamic from "next/dynamic";
 import {
   readGenerationPreferences,
@@ -258,12 +259,12 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setProjectQuery(p.name);
       setProductQuery("");
       const draft = draftProjects.current.get(id);
-      const s = {
-        ...baseSettings,
-        ...contextRef.current?.defaults,
-        ...p.studio?.settings,
-        ...draft?.settings,
-      };
+      const inherited = { ...baseSettings, ...p.studio?.settings, ...draft?.settings };
+      const catalog = contextRef.current;
+      const compatiblePreferences = compatibleImageOverrides(inherited, catalog?.model && catalog.qualities.length && catalog.resolutions.length ? { qualities: catalog.qualities, resolutions: catalog.resolutions } : undefined);
+      const s = { ...compatiblePreferences, quality: compatiblePreferences.quality ?? "", resolution: compatiblePreferences.resolution ?? "" };
+      if (inherited.quality !== s.quality || inherited.resolution !== s.resolution)
+        setNotice("Calidad y resolución adaptadas al modelo actual · se heredan los Ajustes IA.");
       setProjectPrompt(draft?.prompt ?? p.prompt);
       setProjectConfigOpen(!!draft || !p.prompt?.trim());
       setSettings(s);
@@ -550,6 +551,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
       settings: s,
     });
     setProject((p: any) => ({ ...p, prompt: r.prompt, studio: r.studio }));
+    setSettings((current: any) => ({ ...current, ...r.studio.settings, quality: r.studio.settings?.quality ?? "", resolution: r.studio.settings?.resolution ?? "" }));
     draftProjects.current.delete(project.id);
     setNotice("✓ Configuración guardada");
     setProjectConfigOpen(false);
@@ -1134,6 +1136,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                         <label>
                           Calidad
                           <select
+                            aria-label="Calidad de imagen del proyecto"
                             value={settings.quality}
                             onChange={(e) => {
                               const s = {
@@ -1144,6 +1147,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                               draftProject(projectPrompt, s);
                             }}
                           >
+                            <option value="">Heredar de Ajustes IA</option>
                             {context.qualities.length ? (
                               context.qualities.map((x: string) => (
                                 <option key={x} value={x}>
@@ -1168,6 +1172,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       <label>
                         Resolución
                         <select
+                          aria-label="Resolución de imagen del proyecto"
                           value={settings.resolution}
                           onChange={(e) => {
                             const s = {
@@ -1178,6 +1183,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                             draftProject(projectPrompt, s);
                           }}
                         >
+                          <option value="">Heredar de Ajustes IA</option>
                           {context.resolutions.map((x: string) => (
                             <option key={x}>{x}</option>
                           ))}

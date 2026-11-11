@@ -1,3 +1,4 @@
+import { compatibleImageOverrides } from "../project-image-settings";
 import { z } from "zod";
 import { generationPreferenceSchema } from "./generation-preferences";
 import { randomUUID, createHash } from "node:crypto";
@@ -297,16 +298,7 @@ export async function saveStudioProject(
   const cap = (config?.models as any[] | undefined)?.find(
     (m) => m.id === config?.imageModel && m.kind === "image",
   );
-  if (b.settings.quality)
-    demand(
-      cap?.qualities.includes(b.settings.quality),
-      "La calidad no está disponible para el modelo configurado.",
-    );
-  if (b.settings.resolution)
-    demand(
-      cap?.resolutions.includes(b.settings.resolution),
-      "La resolución no está disponible para el modelo configurado.",
-    );
+  const settings = compatibleImageOverrides(b.settings, cap);
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Project" WHERE id=${projectId} FOR UPDATE`;
     const p = await tx.project.findUniqueOrThrow({ where: { id: projectId } });
@@ -314,7 +306,7 @@ export async function saveStudioProject(
       where: { id: projectId },
       data: {
         prompt: b.prompt,
-        studio: json({ ...object(p.studio), version: 1, settings: b.settings }),
+        studio: json({ ...object(p.studio), version: 1, settings }),
       },
     });
     if (p.prompt !== b.prompt)

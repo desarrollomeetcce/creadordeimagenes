@@ -2818,3 +2818,10 @@ Cantidad de conjuntos admite borrar1 y teclear2, sin coerción prematura. Valida
 ## 10/11 — Error agrupado de plantilla de conversación
 
 Se normalizan también errores del servidor con ruta conversation y mensaje explícito de autofill/saludo/nombre, para dirigir el enlace y la marca al control exacto. Conserva los mensajes genéricos como grupo sin inventar su campo. Verificación:9 pruebas dirigidas, typecheck/build y Chromium escritorio/móvil con error remoto conversation+98/80: foco en Mensaje inicial del interesado, un textarea rojo con razón inline, ninguna sección roja y configuración guardada conservada. Sin campañas ni llamadas Meta/IA reales. La conexión al dominio productivo fue bloqueada por el proxy; no se comprobó el despliegue ni se cambió el servidor.
+
+
+## 11/11 — Parámetros de imagen al cambiar de proveedor
+
+La calidad y resolución del proyecto se contrastan con el catálogo del modelo actual en formulario, guardado y creación de trabajos. Los overrides incompatibles heredan los valores globales explícitos; opciones compatibles se conservan, sin elegir arbitrariamente la primera ni cambiar de modelo. Sin catálogo se preservan preferencias históricas y la generación sigue requiriendo configuración verificada. No modifica trabajos anteriores ni introduce reintentos o consumo al navegar.
+
+345 pruebas generales incluyendo8 de opciones para OpenAI, Gemini/Imagen, Fal y Replicate; integración PostgreSQL sintética con guardado y snapshots efectivos en3 cambios de proveedor, sin solicitudes externas; Chromium con4 catálogos, apertura/saneamiento y guardado HTTP real, sin llamadas pagadas ni errores de navegador. Typecheck/build. Las capacidades dinámicas se validan con fixtures; no se generaron imágenes pagadas ni se verificaron cuentas reales o despliegue productivo.
