@@ -122,10 +122,11 @@ export function SidebarAccount({
             </>
           )}
           {(history || user.role === "OWNER") && (
-            <details open={["visual-audit", "history"].includes(view)}>
+            <details open={["visual-audit", "campaign-audit", "history"].includes(view)}>
               <summary>▧ Auditoría</summary>
               <nav aria-label="Auditoría">
                 {user.role === "OWNER" && item("visual-audit", "▧", "Visual")}
+                {user.role === "OWNER" && item("campaign-audit", "↗", "Campañas")}
                 {history && item("history", "◷", "Historial")}
               </nav>
             </details>

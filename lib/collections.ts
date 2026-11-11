@@ -186,6 +186,7 @@ const exportSchema = z.union([
   z
     .object({
       ids: z.array(z.string().min(1).max(100)).min(1).max(200),
+      subproductId: z.string().min(1).max(100).optional(),
       format: z.enum(["png", "jpg"]).default("png"),
     })
     .strict(),
@@ -245,6 +246,8 @@ export async function exportCollection(user: User, input: unknown) {
   );
   if ("ids" in b)
     demand(rows.length === new Set(b.ids).size, "Una imagen no existe.", 404);
+  if ("ids" in b && b.subproductId)
+    demand(rows.every(row => row.subproductId === b.subproductId), "La selección contiene recursos de otro producto. Selecciona de nuevo dentro del producto actual.",400);
   const projects = new Map<string, string>();
   const sharedIds =
     "ids" in b ? new Set(await delegatedImageIds(user)) : new Set<string>();

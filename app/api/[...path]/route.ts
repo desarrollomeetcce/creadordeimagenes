@@ -342,6 +342,10 @@ async function handle(
       const { visualAuditNotice } = await import("@/lib/visual-audit");
       return send(await visualAuditNotice());
     }
+    if (route === "campaign-audit" && method === "GET") {
+      ownerOnly(user);
+      return send(await (await import("@/lib/campaign-audit")).campaignAudit(user,req.nextUrl.searchParams));
+    }
     if (parts[0] === "visual-audit") {
       ownerOnly(user);
       const {
@@ -485,6 +489,7 @@ async function handle(
       demand(
         method === "GET" ||
           route === "exports" ||
+          (route === "library/export" && method === "POST") ||
           ["auth/logout", "auth/change-password"].includes(route),
         "El rol Observador solo permite ver y descargar.",
         403,

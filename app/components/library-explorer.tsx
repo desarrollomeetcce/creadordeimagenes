@@ -362,6 +362,32 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
         ...(data?.documents ?? []).map((d) => "d:" + d.id),
       ].slice(0, 200),
     );
+  const selectionScope = useRef(params);
+  selectionScope.current = params;
+  const selectAll = async (onlyImages = false) => {
+    const scope = params;
+    setBusy(true); setError("");
+    try {
+      const all: string[] = onlyImages ? [] : matchingFolders.filter(f => f.kind !== "loose").map(f => "n:" + f.id);
+      for (let batchPage = 1; batchPage <= 2; batchPage++) {
+        const p = new URLSearchParams(scope);
+        p.set("limit", "100"); p.set("page", String(batchPage));
+        if (onlyImages) p.set("kind", "images");
+        const batch: Data = await api("explorer?" + p);
+        if (selectionScope.current !== scope) return;
+        all.push(...batch.items.map(v => v.selectionId), ...(onlyImages ? [] : batch.documents.map(d => "d:" + d.id)));
+        if (batchPage >= batch.pages) break;
+      }
+      if (selectionScope.current === scope) {
+        const limit = picker ? 30 : 200;
+        const ids = [...new Set(all)];
+        setSelected(ids.slice(0, limit));
+        setMessage(ids.length >= limit ? "Selección por lote: hasta " + limit + " elementos." : ids.length + " elementos seleccionados.");
+      }
+    } catch (e) {
+      if (selectionScope.current === scope) setError(e instanceof Error ? e.message : "No se pudo seleccionar.");
+    } finally { setBusy(false); }
+  };
   const projectFolderWarning =
     "Evita modificar o mover las carpetas de proyectos. Utiliza preferentemente carpetas personales para organizar tus archivos.";
   const selectedProjectFolder = selected.some(
@@ -372,13 +398,6 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
           n.id === id.slice(2) && n.kind !== "folder" && n.kind !== "loose",
       ),
   );
-  const chosenImages = [
-    ...new Set(
-      (data?.items ?? [])
-        .filter((i) => selected.includes(i.selectionId))
-        .map((i) => i.id),
-    ),
-  ];
   const transfer = (
     operation: "move" | "copy",
     selection: string[],
@@ -1034,47 +1053,19 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               <details>
                 <summary>Seleccionar · {selected.length} seleccionados</summary>
                 <div className="toolbar-popover stack">
-                  <button type="button" onClick={chooseAll}>
+                  <button type="button" disabled={busy} onClick={chooseAll}>
                     Seleccionar esta página
                   </button>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() =>
-                      void (async () => {
-                        setBusy(true);
-                        setError("");
-                        try {
-                          const all: string[] = folders
-                            .filter((f) => f.kind !== "loose")
-                            .map((f) => "n:" + f.id);
-                          for (let page = 1; page <= 2; page++) {
-                            const p = new URLSearchParams(params);
-                            p.set("limit", "100");
-                            p.set("page", String(page));
-                            const batch: Data = await api("explorer?" + p);
-                            all.push(
-                              ...batch.items.map((v) => v.selectionId),
-                              ...batch.documents.map((d) => "d:" + d.id),
-                            );
-                            if (page >= batch.pages) break;
-                          }
-                          setSelected([...new Set(all)].slice(0, 200));
-                        } catch (e) {
-                          setError(
-                            e instanceof Error
-                              ? e.message
-                              : "No se pudo seleccionar.",
-                          );
-                        } finally {
-                          setBusy(false);
-                        }
-                      })()
-                    }
+                    onClick={() => void selectAll()}
                   >
-                    Seleccionar visibles · máximo {picker ? 30 : 200}
+                    Seleccionar todo · hasta {picker ? 30 : 200}
                   </button>
-                  <button type="button" onClick={() => setSelected([])}>
+                  <button type="button" disabled={busy} onClick={() => void selectAll(true)}>Seleccionar todas las imágenes y videos · hasta {picker ? 30 : 200}</button>
+                  <button type="button" disabled={busy} onClick={() => setSelected(matchingFolders.filter(f=>f.kind!=="loose").map(f=>"n:"+f.id))}>Seleccionar todas las carpetas · hasta {picker ? 30 : 200}</button>
+                  <button type="button" disabled={busy} onClick={() => setSelected([])}>
                     Limpiar selección
                   </button>
                 </div>
@@ -1157,15 +1148,15 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
               {!picker && (
                 <button
                   type="button"
-                  disabled={!chosenImages.length || busy}
+                  disabled={!selected.some(id => /^(v:|c:|n:)/.test(id)) || busy}
                   onClick={() =>
                     void action(
-                      () => downloadArchive({ ids: chosenImages, format }),
+                      () => downloadArchive({ selection: selected, format }, "recursos.zip", "/api/library/export"),
                       "Descarga preparada.",
                     )
                   }
                 >
-                  Descargar ({chosenImages.length})
+                  Descargar selección
                 </button>
               )}
               {canEdit && (

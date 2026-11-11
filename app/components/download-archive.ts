@@ -1,8 +1,9 @@
 export async function downloadArchive(
   input: unknown,
   filename = "afiches.zip",
+  endpoint = "/api/exports",
 ) {
-  const response = await fetch("/api/exports", {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

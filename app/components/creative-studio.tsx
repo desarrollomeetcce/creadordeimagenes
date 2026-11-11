@@ -1,4 +1,5 @@
 "use client";
+import { downloadArchive } from "./download-archive";
 import { compatibleImageOverrides } from "../../lib/project-image-settings";
 import dynamic from "next/dynamic";
 import {
@@ -1644,6 +1645,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                   <input
                     type="checkbox"
                     checked={allChosen}
+                    disabled={busy}
                     onChange={(e) => {
                       const checked = e.target.checked;
                       void run(async () => {
@@ -1665,6 +1667,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <span>
                   {gallery.total} recursos · {currentSelection.length} elegidos
                 </span>
+                <button
+                  type="button"
+                  disabled={busy || !gallery.total}
+                  onClick={() => void run(() => downloadArchive(
+                    { scope: "subproduct", id: activeSub, format: "png" },
+                    active.name.replace(/[^\p{L}\p{N}_-]/gu, "_") + ".zip",
+                  ))}
+                >
+                  ↓ Descargar todo
+                </button>
               </div>
               <div className="studio-own-upload studio-upload-compact">
                 <div>
@@ -1911,6 +1923,16 @@ export function CreativeStudio({ userId }: { userId: string }) {
               {currentSelection.length > 0 && (
                 <div className="studio-selection-bar">
                   <strong>{currentSelection.length} recursos elegidos</strong>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(() => downloadArchive(
+                      { ids: currentSelection, subproductId: activeSub, format: "png" },
+                      active.name.replace(/[^\p{L}\p{N}_-]/gu, "_") + ".zip",
+                    ))}
+                  >
+                    ↓ Descargar seleccionados
+                  </button>
                   <button
                     type="button"
                     hidden={temporaryMode}

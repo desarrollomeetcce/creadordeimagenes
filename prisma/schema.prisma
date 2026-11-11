@@ -1604,6 +1604,7 @@ model MetaHistoricalAdvisorSale {
 }
 
 model CreativeMetaLaunch {
+  @@index([status,updatedAt(sort: Desc)], map: "CreativeMetaLaunch_audit_idx")
   id String @id @default(cuid())
   actorId String
   projectId String

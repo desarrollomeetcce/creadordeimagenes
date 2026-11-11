@@ -841,6 +841,8 @@ export async function explorerRoutes(
   user: Actor,
   body: () => Promise<unknown>,
 ) {
+  if (parts[1] === "export" && parts.length === 2 && req.method === "POST")
+    return (await import("./library-downloads")).exportLibrarySelection(user, await body());
   if (parts[1] === "selection-actions" && req.method === "POST")
     return send(
       await organizeSelection(user, await body(), () => libraryTree(user)),

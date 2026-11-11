@@ -1,0 +1,68 @@
+.campaign-audit {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.campaign-audit header,
+.campaign-audit footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.campaign-audit h2,
+.campaign-audit p {
+  margin: 0;
+}
+.campaign-audit header p,
+.campaign-audit > small {
+  opacity: 0.75;
+  font-size: 12px;
+}
+.campaign-audit h2 {
+  font-size: 20px;
+  margin-bottom: 5px;
+}
+.campaign-audit-scroll {
+  overflow: auto;
+  border: 1px solid var(--border, #40535d);
+  border-radius: 10px;
+}
+.campaign-audit table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.campaign-audit th,
+.campaign-audit td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #40535d);
+}
+.campaign-audit th {
+  white-space: nowrap;
+  background: color-mix(in srgb, #7c55cf 13%, transparent);
+}
+.campaign-audit td:first-child {
+  min-width: 230px;
+}
+.campaign-audit td small {
+  display: block;
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 4px;
+}
+.campaign-audit tr:last-child td {
+  border-bottom: 0;
+}
+.campaign-audit a {
+  white-space: nowrap;
+}
+.campaign-audit footer {
+  justify-content: flex-end;
+  font-size: 12px;
+}
+.campaign-audit tbody tr:hover {
+  background: color-mix(in srgb, #239c84 6%, transparent);
+}
