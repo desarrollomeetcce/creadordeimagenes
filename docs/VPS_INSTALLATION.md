@@ -19,3 +19,11 @@ No entregar contraseñas ni claves por el chat. El acceso al VPS y la configurac
 Docker construye y ejecuta como node después de instalar fuentes/fontconfig/CA con root. COPY asigna los archivos al usuario correcto; la caché de fuentes y el directorio de assets son escribibles. Se verificaron HTTP, PostgreSQL de prueba por socket, login Argon2, sesiones, consulta de proyectos, bloqueo OWNER y logout. Sharp renderizó texto usando DejaVu sin errores de configuración. Esto no verifica el VPS remoto, HTTPS ni el proveedor de IA.
 
 En un entorno con proxy corporativo, se usó el proxy configurado y el secreto opcional proxy_ca sin desactivar TLS ni copiarlo a la imagen. La resolución del proxy dentro de Docker debe existir en ese entorno. Una copia PostgreSQL sintética se restauró en otra base con conteos y hashes BYTEA iguales; falta ensayar el conjunto base/volúmenes/clave maestra del servidor definitivo.
+
+## Actualizar web y worker
+
+Publicar un commit en Git no acredita que el VPS lo ejecute. En esta instalación web y worker son procesos separados de la imagen `afiches-app:local`; la web actualizada puede convivir con un worker antiguo si solo se recrea un servicio.
+
+En una instalación que utiliza este `compose.yaml`, actualizar desde el directorio de la aplicación con `git pull --ff-only origin main` y `docker compose build`. Cuando no haya generaciones ni otras tareas del worker en ejecución, recrear ambos con `docker compose up -d --no-deps --force-recreate web worker`. No reiniciar un worker con operaciones facturables en curso. Este procedimiento no ejecuta migraciones: si la versión trae cambios de esquema, seguir primero el procedimiento de migración correspondiente. No eliminar volúmenes. Comprobar `docker compose ps` y los registros de ambos servicios sin compartir secretos.
+
+Una tarjeta de un intento fallido conserva el diagnóstico original; actualizar código/configuración no ejecuta ni reescribe ese intento. Identificar la fecha e ID del intento al comprobar una corrección.
