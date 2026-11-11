@@ -41,7 +41,7 @@ test("provider changes allow project saving and snapshot only supported current 
   try {
     for (const provider of ["google", "fal", "replicate"]) {
       const image = {
-        id: `${provider}-synthetic-image`,
+        id: provider === "google" ? "gemini-nano-banana-2.1" : `${provider}-synthetic-image`,
         kind: "image",
         qualities: ["default"],
         resolutions: ["2K"],

@@ -26,6 +26,7 @@ export interface ProviderAdapter {
     to: string,
   ): Promise<import("../provider-costs").DailyCosts>;
   listModels(key: string, query?: string): Promise<ModelCapability[]>;
+  validateImageOptions?(args: {model: string; quality: string; size: string; images?: ImageInput[]}): void;
   generate(
     key: string,
     args: {

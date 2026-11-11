@@ -255,6 +255,7 @@ export async function runOne(filter?: {
       c.resolution = s.imageResolution ?? c.resolution;
     }
     const checkReferences = (references: typeof images) => {
+      if (engine === "ai") adapter(c.provider).validateImageOptions?.({ model: c.imageModel!, quality: c.quality, size: c.resolution, images: references });
       demand(
         !references.length || imageCapability.supportsReferences !== false,
         "Este modelo no admite las referencias seleccionadas. Elige un modelo compatible.",

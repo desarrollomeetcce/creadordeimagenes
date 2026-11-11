@@ -1,3 +1,4 @@
+import { googleImageResolutions, googleErrorDetail } from "./google-options";
 import { googleThinking, type ReasoningLevel } from "../creative-level";
 import type { ProviderAdapter, ModelCapability, ImageInput } from "./index";
 import { AppError, demand } from "../errors";
@@ -25,6 +26,8 @@ export class GeminiAdapter implements ProviderAdapter {
         this.name,
         endpoint + "models?" + params,
         { headers: { "x-goog-api-key": key }, signal },
+        20000000,
+        googleErrorDetail,
       );
       demand(
         Array.isArray(data.models),
@@ -66,9 +69,7 @@ export class GeminiAdapter implements ProviderAdapter {
               label,
               kind: "image",
               qualities: ["default"],
-              resolutions: /^gemini-2\.5-/.test(id)
-                ? ["default"]
-                : ["1K", "2K", "4K"],
+              resolutions: googleImageResolutions(id),
               supportsReferences: true,
             });
           else if (!/audio|tts|live|embedding|robotics|computer-use/.test(id))
@@ -96,6 +97,40 @@ export class GeminiAdapter implements ProviderAdapter {
       502,
     );
   }
+  validateImageOptions(args: {
+    model: string;
+    quality: string;
+    size: string;
+    images?: ImageInput[];
+  }) {
+    const model = safeModel(args.model);
+    demand(
+      args.quality === "default",
+      "Google usa calidad predeterminada; no admite low, medium o high de OpenAI.",
+      409,
+    );
+    demand(
+      googleImageResolutions(model).includes(args.size),
+      "La resolución no corresponde a esta familia de imágenes de Google. Consulta sus modelos y selecciona una opción compatible.",
+      409,
+    );
+    if (model.startsWith("imagen-"))
+      demand(
+        !args.images?.length,
+        "Este modelo Imagen no admite referencias en la integración. Usa un modelo Gemini de imágenes.",
+      );
+    for (const image of args.images ?? [])
+      demand(
+        [
+          "image/png",
+          "image/jpeg",
+          "image/webp",
+          "image/heic",
+          "image/heif",
+        ].includes(image.mime),
+        "Google no admite el tipo de una imagen de referencia. Usa PNG, JPEG o WebP.",
+      );
+  }
   async generate(
     key: string,
     args: {
@@ -108,6 +143,7 @@ export class GeminiAdapter implements ProviderAdapter {
       capability?: ModelCapability;
     },
   ) {
+    this.validateImageOptions(args);
     const model = safeModel(args.model),
       signal = providerSignal(args.signal);
     if (model.startsWith("imagen-")) {
@@ -116,7 +152,7 @@ export class GeminiAdapter implements ProviderAdapter {
         "Este modelo Imagen no admite referencias en la integración. Usa un modelo Gemini de imágenes.",
       );
       const data = await providerJSON(
-        this.name,
+        this.name + " · generación de imagen",
         endpoint + `models/${model}:predict`,
         {
           method: "POST",
@@ -131,6 +167,7 @@ export class GeminiAdapter implements ProviderAdapter {
           }),
         },
         64000000,
+        googleErrorDetail,
       );
       return {
         bytes: await imageBase64(data.predictions?.[0]?.bytesBase64Encoded),
@@ -147,7 +184,7 @@ export class GeminiAdapter implements ProviderAdapter {
       })),
     ];
     const data = await providerJSON(
-      this.name,
+      this.name + " · generación de imagen",
       endpoint + `models/${model}:generateContent`,
       {
         method: "POST",
@@ -157,13 +194,14 @@ export class GeminiAdapter implements ProviderAdapter {
           contents: [{ role: "user", parts }],
           generationConfig: {
             responseModalities: ["TEXT", "IMAGE"],
-            ...(!/^gemini-2\.5-/.test(model) && args.size !== "default"
+            ...(args.size !== "default"
               ? { imageConfig: { imageSize: args.size, aspectRatio: "1:1" } }
               : {}),
           },
         }),
       },
       64000000,
+      googleErrorDetail,
     );
     const outputs = data.candidates?.[0]?.content?.parts;
     const image = Array.isArray(outputs)
@@ -189,7 +227,7 @@ export class GeminiAdapter implements ProviderAdapter {
     maxOutputTokens?: number,
   ) {
     const data = await providerJSON(
-      this.name,
+      this.name + " · dirección creativa",
       endpoint + `models/${safeModel(model)}:generateContent`,
       {
         method: "POST",
@@ -223,6 +261,7 @@ export class GeminiAdapter implements ProviderAdapter {
         }),
       },
       2000000,
+      googleErrorDetail,
     );
     const candidate = data.candidates?.[0];
     demand(

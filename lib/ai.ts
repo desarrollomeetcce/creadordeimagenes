@@ -60,6 +60,7 @@ export async function configured(textOnly=false) {
     "La calidad o resolución no es compatible.",
     409,
   );
+  if (!textOnly) adapter(c.provider).validateImageOptions?.({ model: c.imageModel!, quality: c.quality, size: c.resolution });
   return c;
 }
 export async function reserveJobs(

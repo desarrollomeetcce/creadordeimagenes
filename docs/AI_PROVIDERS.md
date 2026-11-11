@@ -1,6 +1,6 @@
 # Conectar proveedores desde el panel
 
-Solo OWNER: Configuración de IA → Conexiones de IA. Seleccione cuenta, introduzca su clave de API y guarde. El campo queda vacío y la lista muestra únicamente la máscara. Consulte los modelos de esa cuenta; no genera imágenes ni acredita saldo. Las verificaciones caducan en24 horas y se invalidan al cambiar la clave. Nunca comparta claves por chat.
+Solo OWNER: Configuración de IA → Conexiones de IA. Seleccione cuenta, introduzca su clave de API y guarde. El campo queda vacío y la lista muestra únicamente la máscara. Consulte los modelos de esa cuenta; no genera imágenes ni acredita saldo. Las verificaciones no vencen por tiempo; se invalidan al cambiar la clave y deben corresponder a su revisión vigente. Nunca comparta claves por chat.
 
 Después elija proveedor/modelo de imágenes y proveedor/modelo de dirección creativa. Google y OpenAI permiten dirección creativa; fal.ai y Replicate se usan para imágenes y necesitan una conexión de texto aparte. Seleccione calidad/resolución compatibles, guarde la configuración global y verifique nuevamente. Revise reservas y límites; estos controles no añaden saldo al proveedor. Prueba de generación es opcional y requiere aceptar un posible cargo. No hay reintentos facturables automáticos.
 
@@ -22,3 +22,15 @@ Fuentes oficiales de los contratos:
 - https://replicate.com/docs/reference/http
 
 Validación interna con PostgreSQL/Chromium y respuestas de proveedor simuladas. No acredita generación real en estas nuevas cuentas.
+
+## Gemini: parámetros y diagnóstico (11/11)
+
+Proyectos y Pruebas comparten adaptador y validación previa de calidad, resolución y referencias. Google usa calidad `default`, nunca `low`/`medium`/`high` de OpenAI. `gemini-2.5-flash-image` usa resolución automática, sin enviar `imageSize`. Flash Lite Image admite solamente 1K; las familias Pro/Flash Image 3 y Nano Banana 2 reconocidas admiten 1K/2K/4K. No inferir opciones avanzadas para identificadores desconocidos. La validación nativa también protege catálogos antiguos antes de reservar y referencias antes de dirección creativa.
+
+Los rechazos remotos identifican dirección creativa o generación de imagen, HTTP, estado y campos/requisitos de una lista permitida. No se exponen mensajes libres, prompts, claves ni metadatos del proveedor. Un trabajo incierto anterior conserva su estado y no se reintenta ni cambia de modelo automáticamente.
+
+Consultar modelos correctamente no prueba acceso de inferencia ni facturación. La pareja `gemini-2.5-flash` + `gemini-2.5-flash-image` con calidad/resolución automáticas tiene cobertura de solicitudes simuladas, no acredita ejecución real en la cuenta. Google documenta restricciones para nuevos usuarios de `gemini-2.5-flash` en su página de deprecaciones; solo el rechazo real permite determinar si afectan a una cuenta. No sustituir el modelo sin elección del usuario.
+
+Referencias: [modelos deprecados](https://ai.google.dev/gemini-api/docs/deprecations), [Flash Lite Image](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image), [diagnóstico de la API](https://ai.google.dev/gemini-api/docs/troubleshooting).
+
+Verificación: `npm test` (351 pruebas), build de producción con TypeScript y transportes simulados de generación/dirección. Sin llamadas facturables ni acceso al servidor de producción. La integración PostgreSQL de ajustes de proyecto requiere su base QA aislada y no forma parte de esta ejecución.
