@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   StudioRequestError,
   campaignFieldPath,
+  campaignProblemPath,
   campaignProblemLabel,
   campaignProblemMessage,
   campaignMessageProblem,
@@ -86,5 +87,33 @@ test("names the exact conversation control, including legacy server paths", () =
   assert.equal(
     campaignProblemLabel({ field: "code", message: "Too big" }),
     "Variable {codigo} guardada",
+  );
+});
+
+test("a grouped conversation error points to the actual textarea, never the entire stage", () => {
+  const problem = {
+    field: "config.conversation",
+    message:
+      "El mensaje inicial del interesado de Manejo de aguas servidas supera 80 caracteres al reemplazar las variables (98/80). Acorta ese texto.",
+  };
+  assert.equal(campaignProblemPath(problem), "conversation.autofill");
+  assert.equal(campaignProblemLabel(problem), "Mensaje inicial del interesado");
+  assert.equal(
+    campaignMessageProblem(problem.message)?.field,
+    "conversation.autofill",
+  );
+  assert.equal(
+    campaignProblemPath({
+      field: "conversation",
+      message: "La plantilla de conversación requiere WhatsApp.",
+    }),
+    "conversation",
+  );
+  assert.equal(
+    campaignProblemPath({
+      field: "conversation",
+      message: "El saludo supera el límite.",
+    }),
+    "conversation.greeting",
   );
 });

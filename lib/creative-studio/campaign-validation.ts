@@ -69,8 +69,21 @@ export function campaignFieldPath(field: string) {
     ? "conversation." + path
     : path;
 }
+/** Older responses can attach a precise message to the conversation group. */
+export function campaignProblemPath(problem: CampaignFieldProblem) {
+  const path = campaignFieldPath(problem.field);
+  if (path === "conversation") {
+    if (/mensaje inicial|interesado|autofill/i.test(problem.message))
+      return "conversation.autofill";
+    if (/saludo|greeting/i.test(problem.message))
+      return "conversation.greeting";
+    if (/nombre de (?:la )?plantilla/i.test(problem.message))
+      return "conversation.name";
+  }
+  return path;
+}
 export function campaignProblemLabel(problem: CampaignFieldProblem) {
-  const path = campaignFieldPath(problem.field).split(".");
+  const path = campaignProblemPath(problem).split(".");
   if (path[0] === "conversation" && path[1]) {
     const labels: Record<string, string> = {
       autofill: "Mensaje inicial del interesado",
@@ -97,7 +110,7 @@ export function campaignProblemLabel(problem: CampaignFieldProblem) {
   return names[path[0]] ?? "Configuración de campaña";
 }
 export function campaignProblemMessage(problem: CampaignFieldProblem) {
-  const root = campaignFieldPath(problem.field).split(".")[0];
+  const root = campaignProblemPath(problem).split(".")[0];
   const message = problem.message;
   // Translate Zod defaults; never replace an explicit Spanish validation reason.
   if (
@@ -136,6 +149,8 @@ export function campaignMessageProblem(
     [/afiches|recursos|variaciones/i, "items"],
     [/edad|público|segmentaci/i, "audiences"],
     [/ubicaci|plataforma/i, "placements"],
+    [/mensaje inicial|interesado|autofill/i, "conversation.autofill"],
+    [/saludo|greeting/i, "conversation.greeting"],
     [/plantilla|conversaci/i, "conversation"],
     [/HTTPS|página web/i, "website"],
     [/formulario de clientes/i, "leadFormId"],
@@ -150,7 +165,7 @@ export function campaignProblemValue(
   config: Record<string, any>,
   problem: CampaignFieldProblem,
 ) {
-  const parts = campaignFieldPath(problem.field).split(".");
+  const parts = campaignProblemPath(problem).split(".");
   if (
     parts[0] === "audiences" &&
     /^\d+$/.test(parts[1] ?? "") &&
@@ -203,7 +218,7 @@ export function collectCampaignProblems(
   }
   return [
     ...new Map(
-      problems.map((problem) => [campaignFieldPath(problem.field), problem]),
+      problems.map((problem) => [campaignProblemPath(problem), problem]),
     ).values(),
   ];
 }

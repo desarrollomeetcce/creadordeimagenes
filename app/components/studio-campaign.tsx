@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { ZodError } from "zod";
 import {
   StudioRequestError,
-  campaignFieldPath,
+  campaignProblemPath,
   campaignProblemLabel,
   campaignProblemMessage,
   campaignMessageProblem,
@@ -1051,22 +1051,20 @@ export function StudioCampaign({
     const visible = liveProblems.filter(
       (problem) =>
         validationAttempted ||
-        touchedFields.includes(
-          campaignFieldPath(problem.field).split(".")[0],
-        ) ||
-        campaignFieldPath(problem.field).startsWith("conversation."),
+        touchedFields.includes(campaignProblemPath(problem).split(".")[0]) ||
+        campaignProblemPath(problem).startsWith("conversation."),
     );
     return [
       ...new Map(
         [...fieldProblems, ...visible].map((problem) => [
-          campaignFieldPath(problem.field),
+          campaignProblemPath(problem),
           problem,
         ]),
       ).values(),
     ];
   }, [fieldProblems, liveProblems, touchedFields, validationAttempted]);
   function problemTarget(problem: CampaignFieldProblem): HTMLElement | null {
-    const path = campaignFieldPath(problem.field),
+    const path = campaignProblemPath(problem),
       root = path.split(".")[0];
     const labels: Record<string, string> = {
       code: "Variable codigo anterior",
@@ -1157,7 +1155,7 @@ export function StudioCampaign({
   function goToProblem(problem: CampaignFieldProblem) {
     if (
       ["items", "categoryId"].includes(
-        campaignFieldPath(problem.field).split(".")[0],
+        campaignProblemPath(problem).split(".")[0],
       )
     )
       setMaximized("");
@@ -1245,7 +1243,7 @@ export function StudioCampaign({
     const checked = campaignConfigSchema.safeParse({ ...form, planVersion: 2 });
     const current = checked.success ? [] : checked.error.issues;
     const remaining = fieldProblems.flatMap((problem) => {
-      const field = campaignFieldPath(problem.field);
+      const field = campaignProblemPath(problem);
       const itemsChanged =
         validationItemsSnapshot.current !== JSON.stringify(items);
       if (field.startsWith("items") && itemsChanged)
@@ -1263,7 +1261,7 @@ export function StudioCampaign({
         !(field.startsWith("conversation") && itemsChanged)
       )
         return [problem];
-      const path = campaignFieldPath(problem.field);
+      const path = campaignProblemPath(problem);
       const issue = current.find((candidate) => {
         const field = candidate.path.join(".");
         return (
@@ -1365,7 +1363,7 @@ export function StudioCampaign({
       if (
         fields.some((p) =>
           /^(campaignName|objective|platforms|placements|website|leadFormId)/.test(
-            campaignFieldPath(p.field),
+            campaignProblemPath(p),
           ),
         )
       )
@@ -1373,14 +1371,14 @@ export function StudioCampaign({
       if (
         fields.some((p) =>
           /^(body|headline|description|conversation|code)/.test(
-            campaignFieldPath(p.field),
+            campaignProblemPath(p),
           ),
         )
       )
         adConfiguration.setEditing(true);
       validationSnapshot.current = form;
       validationItemsSnapshot.current = JSON.stringify(items);
-      if (fields.some((problem) => campaignFieldPath(problem.field) === "code"))
+      if (fields.some((problem) => campaignProblemPath(problem) === "code"))
         setShowLegacyCode(true);
       validationAnnounce.current = true;
       setFieldProblems(fields);
@@ -2421,7 +2419,7 @@ export function StudioCampaign({
             {campaignProblemMessage(problem)}
           </small>,
           container,
-          campaignFieldPath(problem.field),
+          campaignProblemPath(problem),
         ),
       )}
       {draft && (
