@@ -8,7 +8,7 @@ import { db } from "./db";
 import { demand } from "./errors";
 import { jobResourceAccess } from "./auth";
 import { recordActivity } from "./activity";
-import { waitingForApproval, approveJob } from "./preview-approval";
+import { firstRunnableJob, approveJob } from "./preview-approval";
 import { processJob } from "./jobs";
 import { backgroundAvailable } from "./background";
 type Actor = { id: string; role: string };
@@ -430,12 +430,7 @@ export async function orderTick(
       });
       return "STOP";
     }
-    let next = null;
-    for (const job of pending)
-      if (!(await waitingForApproval(db, job))) {
-        next = job;
-        break;
-      }
+    const next = await firstRunnableJob(db, pending);
     if (!next) {
       await db.generationOrder.updateMany({
         where: { id, status: "ACTIVE", runId },
@@ -461,8 +456,7 @@ export async function orderTick(
         const eligible = await db.generationJob.findMany({
           where: { id: { in: other.jobIds as string[] }, status: "PENDING" },
         });
-        for (const j of eligible)
-          if (!(await waitingForApproval(db, j))) return "WAIT";
+        if (await firstRunnableJob(db, eligible)) return "WAIT";
       }
     }
     const result = await processJob(actor, next.id, {

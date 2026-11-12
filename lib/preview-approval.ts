@@ -46,6 +46,25 @@ export async function waitingForApproval(tx: Reader, job: Job) {
     !(await groupApproved(tx, job))
   );
 }
+
+/** One approval read per group during this queue scan, never across requests.
+ * Dispatch still revalidates approval inside the job claim transaction.
+ */
+export async function firstRunnableJob<T extends Job>(tx: Reader, jobs: T[]) {
+  const approvals = new Map<string, boolean>();
+  for (const job of jobs) {
+    const group = approvalGroup(job);
+    if (!group || (job.snapshot as Record<string, unknown>).index === 0) return job;
+    const key = JSON.stringify([job.actorId, group]);
+    let approved = approvals.get(key);
+    if (approved === undefined) {
+      approved = await groupApproved(tx, job);
+      approvals.set(key, approved);
+    }
+    if (approved) return job;
+  }
+  return null;
+}
 export async function approveJob(
   user: { id: string; role: string },
   id: string,

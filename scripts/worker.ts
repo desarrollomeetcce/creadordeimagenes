@@ -1,4 +1,6 @@
 import { nativeImageDirection } from "../lib/native-image-direction";
+import { workerLane, generationCycle } from "../lib/worker-lane";
+import { generationInputs } from "../lib/generation-inputs";
 import { OPENAI_IMAGE_PROMPT_LIMIT, validateOpenAIImagePrompt } from "../lib/providers/openai-input";
 import {resolveSystemReferences,type SystemReference} from "../lib/system-resources";
 import {engineConfiguration,requireEngine,propioxRuntime} from "../lib/generation-engines";
@@ -299,19 +301,12 @@ export async function runOne(filter?: {
       }else extraRefs.push(resource);
     }
     const refs=[...nativeRefs,...extraRefs];
-    const resourceBuffers=await Promise.all(refs.map(async a=>({...a,bytes:await load(a.path)})));
+    const { resources: resourceBuffers, images } = await generationInputs(refs, load);
     const renderLogos=async(doc:Design)=>{
       const ready=new Map(resourceBuffers.filter(a=>/logo/i.test(a.purpose)).map(a=>[a.id,a.bytes] as [string,Buffer]));
       const existing={...doc,layers:doc.layers.filter(l=>l.type!=="logo"||!ready.has(l.attachmentId))};
       return new Map([...(await logoBytes(existing)),...ready]);
     };
-    demand(
-      refs.length <= 9,
-      "Selecciona como máximo nueve referencias visuales por afiche.",
-    );
-    const images = await Promise.all(
-      refs.map(async (a) => ({ bytes: await load(a.path), mime: a.mime })),
-    );
     let document: Design | null = null,
       backgroundPath: string | null = null,
       output: Buffer,
@@ -679,16 +674,17 @@ export async function recoverInterrupted(now = new Date()) {
 }
 
 async function main() {
-  let lastMaintenance = 0;
+  const maintenance = workerLane(300000, async () => {
+    const { runMaintenance } = await import("../lib/maintenance");
+    await runMaintenance("WORKER");
+  });
+  const meta = workerLane(15000, async () => {
+    await (await import("../lib/meta-ads/service")).runDueSync(1);
+  });
   let classroomWork: Promise<unknown> | null = null;
   let nextClassroomCheck = 0;
   while (true) {
     await recoverInterrupted();
-    if (Date.now() - lastMaintenance >= 300000) {
-      const { runMaintenance } = await import("../lib/maintenance");
-      await runMaintenance("WORKER").catch(() => {});
-      lastMaintenance = Date.now();
-    }
     if (!classroomWork && Date.now() >= nextClassroomCheck) {
       classroomWork = (async () => {
         const rendered = await (await import("../lib/courses/render-jobs")).processOneRender();
@@ -696,9 +692,10 @@ async function main() {
         nextClassroomCheck = Date.now() + (rendered || uploaded ? 0 : 15000);
       })().catch(() => {}).finally(() => { classroomWork = null; });
     }
-    await (await import("../lib/meta-ads/service")).runDueSync(1);
-    await runOne();
-    await new Promise((r) => setTimeout(r, 1500));
+    // Jobs remain serial, with their existing approval/lease/budget fences.
+    // Drain ready work without an artificial delay between successful images.
+    if (!(await generationCycle([maintenance, meta], runOne)))
+      await new Promise((r) => setTimeout(r, 1500));
   }
 }
 if (process.argv[1]?.endsWith("worker.ts"))
