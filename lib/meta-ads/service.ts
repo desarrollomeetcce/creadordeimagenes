@@ -1280,6 +1280,8 @@ export async function syncStep(
             },
             data: { status: null, effectiveStatus: "NOT_RETURNED" },
           });
+        if (!insight && objectRows.some(row=>row.level === "campaign"))
+          await (await import("./paused-sales-retention")).retainPausedSalesRows(tx,objectRows.map(row=>String(row.id)),new Date(lastAttempt.at));
         const nextPhase = result.after ? phase : phase + 1;
         const done = nextPhase >= phases.length;
         const pages = (state.pages ?? 0) + 1;

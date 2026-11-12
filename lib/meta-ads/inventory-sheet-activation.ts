@@ -885,6 +885,7 @@ export async function inventoryMetaStatusChange(
     listId: scope.listId, tableId: scope.tableId, country: scope.country,
     items: [{ name: scope.name, targets: [{ aliasId: scope.aliasId, country: scope.country, revision: state?.revision ?? 0 }] }],
     ...change,
+    ...(!change.active ? { pinned: true } : {}),
   }, tx);
   return (await tx.metaEffectivenessState.findUniqueOrThrow({
     where: { aliasId_country: { aliasId: scope.aliasId, country: scope.country } },

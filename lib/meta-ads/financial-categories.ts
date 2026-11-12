@@ -26,14 +26,14 @@ export function financialCategoryChoices(entry?: FinancialCatalogEntry) {
   );
 }
 export function financialRowCategories(
-  row: { aliasId: string; country: string; active?: boolean },
+  row: { aliasId: string; country: string; active?: boolean; pinned?: boolean },
   entry: FinancialCatalogEntry | undefined,
   temporary: TemporaryCategoryMap,
 ) {
   const choices = financialCategoryChoices(entry),
     defaults = choices.filter((c) => c.kind === "PRIMARY").map((c) => c.id);
   const requested =
-      row.active === false ? [] : (temporary[financialRowKey(row)] ?? []),
+      row.active === false && !row.pinned ? [] : (temporary[financialRowKey(row)] ?? []),
     valid = requested.filter((id) => choices.some((c) => c.id === id));
   const ids = valid.length ? valid : defaults;
   const isTemporary =
@@ -52,7 +52,7 @@ export function financialRowCategories(
   };
 }
 export function groupFinancialRows<
-  T extends { aliasId: string; country: string; active?: boolean },
+  T extends { aliasId: string; country: string; active?: boolean; pinned?: boolean },
 >(
   rows: T[],
   entries: FinancialCatalogEntry[],
@@ -79,7 +79,7 @@ export function groupFinancialRows<
         entries.find((a) => a.id === row.aliasId),
         temporary,
       ),
-      active = row.active !== false,
+      active = row.active !== false || row.pinned === true,
       key = JSON.stringify([active, category.temporary, category.names]);
     let band = preserveOrder
       ? key === previousKey
@@ -162,7 +162,7 @@ export function groupFinancialRowsByAdvisor<
   T extends {
     aliasId: string;
     country: string;
-    active?: boolean;
+    active?: boolean; pinned?: boolean;
     advisorId: string | null;
   },
 >(

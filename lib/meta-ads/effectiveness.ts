@@ -69,6 +69,7 @@ export type EffectivenessCell = {
 };
 
 export type EffectivenessRow = {
+  pinned?: boolean;
   metaHistoryMode?: string;
   metaHistorySince?: string | null;
   supports?: { id: string; advisorId: string; name: string; until: string }[];
@@ -534,6 +535,7 @@ async function readEffectiveness(
           },
         }),
   ]);
+  const retainedRows = new Set<string>();
   const pendingAssignments = new Map<string, string>();
   const advisorReviews = new Map<
     string,
@@ -554,6 +556,7 @@ async function readEffectiveness(
                   createdAt: string;
                 }[];
                 pendingAssignmentAt?: string;
+                pinned?: boolean;
                 campaignTask?: "NONE" | "CREATE" | "STOP";
               }
             >;
@@ -561,6 +564,7 @@ async function readEffectiveness(
         }
       )?.inventoryActivation?.rows ?? {};
     for (const [key, control] of Object.entries(controls)) {
+      if (control.pinned === true) retainedRows.add(key);
       if (
         Array.isArray(control.advisorReviews) &&
         control.advisorReviews.length
@@ -593,6 +597,7 @@ async function readEffectiveness(
     if (!r) {
       r = {
         aliasId: a,
+        pinned: retainedRows.has(a + "|" + p),
         supports: (supportsByPair.get(k) ?? [])
           .map((s) => ({
             id: s.id,

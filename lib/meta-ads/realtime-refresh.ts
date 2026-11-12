@@ -254,6 +254,10 @@ export async function refreshVisibleMeta(
           where: { accountId, id: { in: missing }, seenAt: { lte: at } },
           data: { status: null, effectiveStatus: "UNAVAILABLE", seenAt: at },
         });
+      const campaignIds = new Set(objects.filter(o=>o.level === "campaign").map(o=>o.id));
+      const confirmedIds = response.data.map(row=>String(row.id)).filter(id=>campaignIds.has(id));
+      if (confirmedIds.length)
+        await (await import("./paused-sales-retention")).retainPausedSalesRows(tx,confirmedIds,at);
       await tx.metaAdAccount.update({
         where: { id: accountId },
         data: {

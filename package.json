@@ -13,7 +13,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/core.test.ts tests/order-retry.test.ts tests/design.test.ts tests/providers.test.ts tests/google-native-options.test.ts tests/native-image-direction.test.ts tests/project-image-settings.test.ts tests/meta-ads.test.ts tests/meta-recommendations.test.ts tests/courses-ai.test.ts tests/course-classroom.test.ts tests/diploma-api.test.ts tests/campaign-validation.test.ts tests/campaign-audit.test.ts tests/campaign-variable-preview.test.ts tests/ai-media.test.ts tests/sealed-history.test.ts tests/history-matching.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/order-retry.test.ts tests/design.test.ts tests/providers.test.ts tests/google-native-options.test.ts tests/native-image-direction.test.ts tests/project-image-settings.test.ts tests/meta-ads.test.ts tests/paused-sales.test.ts tests/meta-recommendations.test.ts tests/courses-ai.test.ts tests/course-classroom.test.ts tests/diploma-api.test.ts tests/campaign-validation.test.ts tests/campaign-audit.test.ts tests/campaign-variable-preview.test.ts tests/ai-media.test.ts tests/sealed-history.test.ts tests/history-matching.test.ts",
     "worker": "tsx scripts/worker.ts",
     "maintenance": "tsx scripts/maintenance.ts",
     "db:generate": "node scripts/generate.mjs",

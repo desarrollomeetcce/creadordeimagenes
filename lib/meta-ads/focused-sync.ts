@@ -455,6 +455,8 @@ export async function focusedSyncStep(
         502,
       );
       await writeSyncPage(tx, objectRows, dailyRows, phase >= 3, new Date(lastAttempt.at));
+      if (phase >= 3 && objectRows.some(row=>row.level === "campaign"))
+        await (await import("./paused-sales-retention")).retainPausedSalesRows(tx,objectRows.map(row=>String(row.id)),new Date(lastAttempt.at));
       if (phase < 6 && selected.length)
         await tx.metaAdObject.updateMany({
           where: { accountId: a.id, id: { in: selected } },

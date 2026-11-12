@@ -1,4 +1,5 @@
 "use client";
+import { compareRowRetention } from "../../lib/meta-ads/retained-row-order";
 import { reuseFinancialResponse } from "../../lib/reuse-financial-response";
 import { InventoryCampaignControl, type InventoryCampaignChange } from "./inventory-campaign-control";
 import { financialTaskSections } from "../../lib/meta-ads/financial-task-sections";
@@ -127,6 +128,7 @@ type Cell = {
   }[];
 };
 type Row = {
+  pinned?: boolean;
   supports?: { id: string; advisorId: string; name: string; until: string }[];
   aliasId: string;
   advisorId: string | null;
@@ -956,8 +958,9 @@ export function MetaEffectiveness({
           )),
     )
     .sort((a, b) => {
-      if (activeSort.kind !== "evaluation" && a.active !== b.active)
-        return a.active ? -1 : 1;
+      const activationOrder = compareRowRetention(a,b);
+      if (activeSort.kind !== "evaluation" && activationOrder)
+        return activationOrder;
       let result = 0;
       if (activeSort.kind === "text") {
         const av =
@@ -1061,9 +1064,9 @@ export function MetaEffectiveness({
       ? []
       : grouping === "advisor"
         ? advisorSections.map((g) =>
-            g.bands.flatMap((b) => b.rows).filter((r) => !r.active),
+            g.bands.flatMap((b) => b.rows).filter((r) => !r.active && !r.pinned),
           )
-        : [normalDisplayedRows.filter((r) => !r.active)];
+        : [normalDisplayedRows.filter((r) => !r.active && !r.pinned)];
   const firstInactiveBands = new Map(
     inactiveSections
       .filter((g) => g.length)
@@ -2621,6 +2624,7 @@ export function MetaEffectiveness({
                               disabled={busy || readOnly || !r.country}
                               onChange={change => void changeCampaignState(r, change)}
                             />
+                            {!r.active && r.pinned && <small className="badge" title="Desactivado: la fila se conserva en esta hoja">Fijado</small>}
                             <EffectivenessCell
                               label={`Inventario ${name} ${r.country || "sin país"}`}
                               value={name}
