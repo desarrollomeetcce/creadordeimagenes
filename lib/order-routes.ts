@@ -169,6 +169,15 @@ export async function orderRoutes(
       .object({ expectedCompleted: z.number().int().min(1).optional() })
       .parse(await body());
     await stopOrder(user, id, action === "finish", b.expectedCompleted);
+  } else if (action === "retry") {
+    const result = await (await import("./order-retry")).retryOrder(user,id,await body());
+    if (result.changed) {
+      try { await launchOrder(user,id,true); }
+      catch (error) {
+        reportContinuationError(id,error);
+        await db.generationOrder.updateMany({where:{id,status:"PAUSED",runId:null},data:{status:"NEEDS_REVIEW",error:continuationError(error)}});
+      }
+    }
   } else if (action === "resume") await launchOrder(user, id, true);
   else if (action === "approve") {
     const b = z.object({ jobId: z.string().min(1) }).parse(await body());

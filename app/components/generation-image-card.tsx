@@ -28,15 +28,15 @@ export function GenerationImageCard({
     slot.status === "RUNNING"
       ? "Generando imagen…"
       : slot.status === "FAILED"
-        ? "No se pudo generar"
+        ? (order?.canRetry ? "En pausa · no se pudo generar" : "No se pudo generar")
         : slot.status === "UNCERTAIN"
-          ? "Resultado por revisar"
+          ? (order?.canRetry ? "En pausa · resultado por revisar" : "Resultado por revisar")
           : order?.status === "PAUSED"
             ? "En pausa"
             : waiting
               ? "Espera aprobación de la muestra"
               : order?.status === "NEEDS_REVIEW"
-                ? "Pendiente · requiere atención"
+                ? "En pausa · requiere revisión"
                 : order?.status === "DISPATCH_UNCERTAIN"
                   ? "Envío por comprobar"
                   : "En cola";

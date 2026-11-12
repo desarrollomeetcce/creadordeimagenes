@@ -26,7 +26,7 @@ export function generationCardState(order: OrderProgress) {
     order.uncertain > 0
   )
     return {
-      label: "Requiere revisión",
+      label: "En pausa · requiere revisión",
       animated: false,
       detail: "Revisa el estado antes de continuar.",
     };

@@ -3,7 +3,7 @@ import {
   creativeConnection,
   capabilityFingerprint,
 } from "./provider-connections";
-import type { ProviderConfiguration } from "@prisma/client";
+import type { Prisma, ProviderConfiguration } from "@prisma/client";
 import { db } from "./db";
 import { decryptKey } from "./crypto";
 import { adapter, type ModelCapability } from "./providers";
@@ -68,9 +68,9 @@ export async function reserveJobs(
   projectId: string,
   items: { subproductId?: string; key: string; snapshot: object }[],
   revision: number,
+  transaction?: Prisma.TransactionClient,
 ) {
-  return db.$transaction(
-    async (tx) => {
+  const reserve = async (tx: Prisma.TransactionClient) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
       const c = await tx.providerConfiguration.findUniqueOrThrow({
         where: { id: "global" },
@@ -197,9 +197,8 @@ export async function reserveJobs(
         jobs.push(job);
       }
       return jobs;
-    },
-    { timeout: 20000 },
-  );
+    };
+  return transaction ? reserve(transaction) : db.$transaction(reserve, { timeout: 20000 });
 }
 export async function connectionCheck() {
   const c = await db.providerConfiguration.findUniqueOrThrow({

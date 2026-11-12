@@ -123,6 +123,7 @@ export async function retryJob(
     "La llamada anterior pudo producir un cargo. Debes reconocer ese riesgo antes de otro intento.",
   );
   const snapshot = job.snapshot as Record<string, unknown>;
+  demand(!snapshot.orderId,"Reintenta esta generación desde la orden de su carpeta para conservar el lote y las imágenes terminadas.",409);
   const engines=await (await import("./generation-engines")).engineConfiguration(),engine=(await import("./generation-engines")).requireEngine(engines,snapshot.engine??"ai");
   const c = engine==="propiox"?null:await configured(engine==="hybrid");
   if (typeof snapshot.editVariationId === "string")

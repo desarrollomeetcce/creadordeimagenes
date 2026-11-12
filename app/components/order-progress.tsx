@@ -8,6 +8,8 @@ export type OrderProgress = {
   hiddenFromProduction?: boolean;
   canDismiss?: boolean;
   canContinuePending?:boolean;
+  canRetry?:boolean;
+  retryCount?:number;
   canApproveSample?:boolean;
   recoveryHint?:string|null;
   needsConnectionReview?:boolean;
@@ -54,7 +56,7 @@ export const orderLabels: Record<string, string> = {
   COMPLETED: "Completada",
   ACCEPTED: "Completada con las imágenes elegidas",
   DISPATCH_UNCERTAIN: "Envío sin confirmar",
-  NEEDS_REVIEW: "Requiere revisión",
+  NEEDS_REVIEW: "En pausa · requiere revisión",
 };
 export const modeLabels: Record<string, string> = {
   background: "Segundo plano",
@@ -113,6 +115,7 @@ export function OrderProgressCard({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
+  const retryRequest = useRef<{version:string;requestId:string}|null>(null);
   const perform = async (action: string, body?: unknown) => {
     if (lock.current) return;
     lock.current = true;
@@ -122,7 +125,7 @@ export function OrderProgressCard({
       const updated=await orderRequest(action==="hide-card"?"/hide":`/${o.id}/${action}`,action==="hide-card"?{ids:[o.id]}:body);
       await refresh();
       if (
-        (action === "resume" || action === "approve") &&
+        (action === "resume" || action === "approve" || action === "retry") &&
         o.mode === "immediate" && updated.status === "ACTIVE"
       )
         void driveOrder(o.id, refresh).catch((e) => setError(e.message));
@@ -226,6 +229,12 @@ export function OrderProgressCard({
       </div>
       {o.canManage && (
         <div className="order-buttons">
+          {o.canRetry && <button type="button" className="primary" disabled={busy || !o.errorVersion} onClick={() => {
+            if (!o.errorVersion || !confirm("Se conservarán las " + o.completed + " imágenes terminadas. Se prepararán " + (o.retryCount ?? o.failed + o.uncertain + o.pending) + " nuevos intentos para lo no completado con los ajustes actuales de IA. El intento anterior puede haberse cobrado y este nuevo intento puede consumir API. ¿Reintentar generación?")) return;
+            if (retryRequest.current?.version !== o.errorVersion) retryRequest.current = {version:o.errorVersion,requestId:crypto.randomUUID()};
+            void perform("retry",{expectedVersion:o.errorVersion,requestId:retryRequest.current.requestId,confirmCharge:true});
+          }}>↻ Reintentar generación</button>}
+
           {active && (
             <button
               type="button"
