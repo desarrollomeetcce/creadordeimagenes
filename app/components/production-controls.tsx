@@ -1,4 +1,5 @@
 "use client";
+import { joinPendingMetaRead } from "../../lib/meta-ads/pending-read";
 import { ErrorNotice } from "./error-notice";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -63,14 +64,23 @@ export function useProductionController(
   latest.current = orders;
   idsRef.current = ids;
   update.current = onUpdate;
+  const readVersion = useRef(0);
+  const backgroundReads = useRef(new Map<string, Promise<void>>());
+  const scopeKey = scope ? new URLSearchParams(scope).toString() : "";
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
   const refresh = useCallback(async () => {
     if (!idsRef.current.length || !enabledRef.current) return;
+    const scopeAtStart = scopeKeyRef.current;
+    const selectedIds = idsRef.current.join(",");
+    const version = ++readVersion.current;
     const r = await fetch(
-      "/api/orders?" + new URLSearchParams({ ids: idsRef.current.join(",") }),
+      "/api/orders?" + new URLSearchParams({ ids: selectedIds }),
       { cache: "no-store" },
     );
     const b = await r.json();
     if (!r.ok) throw Error(b.error ?? "No se pudo consultar la orden.");
+    if (!mounted.current || !enabledRef.current || scopeAtStart !== scopeKeyRef.current || selectedIds !== idsRef.current.join(",") || version !== readVersion.current) return;
     if (mounted.current) {setOrders(b.filter((order:OrderProgress)=>!order.hiddenFromProduction&&orderNeedsControls(order)));setError("");}
     await update.current?.();
   }, []);
@@ -124,7 +134,7 @@ export function useProductionController(
     if (!ids.length || !enabled) return;
     const load = () => {
       if (document.visibilityState === "visible")
-        void refresh().catch((e) => setError(e.message));
+        void joinPendingMetaRead(backgroundReads.current, JSON.stringify([scopeKeyRef.current, idsRef.current]), refresh).catch((e) => setError(e.message));
     };
     load();
     const timer = setInterval(() => {

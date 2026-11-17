@@ -1549,12 +1549,13 @@ async function handle(
     if (parts[0] === "variations" && parts[1]) {
       const v = await db.variation.findUnique({
         where: { id: parts[1] },
-        include: { job: true },
+        include: { job: { select: { projectId: true, subproductId: true } } },
       });
       demand(v, "Imagen no encontrada.", 404);
       try {
-        if(method==="GET"&&parts.length===2) await (await import("@/lib/versions")).accessibleVariation(user,v.id,"VIEW");
-        else if (v.job.projectId === "connection-test") ownerOnly(user);
+        if (method === "GET" && parts.length === 2)
+          demand(!v.deletedAt, "Afiche no encontrado.", 404);
+        if (v.job.projectId === "connection-test") ownerOnly(user);
         else await libraryJobAccess(user,v.job,method==="GET"?"VIEW":"EDIT");
       } catch(error){
         if(!(error instanceof AppError)||![403,404].includes(error.status)||method!=="GET"||parts.length!==2)throw error;
@@ -1563,7 +1564,6 @@ async function handle(
       if (method === "GET" && parts.length === 2) {
         demand(
           !v.deletedAt &&
-            !v.deletedAt &&
             !v.expired &&
             (v.permanent || v.expiresAt > new Date()),
           "El archivo temporal ya caducó.",
@@ -1581,20 +1581,14 @@ async function handle(
               "Cache-Control": "private, max-age=0, must-revalidate",
             },
           });
-        let bytes = await load(v.path);
-        if (req.nextUrl.searchParams.get("thumbnail") === "true")
-          bytes = await (
-            await import("sharp")
-          )
-            .default(bytes, { limitInputPixels: 20000000 })
-            .resize({
-              width: 640,
-              height: 640,
-              fit: "inside",
-              withoutEnlargement: true,
-            })
-            .webp({ quality: 65 })
-            .toBuffer();
+        const bytes = thumbnail
+          ? await (await import("@/lib/preview-cache")).variationPreviews.read(
+              JSON.stringify([v.id, v.revision, v.path]),
+              async () => (await import("sharp")).default(await load(v.path), { limitInputPixels: 20000000 })
+                .resize({ width: 640, height: 640, fit: "inside", withoutEnlargement: true })
+                .webp({ quality: 65 }).toBuffer(),
+            )
+          : await load(v.path);
         const output = jpg
           ? await (await import("@/lib/render")).jpeg(bytes)
           : bytes;

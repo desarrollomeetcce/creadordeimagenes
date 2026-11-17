@@ -1,4 +1,5 @@
 "use client";
+import { readJsonResponse } from "../../lib/http-response";
 import { downloadArchive } from "./download-archive";
 import { compatibleImageOverrides } from "../../lib/project-image-settings";
 import dynamic from "next/dynamic";
@@ -789,6 +790,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
     }
     if (!targetSub) throw Error("Elige un diplomado antes de subir recursos.");
     setUploadProgress({ done: 0, total: pending.length });
+    let uploaded = 0;
     try {
       for (const [index, file] of pending.entries()) {
         const form = new FormData();
@@ -799,20 +801,24 @@ export function CreativeStudio({ userId }: { userId: string }) {
           method: "POST",
           body: form,
         });
-        const b = await r.json();
-        if (!r.ok) throw Error(b.error ?? "No se pudo subir el recurso.");
+        const b = await readJsonResponse(r, "No se pudo subir el recurso.", "POST");
+        uploaded++;
         setUploadProgress({ done: index + 1, total: pending.length });
-        await refreshGallery();
         if (b.id)
           setSelected((s) => ({
             ...s,
             [targetSub]: [...new Set([...(s[targetSub] ?? []), b.id])],
           }));
       }
-      await refreshGallery();
-      if (uploadStorage === "folder") await reloadProduct();
       setNotice("✓ Recursos propios listos para la campaña");
     } finally {
+      // A gallery read must not interrupt the remaining uploads or repeat saved files.
+      if (uploaded) {
+        await Promise.all([
+          refreshGallery(),
+          ...(uploadStorage === "folder" ? [reloadProduct()] : []),
+        ]).catch(() => setError("Los recursos se guardaron, pero no se pudo actualizar la vista. Pulsa Actualizar recursos; no necesitas subirlos otra vez."));
+      }
       setUploadProgress(null);
     }
   }
@@ -1667,6 +1673,9 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <span>
                   {gallery.total} recursos · {currentSelection.length} elegidos
                 </span>
+                <button type="button" disabled={busy} onClick={() => void run(refreshGallery)}>
+                  ↻ Actualizar recursos
+                </button>
                 <button
                   type="button"
                   disabled={busy || !gallery.total}
