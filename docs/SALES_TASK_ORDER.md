@@ -4,7 +4,7 @@ Las tareas del asesor se guardan por inventario/diplomado y país, separadas del
 
 ## Presentación
 
-El selector Ordenar por queda junto a Eliminar seleccionadas. El orden predeterminado pone SYNC, FLOW, CREATE, STOP, activados sin pendientes y desactivados sin pendientes. Conserva franjas por categoría para las filas normales. Por asesor, esa prioridad se repite dentro de cada asesor y los desactivados sin pendientes tienen su franja Desactivados · Nombre. Un diplomado inactivo con una tarea sigue visible en el grupo de esa tarea.
+El selector Ordenar por queda junto a Eliminar seleccionadas. El orden predeterminado pone SYNC, FLOW, CREATE, STOP, activados sin pendientes y desactivados sin pendientes. Conserva franjas por categoría para las filas normales. Por asesor, primero aparecen los grupos de todos los asesores con activos y pendientes; después, al final de la tabla, aparecen todos los grupos Desactivados · Nombre, en el mismo orden de asesores. La prioridad de tareas se conserva dentro de cada grupo superior. Un diplomado inactivo con una tarea sigue visible en el grupo de esa tarea.
 
 Los órdenes explícitos por ventas y activación no aplican las franjas de prioridad: ventas suma V de las fechas visibles usando el resumen canónico, N/A no suma y un valor desconocido no se inventa como cero. Activados primero es el orden de estado habitual; Desactivados primero lo invierte. El período largo conserva su paginación de fechas y las acciones se aplican a su ventana visible. Se conservan también los ordenadores de las columnas.
 

@@ -1077,7 +1077,7 @@ export function MetaEffectiveness({
       : [],
   );
   const inactiveSections = grouping === "advisor"
-    ? advisorSections.map(g => ({rows:g.bands.flatMap(b=>b.rows).filter(r=>!r.active && (preserveDisplayOrder || financialTaskPriority(r) === 5)),advisor:g.name}))
+    ? []
     : [{rows:normalDisplayedRows.filter(r=>!r.active && (preserveDisplayOrder || financialTaskPriority(r) === 5)),advisor:""}];
   const firstInactiveBands = new Map(inactiveSections.filter(g=>g.rows.length).map(g=>[activationKey(g.rows[0]),{count:g.rows.length,advisor:g.advisor}]));
   const pendingTaskBands = new Map<string,{label:string;count:number;priority:number}>();
@@ -2487,7 +2487,8 @@ export function MetaEffectiveness({
                       )}
                       {advisorBand && (
                         <tr
-                          className="financial-advisor-band"
+                          className={advisorBand.inactive ? "financial-inactive-band" : "financial-advisor-band"}
+                          data-advisor-section={advisorBand.inactive ? "inactive" : "active"}
                           data-advisor-group={advisorBand.id || "none"}
                         >
                           <th
@@ -2498,7 +2499,7 @@ export function MetaEffectiveness({
                             )}
                           >
                             <span>
-                              <strong>{advisorBand.name}</strong>
+                              <strong>{advisorBand.inactive ? `Desactivados · ${advisorBand.name}` : advisorBand.name}</strong>
                               <small>
                                 {advisorBand.rows.length}{" "}
                                 {advisorBand.rows.length === 1

@@ -175,19 +175,24 @@ export function groupFinancialRowsByAdvisor<
   preserveOrder = false,
 ) {
   const names = new Map(advisors.map((a) => [a.id, a.label ?? a.name])),
-    groups = new Map<string, { id: string; name: string; rows: T[] }>();
+    groups = new Map<string, { id: string; name: string; inactive: boolean; rows: T[] }>();
   for (const row of rows) {
     const id = row.advisorId && names.has(row.advisorId) ? row.advisorId : "";
-    let group = groups.get(id);
+    // Pending tasks stay visible above ordinary gray rows, even before activation.
+    const inactive = preserveOrder ? row.active === false : financialTaskPriority(row) === 5;
+    const key = JSON.stringify([inactive, id]);
+    let group = groups.get(key);
     if (!group) {
-      group = { id, name: names.get(id) ?? "Sin asesor", rows: [] };
-      groups.set(id, group);
+      group = { id, name: names.get(id) ?? "Sin asesor", inactive, rows: [] };
+      groups.set(key, group);
     }
     group.rows.push(row);
   }
   return [...groups.values()]
     .sort((a, b) =>
-      !a.id
+      a.inactive !== b.inactive
+        ? Number(a.inactive) - Number(b.inactive)
+        : !a.id
         ? 1
         : !b.id
           ? -1

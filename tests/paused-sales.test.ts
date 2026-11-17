@@ -85,7 +85,7 @@ test("pinned inactive rows keep their existing category instead of moving into t
   assert.deepEqual(bands[1].names, ["Secundaria"]);
 });
 
-test("advisor grouping retains each advisor's inactive rows at the bottom regardless of pinning", async () => {
+test("advisor grouping places every advisor's active section before all inactive sections regardless of pinning", async () => {
   const { groupFinancialRowsByAdvisor } =
     await import("../lib/meta-ads/financial-categories");
   const rows = [
@@ -112,11 +112,11 @@ test("advisor grouping retains each advisor's inactive rows at the bottom regard
   ]);
   assert.deepEqual(
     groups.map((g) => g.name),
-    ["Donasis", "Jesús"],
+    ["Donasis", "Jesús", "Donasis", "Jesús"],
   );
   assert.deepEqual(
     groups.flatMap((g) => g.bands.flatMap((b) => b.rows)).map((r) => r.aliasId),
-    ["onA", "offA", "onB", "offB"],
+    ["onA", "onB", "offA", "offB"],
   );
   const reversed = [...rows].sort((a, b) => compareRowRetention(a, b, true));
   assert.deepEqual(
@@ -235,9 +235,37 @@ test("default task priority is sync, flow, create, stop, active, inactive and re
   for (const group of groups)
     assert.deepEqual(
       group.bands.flatMap((b) => b.rows).map(financialTaskPriority),
-      [0, 1, 2, 3, 4, 5],
+      group.inactive ? [5] : [0, 1, 2, 3, 4],
     );
   const grayWithTask = { ...rows[0], campaignTask: "FLOW" as const };
   assert.equal(grayWithTask.active, false);
   assert.equal(financialTaskPriority(grayWithTask), 1);
+});
+
+test("advisor sections handle unknown advisors and filtered views without empty groups or changed row order", async () => {
+  const { groupFinancialRowsByAdvisor } = await import("../lib/meta-ads/financial-categories");
+  const rows = [
+    { aliasId: "offA", country: "PE", advisorId: "a", active: false },
+    { aliasId: "unassignedOn", country: "PE", advisorId: "unknown", active: true },
+    { aliasId: "onB2", country: "PE", advisorId: "b", active: true },
+    { aliasId: "unassignedOff", country: "PE", advisorId: null, active: false },
+    { aliasId: "onB1", country: "PE", advisorId: "b", active: true },
+  ];
+  const before = JSON.stringify(rows);
+  const advisors = [{ id: "a", name: "Donasis" }, { id: "b", name: "Jesús" }];
+  for (const preserveOrder of [false, true]) {
+    const groups = groupFinancialRowsByAdvisor(rows, [], {}, advisors, preserveOrder);
+    assert.deepEqual(groups.map(g => [g.name, g.inactive]), [
+      ["Jesús", false], ["Sin asesor", false], ["Donasis", true], ["Sin asesor", true],
+    ]);
+    assert.deepEqual(groups.flatMap(g => g.bands.flatMap(b => b.rows)).map(r => r.aliasId),
+      ["onB2", "onB1", "unassignedOn", "offA", "unassignedOff"]);
+    for (const active of [false, true]) {
+      const filtered = rows.filter(r => r.active === active);
+      const sections = groupFinancialRowsByAdvisor(filtered, [], {}, advisors, preserveOrder);
+      assert.ok(sections.every(g => g.rows.length > 0 && g.inactive === !active));
+      assert.equal(sections.flatMap(g => g.rows).length, filtered.length);
+    }
+  }
+  assert.equal(JSON.stringify(rows), before);
 });
