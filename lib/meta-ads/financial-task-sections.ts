@@ -1,31 +1,42 @@
-type TaskRow = {
-  active: boolean;
-  campaignTask?: "NONE" | "CREATE" | "STOP";
+export type TaskRow = {
+  active?: boolean;
+  campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
   pendingAssignmentAt?: string;
   advisorId?: string | null;
-  currency: string;
+  currency?: string;
 };
-/** Pending tasks precede normal advisor/category grouping; order within each block is retained. */
+export function financialTaskPriority(row: TaskRow) {
+  if (row.campaignTask === "SYNC") return 0;
+  if (row.campaignTask === "FLOW") return 1;
+  if (row.campaignTask === "CREATE") return 2;
+  if (row.campaignTask === "STOP") return 3;
+  return row.active !== false ? 4 : 5;
+}
+/** Pending tasks are distinct from activation; explicit row ordering may bypass these bands. */
 export function financialTaskSections<T extends TaskRow>(rows: T[]) {
-  const assignment: T[] = [],
+  const sync: T[] = [],
+    flow: T[] = [],
+    assignment: T[] = [],
     stopping: T[] = [],
     normal: T[] = [];
   for (const row of rows) {
-    if (row.campaignTask === "STOP") stopping.push(row);
-    else if (
-      row.campaignTask === "CREATE" ||
-      (row.active &&
-        !!row.pendingAssignmentAt &&
-        (!row.advisorId || !row.currency))
-    )
-      assignment.push(row);
-    else normal.push(row);
+    const priority = financialTaskPriority(row);
+    (priority === 0
+      ? sync
+      : priority === 1
+        ? flow
+        : priority === 2
+          ? assignment
+          : priority === 3
+            ? stopping
+            : normal
+    ).push(row);
   }
-  assignment.sort(
-    (a, b) =>
-      Number(b.campaignTask === "CREATE") -
-        Number(a.campaignTask === "CREATE") ||
-      (b.pendingAssignmentAt ?? "").localeCompare(a.pendingAssignmentAt ?? ""),
-  );
-  return { assignment, stopping, normal };
+  return { sync, flow, assignment, stopping, normal };
 }
+export const financialTaskLabels = [
+  "Por sincronizar",
+  "Por hacer flujo",
+  "Por hacer campaña",
+  "Por desactivar",
+];

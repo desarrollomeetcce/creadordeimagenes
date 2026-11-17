@@ -5,7 +5,10 @@ import { db } from "../lib/db";
 import { writeSyncPage } from "../lib/meta-ads/bulk-sync";
 import { retainPausedSalesRows } from "../lib/meta-ads/paused-sales-retention";
 import { activationSettings } from "../lib/meta-ads/inventory-sheet-activation";
-import { confirmCampaignInventoryStatus } from "../lib/meta-ads/campaign-inventory-status";
+import {
+  confirmCampaignInventoryStatus,
+  setCampaignFlowTask,
+} from "../lib/meta-ads/campaign-inventory-status";
 import { effectiveness } from "../lib/meta-ads/effectiveness";
 
 test("confirmed Meta pauses keep sales inactive, pinned and visible without changing money, countries or manual retirements", async () => {
@@ -164,6 +167,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       ids: string[],
       at = new Date(),
       missing: string[] = [],
+      status: "ACTIVE" | "PAUSED" = "PAUSED",
     ) {
       return db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
@@ -174,8 +178,8 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
             accountId,
             name: "Campaña QA",
             level: "campaign",
-            status: "PAUSED",
-            effectiveStatus: "PAUSED",
+            status,
+            effectiveStatus: status,
           })),
           [],
           true,
@@ -311,7 +315,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
     });
     assert.equal(await batch(recentManual.ids, reading), 0);
     const pending = await fixture(["PAUSED"], { task: "CREATE" });
-    assert.equal(await batch(pending.ids), 0);
+    assert.equal(await batch(pending.ids), 1);
     assert.equal(
       (await controls()).rows[pending.alias.id + "|PE"].campaignTask,
       "CREATE",
@@ -368,6 +372,96 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
         })
       ).active,
       false,
+    );
+    for (const task of ["CREATE", "FLOW", "STOP", "SYNC"]) {
+      const item = await fixture(["PAUSED"], { active: false, task });
+      assert.equal(await batch(item.ids, new Date(), [], "ACTIVE"), 1);
+      assert.equal(
+        (
+          await db.metaEffectivenessState.findUniqueOrThrow({
+            where: { id: item.state.id },
+          })
+        ).active,
+        true,
+      );
+      assert.equal(
+        (await controls()).rows[item.alias.id + "|PE"].campaignTask,
+        task,
+      );
+      assert.equal(await batch(item.ids), 1);
+      assert.equal(
+        (
+          await db.metaEffectivenessState.findUniqueOrThrow({
+            where: { id: item.state.id },
+          })
+        ).active,
+        false,
+      );
+      assert.equal(
+        (await controls()).rows[item.alias.id + "|PE"].campaignTask,
+        task,
+      );
+      await db.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
+        await confirmCampaignInventoryStatus(
+          tx,
+          {
+            authorized: actor,
+            scope: {
+              listId: list.id,
+              tableId: table.id,
+              aliasId: item.alias.id,
+              country: "PE",
+              name: item.alias.name,
+            },
+            revision: 0,
+          } as any,
+          "ACTIVE",
+        );
+      });
+      assert.equal(
+        (
+          await db.metaEffectivenessState.findUniqueOrThrow({
+            where: { id: item.state.id },
+          })
+        ).active,
+        true,
+      );
+      assert.equal(
+        (await controls()).rows[item.alias.id + "|PE"].campaignTask,
+        task,
+      );
+      assert.equal(
+        (
+          await db.metaEffectivenessRow.findUniqueOrThrow({
+            where: { id: item.row.id },
+          })
+        ).hidden,
+        false,
+      );
+    }
+    const flowItem = await fixture(["ACTIVE"]);
+    await setCampaignFlowTask(actor, flowItem.ids[0], "NONE", true);
+    assert.equal(
+      (await controls()).rows[flowItem.alias.id + "|PE"].campaignTask,
+      "FLOW",
+    );
+    assert.equal(
+      (
+        await db.metaAdObject.findUniqueOrThrow({
+          where: { id: flowItem.ids[0] },
+        })
+      ).status,
+      "ACTIVE",
+    );
+    await assert.rejects(
+      setCampaignFlowTask(actor, flowItem.ids[0], "NONE", false),
+      /pendiente cambió/,
+    );
+    await setCampaignFlowTask(actor, flowItem.ids[0], "FLOW", false);
+    assert.equal(
+      (await controls()).rows[flowItem.alias.id + "|PE"].campaignTask,
+      "NONE",
     );
     const revoked = await fixture(["ACTIVE"]);
     await db.user.update({

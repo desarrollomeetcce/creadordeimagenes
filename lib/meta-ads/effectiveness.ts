@@ -86,7 +86,7 @@ export type EffectivenessRow = {
   lastStateChange: string | null;
   advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
   pendingAssignmentAt?: string;
-  campaignTask?: "NONE" | "CREATE" | "STOP";
+  campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
   token: string;
   advisorChanges: Record<
     string,
@@ -541,7 +541,7 @@ async function readEffectiveness(
     string,
     NonNullable<EffectivenessRow["advisorReviews"]>
   >();
-  const campaignTasks = new Map<string, "NONE" | "CREATE" | "STOP">();
+  const campaignTasks = new Map<string, "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC">();
   for (const list of assignmentLists) {
     const controls =
       (
@@ -557,7 +557,7 @@ async function readEffectiveness(
                 }[];
                 pendingAssignmentAt?: string;
                 pinned?: boolean;
-                campaignTask?: "NONE" | "CREATE" | "STOP";
+                campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
               }
             >;
           };
@@ -574,7 +574,7 @@ async function readEffectiveness(
         pendingAssignments.set(key, control.pendingAssignmentAt);
       if (
         control.campaignTask &&
-        ["NONE", "CREATE", "STOP"].includes(control.campaignTask)
+        ["NONE", "CREATE", "STOP", "FLOW", "SYNC"].includes(control.campaignTask)
       )
         campaignTasks.set(key, control.campaignTask);
     }

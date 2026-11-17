@@ -1,6 +1,6 @@
 import { parseDeliveryFilters } from "./state-filter";
 export type MetaStatusAck = {
-  inventoryCampaignTask?: "NONE" | "CREATE" | "STOP";
+  inventoryCampaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
   objectId: string;
   accountId: string;
   level: string;

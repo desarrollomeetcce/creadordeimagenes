@@ -1,3 +1,5 @@
+> Actualización 17/11: la presentación y las tareas siguen [SALES_TASK_ORDER.md](SALES_TASK_ORDER.md). Ya no se muestra Fijado ni se ordena un inactivo como activo por estar fijado. Las activaciones confirmadas también se reflejan y las tareas se conservan al activar/pausar. Las reglas anteriores de conservar la posición entre activos, bloquear CREATE o evitar toda reactivación quedan sustituidas.
+
 # Campañas desactivadas y fijadas en Ventas
 
 Una pausa confirmada desde la plataforma conserva la fila de Ventas inactiva y fijada. Si se desactiva desde Ads Manager, el cambio se aplica al recibir el estado en la sincronización normal, la actualización enfocada o la actualización visible existentes. No se añade sondeo ni consultas a Graph.

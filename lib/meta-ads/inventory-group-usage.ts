@@ -138,7 +138,7 @@ export async function inventoryGroupUsage(
   }
   const observations = new Map<
     string,
-    { active: boolean | null; task: "NONE" | "CREATE" | "STOP" }[]
+    { active: boolean | null; task: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC" }[]
   >();
   for (const alias of aliases) {
     const allowed = new Set(countryCodesByTable.get(alias.tableId) ?? []);
@@ -156,7 +156,7 @@ export async function inventoryGroupUsage(
       if (!allowed.has(country)) continue;
       const rawTask = settings.rows[alias.id + "|" + country]?.campaignTask;
       const task =
-        rawTask === "CREATE" || rawTask === "STOP" ? rawTask : "NONE";
+        rawTask === "CREATE" || rawTask === "STOP" || rawTask === "FLOW" || rawTask === "SYNC" ? rawTask : "NONE";
       const active =
         ownStates.get(country)?.active ??
         (rowCountries.has(country)

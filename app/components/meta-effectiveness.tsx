@@ -1,8 +1,8 @@
 "use client";
-import { compareRowRetention } from "../../lib/meta-ads/retained-row-order";
+import { compareRowRetention, periodSalesTotals } from "../../lib/meta-ads/retained-row-order";
 import { reuseFinancialResponse } from "../../lib/reuse-financial-response";
 import { InventoryCampaignControl, type InventoryCampaignChange } from "./inventory-campaign-control";
-import { financialTaskSections } from "../../lib/meta-ads/financial-task-sections";
+import { financialTaskSections, financialTaskPriority, financialTaskLabels } from "../../lib/meta-ads/financial-task-sections";
 import { InventoryMetaSync } from "./inventory-meta-sync";
 import { compareFinancialStatus } from "../../lib/meta-ads/inventory-evaluation-order";
 import {
@@ -140,7 +140,7 @@ type Row = {
   lastStateChange: string | null;
   advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
   pendingAssignmentAt?: string;
-  campaignTask?: "NONE" | "CREATE" | "STOP";
+  campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
   token: string;
   advisorChanges?: Record<
     string,
@@ -158,6 +158,8 @@ type Settings = {
   defaultCurrency: string;
 };
 type SheetSort =
+  | { kind: "period"; metric: "sales"; direction: "asc" | "desc" }
+  | { kind: "activation"; direction: "asc" | "desc" }
   | { kind: "evaluation"; direction: "asc" | "desc" }
   | {
       kind: "text";
@@ -933,6 +935,15 @@ export function MetaEffectiveness({
       !visibleMetricKeys.has(sheetSort.metric))
       ? { kind: "text", field: "alias", direction: "asc" }
       : sheetSort;
+  const periodSales = useMemo(() => periodSalesTotals(data?.rows ?? [], days), [data?.rows, days]);
+  const preserveDisplayOrder = ["evaluation", "period", "activation"].includes(activeSort.kind);
+  const toolbarOrder = activeSort.kind === "period" ? "sales-" + activeSort.direction : activeSort.kind === "activation" ? (activeSort.direction === "desc" ? "active-first" : "inactive-first") : grouping === "advisor" ? "advisor" : "category";
+  const chooseToolbarOrder = (value: string) => {
+    setGrouping(value === "advisor" ? "advisor" : "inventory");
+    if(value === "sales-desc" || value === "sales-asc") setSheetSort({kind:"period",metric:"sales",direction:value === "sales-desc" ? "desc" : "asc"});
+    else if(value === "active-first" || value === "inactive-first") setSheetSort({kind:"activation",direction:value === "active-first" ? "desc" : "asc"});
+    else setSheetSort({kind:"text",field:"alias",direction:"asc"});
+  };
   const rows = (data?.rows ?? [])
     .filter(
       (r) =>
@@ -940,7 +951,7 @@ export function MetaEffectiveness({
           ? !r.country
           : !country || r.country === country) &&
         (selectedAliases === null || selectedAliases.includes(r.aliasId)) &&
-        (!stateFilter || (stateFilter === "active" ? r.active : !r.active)) &&
+        (!stateFilter || (stateFilter === "active" ? r.active : stateFilter === "inactive" ? !r.active : r.campaignTask === stateFilter)) &&
         (valueFilter === null ||
           days.some((day) =>
             visibleMetrics.some((m) => {
@@ -958,11 +969,13 @@ export function MetaEffectiveness({
           )),
     )
     .sort((a, b) => {
-      const activationOrder = compareRowRetention(a,b);
-      if (activeSort.kind !== "evaluation" && activationOrder)
+      const activationOrder = compareRowRetention(a,b,activeSort.kind === "activation" && activeSort.direction === "asc", !preserveDisplayOrder);
+      if (activationOrder)
         return activationOrder;
       let result = 0;
-      if (activeSort.kind === "text") {
+      if (activeSort.kind === "period") {
+        result = compareSheetNumbers(periodSales.get(activationKey(a)) ?? null, periodSales.get(activationKey(b)) ?? null, activeSort.direction);
+      } else if (activeSort.kind === "text") {
         const av =
             activeSort.field === "alias"
               ? (names.get(a.aliasId) ?? "")
@@ -979,7 +992,7 @@ export function MetaEffectiveness({
           statusLookup.get(activationKey(b))?.status,
           activeSort.direction === "desc",
         );
-      } else {
+      } else if(activeSort.kind === "day") {
         const metric = activeSort.metric,
           av = a.days[activeSort.day]?.[metric] ?? null,
           bv = b.days[activeSort.day]?.[metric] ?? null,
@@ -1002,11 +1015,13 @@ export function MetaEffectiveness({
         a.country.localeCompare(b.country)
       );
     });
-  const {
-    assignment: pendingAssignmentRows,
-    stopping: pendingStopRows,
-    normal: normalRows,
-  } = financialTaskSections(rows);
+  const sections = financialTaskSections(rows);
+  const pendingBands = grouping !== "advisor" && !preserveDisplayOrder;
+  const pendingSyncRows = pendingBands ? sections.sync : [];
+  const pendingFlowRows = pendingBands ? sections.flow : [];
+  const pendingAssignmentRows = pendingBands ? sections.assignment : [];
+  const pendingStopRows = pendingBands ? sections.stopping : [];
+  const normalRows = pendingBands ? sections.normal : rows;
   const pendingAssignmentKeys = new Set(
     pendingAssignmentRows.map(activationKey),
   );
@@ -1018,7 +1033,7 @@ export function MetaEffectiveness({
           financialAliases,
           temporaryCategories.temporary,
           advisors,
-          activeSort.kind === "evaluation",
+          preserveDisplayOrder,
         )
       : [];
   const categoryBands =
@@ -1028,9 +1043,9 @@ export function MetaEffectiveness({
           normalRows,
           financialAliases,
           temporaryCategories.temporary,
-          activeSort.kind === "evaluation",
+          preserveDisplayOrder,
         );
-  const showCategoryBands = financialAliases.some(
+  const showCategoryBands = !["period","activation"].includes(activeSort.kind) && financialAliases.some(
     (a) => (a as FinancialCatalogEntry).categoryAssignments?.length,
   );
   const normalDisplayedRows =
@@ -1042,6 +1057,8 @@ export function MetaEffectiveness({
         ? categoryBands.flatMap((b) => b.rows)
         : normalRows;
   const displayedRows = [
+    ...pendingSyncRows,
+    ...pendingFlowRows,
     ...pendingAssignmentRows,
     ...pendingStopRows,
     ...normalDisplayedRows,
@@ -1059,19 +1076,16 @@ export function MetaEffectiveness({
         })
       : [],
   );
-  const inactiveSections =
-    activeSort.kind === "evaluation"
-      ? []
-      : grouping === "advisor"
-        ? advisorSections.map((g) =>
-            g.bands.flatMap((b) => b.rows).filter((r) => !r.active && !r.pinned),
-          )
-        : [normalDisplayedRows.filter((r) => !r.active && !r.pinned)];
-  const firstInactiveBands = new Map(
-    inactiveSections
-      .filter((g) => g.length)
-      .map((g) => [activationKey(g[0]), g.length]),
-  );
+  const inactiveSections = grouping === "advisor"
+    ? advisorSections.map(g => ({rows:g.bands.flatMap(b=>b.rows).filter(r=>!r.active && (preserveDisplayOrder || financialTaskPriority(r) === 5)),advisor:g.name}))
+    : [{rows:normalDisplayedRows.filter(r=>!r.active && (preserveDisplayOrder || financialTaskPriority(r) === 5)),advisor:""}];
+  const firstInactiveBands = new Map(inactiveSections.filter(g=>g.rows.length).map(g=>[activationKey(g.rows[0]),{count:g.rows.length,advisor:g.advisor}]));
+  const pendingTaskBands = new Map<string,{label:string;count:number;priority:number}>();
+  const taskScopes = grouping === "advisor" ? advisorSections.map(g => showCategoryBands ? g.bands.flatMap(b=>b.rows) : g.rows) : pendingBands ? [[...pendingSyncRows,...pendingFlowRows,...pendingAssignmentRows,...pendingStopRows]] : [];
+  for(const scope of taskScopes) for(let priority=0;priority<4;priority++) {
+    const matches=scope.filter(r=>financialTaskPriority(r)===priority);
+    if(matches.length) pendingTaskBands.set(activationKey(matches[0]),{label:financialTaskLabels[priority],count:matches.length,priority});
+  }
   const firstBands = new Map(
     categoryBands
       .filter((b) => b.rows.length)
@@ -1230,7 +1244,7 @@ export function MetaEffectiveness({
     }
   };
   const sortId = (v: SheetSort) =>
-    v.kind === "evaluation"
+    v.kind === "period" ? "period-sales" : v.kind === "activation" ? "activation" : v.kind === "evaluation"
       ? "evaluation"
       : v.kind === "text"
         ? v.field
@@ -1580,7 +1594,7 @@ export function MetaEffectiveness({
             </div>
           </SheetMultiFilter>
           <label>
-            Estado
+            Estado y tareas
             <SheetSearchSelect
               label="Estado de inventario"
               value={stateFilter}
@@ -1589,6 +1603,10 @@ export function MetaEffectiveness({
                 { value: "", label: "Todos" },
                 { value: "active", label: "Activados" },
                 { value: "inactive", label: "Desactivados" },
+                { value: "CREATE", label: "Por hacer campaña" },
+                { value: "STOP", label: "Por desactivar" },
+                { value: "FLOW", label: "Por hacer flujo" },
+                { value: "SYNC", label: "Por sincronizar" },
               ]}
               onSelect={setStateFilter}
             />
@@ -1646,6 +1664,16 @@ export function MetaEffectiveness({
           >
             Eliminar seleccionadas ({selectedVisibleRows.length})
           </button>
+          <label>Ordenar por
+            <SheetSearchSelect label="Ordenar filas de ventas por" value={toolbarOrder} options={[
+              {value:"category",label:"Categoría"},
+              {value:"advisor",label:"Asesor"},
+              {value:"sales-desc",label:"Ventas del período · mayor a menor"},
+              {value:"sales-asc",label:"Ventas del período · menor a mayor"},
+              {value:"active-first",label:"Estado · activados primero"},
+              {value:"inactive-first",label:"Estado · desactivados primero"},
+            ]} onSelect={chooseToolbarOrder}/>
+          </label>
           {selectedPairs.length > 0 && (
             <button
               type="button"
@@ -2387,7 +2415,7 @@ export function MetaEffectiveness({
                   const campaignLabel =
                     r.campaignTask === "CREATE"
                       ? "Por hacer campaña"
-                      : r.campaignTask === "STOP"
+                      : r.campaignTask === "SYNC" ? "Por sincronizar" : r.campaignTask === "FLOW" ? "Por hacer flujo" : r.campaignTask === "STOP"
                         ? "Por desactivar campaña"
                         : r.active
                           ? "Activado"
@@ -2457,48 +2485,6 @@ export function MetaEffectiveness({
                           </td>
                         </tr>
                       )}
-                      {pendingAssignmentRows[0] &&
-                        activationKey(pendingAssignmentRows[0]) ===
-                          activationKey(r) && (
-                          <tr className="financial-pending-assignment-band">
-                            <th
-                              colSpan={Math.max(
-                                1,
-                                visibleMetadata.length +
-                                  days.length * visibleMetrics.length,
-                              )}
-                            >
-                              <span>
-                                <strong>Por asignar</strong>
-                                <small>
-                                  Campaña o datos pendientes ·{" "}
-                                  {pendingAssignmentRows.length}
-                                </small>
-                              </span>
-                            </th>
-                          </tr>
-                        )}
-                      {pendingStopRows[0] &&
-                        activationKey(pendingStopRows[0]) ===
-                          activationKey(r) && (
-                          <tr className="financial-pending-stop-band">
-                            <th
-                              colSpan={Math.max(
-                                1,
-                                visibleMetadata.length +
-                                  days.length * visibleMetrics.length,
-                              )}
-                            >
-                              <span>
-                                <strong>Por desactivar</strong>
-                                <small>
-                                  Desactivación pendiente ·{" "}
-                                  {pendingStopRows.length}
-                                </small>
-                              </span>
-                            </th>
-                          </tr>
-                        )}
                       {advisorBand && (
                         <tr
                           className="financial-advisor-band"
@@ -2523,6 +2509,7 @@ export function MetaEffectiveness({
                           </th>
                         </tr>
                       )}
+                      {pendingTaskBands.has(activationKey(r)) && <tr className="financial-task-band" data-task-priority={pendingTaskBands.get(activationKey(r))!.priority}><th colSpan={Math.max(1,visibleMetadata.length+days.length*visibleMetrics.length)}><span><strong>{pendingTaskBands.get(activationKey(r))!.label}</strong><small>{pendingTaskBands.get(activationKey(r))!.count} pendientes</small></span></th></tr>}
                       {inactiveCount && (
                         <tr className="financial-inactive-band">
                           <th
@@ -2533,10 +2520,10 @@ export function MetaEffectiveness({
                             )}
                           >
                             <span>
-                              <strong>Desactivados</strong>
+                              <strong>Desactivados{inactiveCount.advisor ? ` · ${inactiveCount.advisor}` : ""}</strong>
                               <small>
-                                {inactiveCount}{" "}
-                                {inactiveCount === 1 ? "fila" : "filas"}
+                                {inactiveCount.count}{" "}
+                                {inactiveCount.count === 1 ? "fila" : "filas"}
                               </small>
                             </span>
                           </th>
@@ -2624,7 +2611,6 @@ export function MetaEffectiveness({
                               disabled={busy || readOnly || !r.country}
                               onChange={change => void changeCampaignState(r, change)}
                             />
-                            {!r.active && r.pinned && <small className="badge" title="Desactivado: la fila se conserva en esta hoja">Fijado</small>}
                             <EffectivenessCell
                               label={`Inventario ${name} ${r.country || "sin país"}`}
                               value={name}

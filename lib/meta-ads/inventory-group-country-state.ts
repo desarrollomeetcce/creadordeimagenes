@@ -1,7 +1,7 @@
 export type GroupCountryCampaignState =
-  "ACTIVE" | "INACTIVE" | "CREATE" | "STOP" | "MIXED" | "NO_RECORD";
+  "ACTIVE" | "INACTIVE" | "CREATE" | "STOP" | "FLOW" | "SYNC" | "MIXED" | "NO_RECORD";
 export function groupCountryCampaignState(
-  observations: { active: boolean | null; task: "NONE" | "CREATE" | "STOP" }[],
+  observations: { active: boolean | null; task: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC" }[],
 ): GroupCountryCampaignState {
   const states = new Set(
     observations.flatMap((row) =>
@@ -25,6 +25,8 @@ export const groupCountryCampaignLabels: Record<
   INACTIVE: "Desactivado",
   CREATE: "Por hacer campaña",
   STOP: "Por desactivar",
+  FLOW: "Por hacer flujo",
+  SYNC: "Por sincronizar",
   MIXED: "Varios estados",
   NO_RECORD: "Sin registro",
 };

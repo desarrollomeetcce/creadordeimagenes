@@ -32,7 +32,7 @@ export function InventoryCampaignControl({
     label = pending ? "Cargando estado" :
       task === "CREATE"
         ? "Por hacer campaña"
-        : task === "STOP"
+        : task === "SYNC" ? "Por sincronizar" : task === "FLOW" ? "Por hacer flujo" : task === "STOP"
           ? "Por desactivar campaña"
           : task === "MIXED"
             ? "Pendientes de campaña"
@@ -57,8 +57,8 @@ export function InventoryCampaignControl({
         popoverTarget={id}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Activación de ${title}: ${label}`}
-        title={label + " · " + title}
+        aria-label={`Activación de ${title}: ${active ? "Activado" : mixed ? "Mixto" : activation === "UNKNOWN" ? "Sin asignar" : "Desactivado"}${task !== "NONE" ? " · " + label : ""}`}
+        title={(active ? "Activado" : mixed ? "Mixto" : "Desactivado") + (task !== "NONE" ? " · " + label : "") + " · " + title}
         data-activation={activation}
         data-campaign-task={task}
         disabled={disabled}
@@ -85,7 +85,7 @@ export function InventoryCampaignControl({
         {open && (
           <>
             <strong>{title}</strong>
-            <small>Registro manual de campaña</small>
+            <small>Activación y tareas del asesor</small>
             {extraActions}
             <button
               type="button"
@@ -100,10 +100,14 @@ export function InventoryCampaignControl({
               type="button"
               role="menuitem"
               disabled={disabled || pending}
-              onClick={() => choose({ active: true, campaignTask: "CREATE" })}
+              onClick={() => choose({ campaignTask: "CREATE", pinned: true })}
             >
               <span className="campaign-menu-dot campaign-create" />
               Por hacer campaña
+            </button>
+            <button type="button" role="menuitem" disabled={disabled || pending} onClick={() => choose({campaignTask:"SYNC",pinned:true})}><span className="campaign-menu-dot campaign-sync"/>Por sincronizar</button>
+            <button type="button" role="menuitem" disabled={disabled || pending} onClick={() => choose({campaignTask:"FLOW"})}>
+              <span className="campaign-menu-dot campaign-flow"/>Por hacer flujo
             </button>
             <button
               type="button"

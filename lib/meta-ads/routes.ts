@@ -181,6 +181,11 @@ export async function metaRoutes(
     method !== "GET"
   )
     demand(false, "Este acceso a Meta Ads es solo de visualización.", 403);
+  if(parts[1] === "objects" && parts[2] && parts[3] === "flow-task" && parts.length === 4 && method === "POST") {
+    await metaEditorOnly(actor);
+    const b=z.object({flow:z.boolean(),expectedTask:z.enum(["NONE","CREATE","STOP","FLOW","SYNC"])}).strict().parse(await body());
+    return send(await (await import("./campaign-inventory-status")).setCampaignFlowTask(actor,parts[2],b.expectedTask,b.flow));
+  }
   if (
     parts[1] === "objects" &&
     parts[2] &&
@@ -1593,7 +1598,7 @@ export async function metaRoutes(
         aliasId: z.string().min(1).max(100),
         country: z.string().refine(isCountryCode),
         active: z.boolean(),
-        campaignTask: z.enum(["NONE", "CREATE", "STOP"]).optional(),
+        campaignTask: z.enum(["NONE", "CREATE", "STOP", "FLOW", "SYNC"]).optional(),
         revision: z.number().int().min(0),
         since: z.string().date(),
         until: z.string().date(),
@@ -1603,7 +1608,6 @@ export async function metaRoutes(
       })
       .strict()
       .parse(await body());
-    demand(!(b.active === false && b.campaignTask === "CREATE"), "Por hacer campaña requiere activación de la hoja.");
     demand(
       b.since <= b.until &&
         (Date.parse(b.until) - Date.parse(b.since)) / 86400000 < 31,

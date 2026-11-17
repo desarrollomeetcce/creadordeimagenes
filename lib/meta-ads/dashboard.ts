@@ -582,7 +582,7 @@ export async function dashboard(actor: Actor, params: URLSearchParams) {
     return {
       ...o,
       campaignTask:
-        inventoryTasks.get(o.aliasId + "|" + o.aliasCountry) ?? "NONE",
+        inventoryTasks.get(o.aliasId + "|" + o.aliasCountry) ?? (o.level === "campaign" && (!o.aliasId || !o.aliasCountry) ? "SYNC" : "NONE"),
       stale,
       statusStale: statusIsStale(
         o.seenAt,

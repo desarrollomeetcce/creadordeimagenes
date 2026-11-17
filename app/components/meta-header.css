@@ -147,3 +147,5 @@ body:has(.meta-topbar) > .theme-toggle {
 @media(max-width:650px){.meta-country-campaigns{width:100%}.meta-country-counts{max-width:none;flex:1 1 0}.meta-create-campaign{min-height:36px}}
 .meta-ads .meta-summary-row{flex-wrap:wrap}
 .meta-country-campaigns:not([data-has-countries]){min-width:0}.meta-country-counts:empty{display:none}
+.meta-status-control .meta-flow-task{padding:2px 3px;font-size:9px;line-height:1.1;min-height:16px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--muted)}.meta-status-control .meta-flow-task[aria-pressed=true],.meta-status-control .meta-flow-label{background:#dc27871a;border-color:#dc2787;color:#dc2787}.meta-status-control[data-pending-flow=true] .meta-status-switch{box-shadow:0 0 0 2px #dc2787}
+.meta-status-control .meta-sync-label{color:#008f92;background:#008f9214}.meta-status-control[data-pending-sync=true] .meta-status-switch{box-shadow:0 0 0 2px #008f92}

@@ -47,7 +47,7 @@ import {accountWhere, type Actor} from "./service";
 type Tx = Prisma.TransactionClient;
 const id = z.string().min(1).max(100),
   name = z.string().trim().min(1).max(150);
-export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP";
+export type InventoryCampaignTask = "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
 type Control = {
   pinned: boolean;
   campaignTask?: InventoryCampaignTask;
@@ -542,7 +542,7 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
         .max(1500),
       active: z.boolean().optional(),
       pinned: z.boolean().optional(),
-      campaignTask: z.enum(["NONE", "CREATE", "STOP"]).optional(),
+      campaignTask: z.enum(["NONE", "CREATE", "STOP", "FLOW", "SYNC"]).optional(),
     })
     .strict()
     .refine(
@@ -551,10 +551,6 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
         v.pinned !== undefined ||
         v.campaignTask !== undefined,
       "Elige activación o fijación.",
-    )
-    .refine(
-      (v) => !(v.active === false && v.campaignTask === "CREATE"),
-      "Por hacer campaña requiere activación de la hoja.",
     )
     .parse(input);
   const run = async (tx: Tx) => {
@@ -716,9 +712,7 @@ async function activationChange(actor: Actor, input: unknown, sharedTx?: Tx) {
           key = rowKey(alias.id, country),
           control = settings.rows[key];
         const active =
-            b.campaignTask === "CREATE"
-              ? true
-              : (b.active ?? old?.active ?? (plan.alias ? true : false)),
+            b.active ?? old?.active ?? (b.campaignTask === "CREATE" ? false : !!plan.alias),
           pinned = b.pinned ?? control?.pinned ?? false,
           campaignTask =
             b.campaignTask ??

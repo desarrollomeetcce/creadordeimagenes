@@ -1,3 +1,4 @@
+import { financialTaskPriority, type TaskRow } from "./financial-task-sections";
 export type FinancialCategory = {
   id: string;
   name: string;
@@ -52,7 +53,7 @@ export function financialRowCategories(
   };
 }
 export function groupFinancialRows<
-  T extends { aliasId: string; country: string; active?: boolean; pinned?: boolean },
+  T extends TaskRow & { aliasId: string; country: string; pinned?: boolean },
 >(
   rows: T[],
   entries: FinancialCatalogEntry[],
@@ -63,6 +64,7 @@ export function groupFinancialRows<
     string,
     {
       active: boolean;
+      priority: number;
       temporary: boolean;
       names: string[];
       rows: T[];
@@ -79,8 +81,9 @@ export function groupFinancialRows<
         entries.find((a) => a.id === row.aliasId),
         temporary,
       ),
-      active = row.active !== false || row.pinned === true,
-      key = JSON.stringify([active, category.temporary, category.names]);
+      active = row.active !== false,
+      priority = financialTaskPriority(row),
+      key = JSON.stringify([priority, category.temporary, category.names]);
     let band = preserveOrder
       ? key === previousKey
         ? orderedBands.at(-1)
@@ -89,6 +92,7 @@ export function groupFinancialRows<
     if (!band) {
       band = {
         active,
+        priority,
         temporary: category.temporary,
         names: category.names,
         rows: [],
@@ -104,10 +108,8 @@ export function groupFinancialRows<
   return preserveOrder
     ? orderedBands
     : [...bands.values()].sort((a, b) =>
-        a.active !== b.active
-          ? a.active
-            ? -1
-            : 1
+        a.priority !== b.priority
+          ? a.priority - b.priority
           : !a.names.length
             ? 1
             : !b.names.length
@@ -159,7 +161,7 @@ export function parseTemporaryCategories(
 
 /** Presentation grouping only: each visible row occurs once, with categories repeated within its advisor. */
 export function groupFinancialRowsByAdvisor<
-  T extends {
+  T extends TaskRow & {
     aliasId: string;
     country: string;
     active?: boolean; pinned?: boolean;

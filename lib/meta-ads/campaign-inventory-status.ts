@@ -6,10 +6,10 @@ import {
   financialAccess,
   scopePermission,
 } from "./financial-access";
-import { inventoryMetaStatusChange } from "./inventory-sheet-activation";
+import { inventoryMetaStatusChange, activationSettings } from "./inventory-sheet-activation";
 import { isCountryCode } from "./countries";
 import { metaEditorUserWhere } from "./workspace-access";
-import type { Actor } from "./service";
+import { accountWhere, type Actor } from "./service";
 
 type Tx = Prisma.TransactionClient;
 type LinkedCampaign = {
@@ -69,11 +69,11 @@ export async function prepareCampaignInventoryStatus(
         "La vinculación cambió. Actualiza antes de continuar.",
         409,
       );
-      if (status === "PAUSED")
-        return inventoryMetaStatusChange(tx, authorized, scope, {
-          active: true,
-          campaignTask: "STOP",
-        });
+      if(status === "PAUSED") {
+        const list=await tx.metaEffectivenessSheet.findUniqueOrThrow({where:{id:scope.listId},select:{config:true}});
+        const task=activationSettings(list.config).rows[scope.aliasId+"|"+scope.country]?.campaignTask ?? "NONE";
+        return inventoryMetaStatusChange(tx,authorized,scope,{active:true,campaignTask:task === "NONE" ? "STOP" : task});
+      }
       return (
         (
           await tx.metaEffectivenessState.findUnique({
@@ -164,8 +164,10 @@ export async function confirmCampaignInventoryStatus(
         ],
       },
     }));
+  const list = await tx.metaEffectivenessSheet.findUnique({where:{id:scope.listId},select:{config:true}});
+  const existingTask = activationSettings(list?.config ?? null).rows[scope.aliasId+"|"+scope.country]?.campaignTask ?? "NONE";
   const active = status === "ACTIVE" || !!outstanding,
-    campaignTask = outstanding ? ("STOP" as const) : ("NONE" as const);
+    campaignTask = existingTask !== "NONE" ? existingTask : outstanding ? ("STOP" as const) : ("NONE" as const);
   await inventoryMetaStatusChange(tx, prepared.authorized, scope, {
     active,
     campaignTask,
@@ -200,7 +202,7 @@ export async function campaignInventoryTasks(
         country: o.aliasCountry,
       });
   }
-  const result = new Map<string, "STOP" | "CREATE" | "NONE">();
+  const result = new Map<string, "STOP" | "CREATE" | "FLOW" | "SYNC" | "NONE">();
   if (!pairs.size) return result;
   const values = Prisma.join(
     [...pairs.values()].map(
@@ -215,7 +217,28 @@ export async function campaignInventoryTasks(
     JOIN "MetaEffectivenessSheet" s ON s.id=p."listId" AND s.kind='INVENTORY' AND s."archivedAt" IS NULL
   `);
   for (const r of rows)
-    if (r.task === "STOP" || r.task === "CREATE" || r.task === "NONE")
+    if (r.task === "STOP" || r.task === "CREATE" || r.task === "FLOW" || r.task === "SYNC" || r.task === "NONE")
       result.set(r.aliasId + "|" + r.country, r.task);
   return result;
+}
+
+/** An internal automation task; this never writes to Meta or sends messages. */
+export async function setCampaignFlowTask(actor: Actor, objectId: string, expectedTask: string, flow: boolean) {
+  const object = await db.metaAdObject.findFirst({where:{id:objectId,level:"campaign",account:await accountWhere(actor)},select:{id:true,level:true,aliasId:true,aliasCountry:true,status:true}});
+  demand(object,"Campaña no disponible.",404);
+  const prepared=await prepareCampaignInventoryStatus(actor,object,"ACTIVE");
+  demand(prepared,"Vincula la campaña a un inventario y país antes de marcar su flujo.",409);
+  return db.$transaction(async tx=>{
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(884411)`;
+    await checkCampaignInventoryStatus(tx,prepared,object.id);
+    const {scope}=prepared;
+    demand(await tx.metaEffectivenessRow.findFirst({where:{aliasId:scope.aliasId,country:scope.country,legacy:false,hidden:false},select:{id:true}}),"La fila ya no está visible en Ventas.",409);
+    const list=await tx.metaEffectivenessSheet.findUniqueOrThrow({where:{id:scope.listId},select:{config:true}});
+    const task=activationSettings(list.config).rows[scope.aliasId+"|"+scope.country]?.campaignTask ?? "NONE";
+    demand(task===expectedTask,"El pendiente cambió. Actualiza antes de guardar.",409);
+    const state=await tx.metaEffectivenessState.findUnique({where:{aliasId_country:{aliasId:scope.aliasId,country:scope.country}},select:{active:true}});
+    const next=flow?"FLOW":"NONE";
+    await inventoryMetaStatusChange(tx,prepared.authorized,scope,{active:state?.active ?? object.status==="ACTIVE",campaignTask:next});
+    return {aliasId:scope.aliasId,country:scope.country,campaignTask:next};
+  },{timeout:60000});
 }

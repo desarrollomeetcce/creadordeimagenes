@@ -8,6 +8,9 @@ export function MetaStatusSwitch({
   checkedAt,
   stale = false,
   pendingStop = false,
+  pendingFlow = false,
+  pendingSync = false,
+  onFlowChange,
 }: {
   name: string;
   status: string;
@@ -17,6 +20,9 @@ export function MetaStatusSwitch({
   checkedAt?: string;
   stale?: boolean;
   pendingStop?: boolean;
+  pendingFlow?: boolean;
+  pendingSync?: boolean;
+  onFlowChange?: () => void;
 }) {
   if (!["ACTIVE", "PAUSED"].includes(status))
     return <small>Estado no informado</small>;
@@ -25,6 +31,8 @@ export function MetaStatusSwitch({
     <span
       className="meta-status-control"
       data-pending-stop={(active && pendingStop) || undefined}
+      data-pending-flow={pendingFlow || undefined}
+      data-pending-sync={pendingSync || undefined}
     >
       <button
         type="button"
@@ -41,6 +49,8 @@ export function MetaStatusSwitch({
         <span aria-hidden="true" />
       </button>
       {active && pendingStop && <small>Por desactivar</small>}
+      {pendingSync && <small className="meta-sync-label">Por sincronizar</small>}
+      {onFlowChange ? <button type="button" className="meta-flow-task" aria-pressed={pendingFlow} aria-label={`${pendingFlow ? "Quitar pendiente de flujo de" : "Marcar por hacer flujo en"} ${name}`} title={pendingFlow ? "Por hacer flujo. Solo modifica el pendiente interno." : "Marcar Por hacer flujo. No modifica Meta."} disabled={disabled} onClick={onFlowChange}>Flujo</button> : pendingFlow ? <small className="meta-flow-label">Por hacer flujo</small> : null}
     </span>
   );
 }

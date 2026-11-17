@@ -174,7 +174,7 @@ export async function setEffectivenessState(
     aliasId: string;
     country: string;
     active: boolean;
-    campaignTask?: "NONE" | "CREATE" | "STOP";
+    campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
     revision: number;
     since: string;
     until: string;
@@ -182,7 +182,6 @@ export async function setEffectivenessState(
   },
 ) {
   ownerOnly(actor);
-  demand(!(b.active === false && b.campaignTask === "CREATE"), "Por hacer campaña requiere activación de la hoja.");
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);

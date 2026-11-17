@@ -299,7 +299,7 @@ export function StudioCampaign({
     );
     return () => clearTimeout(timer);
   }, [pageRetryAt]);
-  const [phone, setPhone] = useState<{ scope: string; number: string } | null>(
+  const [phone, setPhone] = useState<{ scope: string; number: string; unavailable?: boolean } | null>(
     null,
   );
   const phoneScope = form.accountId + ":" + form.pageId;
@@ -342,7 +342,7 @@ export function StudioCampaign({
         }
       })
       // Reading the number is optional; Meta validates the linked default when publishing.
-      .catch(() => {});
+      .catch(() => { if(!controller.signal.aborted) setPhone({scope:phoneScope,number:"",unavailable:true}); });
     return () => controller.abort();
   }, [form.accountId, form.pageId, !!selectedPage, directoryPhone]);
   useEffect(() => {
@@ -1539,6 +1539,7 @@ export function StudioCampaign({
               }
             }}
           />
+          {form.pageId && <small className="studio-page-whatsapp" role="status">{phoneNumber ? `WhatsApp vinculado: ${phoneNumber}` : phone?.scope === phoneScope && phone.unavailable ? "Meta no compartió el WhatsApp vinculado. Se usará el predeterminado de la página si Meta lo permite; comprueba su vinculación y permisos en Meta." : "Consultando el WhatsApp vinculado a la página…"}</small>}
           {resources.pageCached && resources.pageSavedAt && (
             <small className="studio-pages-saved">
               Páginas guardadas ·{" "}

@@ -1,10 +1,29 @@
-/** A retained inactive row keeps the same sorting group as active rows. */
+import { financialTaskPriority, type TaskRow } from "./financial-task-sections";
+/** Visibility retention is independent of ordering: pinned inactive rows still sort below active rows. */
 export function compareRowRetention(
-  a: { active: boolean; pinned?: boolean },
-  b: { active: boolean; pinned?: boolean },
+  a: TaskRow & { active: boolean; pinned?: boolean },
+  b: TaskRow & { active: boolean; pinned?: boolean },
+  inactiveFirst = false,
+  prioritizeTasks = true,
 ) {
-  return (
-    Number(b.active || b.pinned === true) -
-    Number(a.active || a.pinned === true)
+  if (prioritizeTasks && !inactiveFirst)
+    return financialTaskPriority(a) - financialTaskPriority(b);
+  const order = Number(b.active) - Number(a.active);
+  return inactiveFirst ? -order : order;
+}
+
+import { summarizePeriod, type PeriodCell } from "./period-summary";
+export function periodSalesTotals<
+  T extends {
+    aliasId: string;
+    country: string;
+    days: Record<string, PeriodCell>;
+  },
+>(rows: T[], dates: string[]) {
+  return new Map(
+    rows.map((row) => [
+      JSON.stringify([row.aliasId, row.country]),
+      summarizePeriod(row.days, dates, "sales").total,
+    ]),
   );
 }

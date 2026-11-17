@@ -6360,16 +6360,16 @@ test("financial task blocks keep assignment then pending stops ahead of advisor/
     inactive={...base,id:"inactive",active:false,advisorId:null,pendingAssignmentAt:"2026-11-04"};
   const rows=[normal,stop,missing,inactive,assign];
   const before=JSON.stringify(rows), sections=financialTaskSections(rows);
-  assert.deepEqual(sections.assignment.map(r=>r.id),["assign","missing"]);
+  assert.deepEqual(sections.assignment.map(r=>r.id),["assign"]);
   assert.deepEqual(sections.stopping.map(r=>r.id),["stop"]);
-  assert.deepEqual(sections.normal.map(r=>r.id),["normal","inactive"]);
+  assert.deepEqual(sections.normal.map(r=>r.id),["normal","missing","inactive"]);
   assert.equal(JSON.stringify(rows),before);
   assert.deepEqual(financialTaskSections([...rows].reverse()).stopping.map(r=>r.id),["stop"]);
   const completed=financialTaskSections(rows.map(r=>r.id==="stop"?{...r,active:false,campaignTask:"NONE" as const}:r));
   assert.equal(completed.stopping.length,0);
   assert(!completed.assignment.some(r=>r.id==="stop"));
   assert(completed.normal.some(r=>r.id==="stop"));
-  assert.deepEqual(financialTaskSections([]),{assignment:[],stopping:[],normal:[]});
+  assert.deepEqual(financialTaskSections([]),{sync:[],flow:[],assignment:[],stopping:[],normal:[]});
 });
 
 

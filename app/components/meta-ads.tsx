@@ -159,7 +159,7 @@ export type Item = {
   timezone: string;
   businessName: string | null;
   status: string;
-  campaignTask?: "NONE" | "CREATE" | "STOP";
+  campaignTask?: "NONE" | "CREATE" | "STOP" | "FLOW" | "SYNC";
   effectiveStatus: string;
   objective: string | null;
   thumbnailUrl: string | null;
@@ -1039,6 +1039,16 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
         setBusy(false);
       }
     })();
+  };
+  const changeFlowTask = (o:Item) => {
+    if(busy || statusWritePending.current)return;
+    statusWritePending.current=true;setBusy(true);setMessage("");
+    void (async()=>{try{
+      const result=await api(`meta-ads/objects/${o.id}/flow-task`,"POST",{flow:o.campaignTask!=="FLOW",expectedTask:o.campaignTask??"NONE"});
+      const apply=(item:Item)=>item.aliasId===result.aliasId && item.aliasCountry===result.country ? {...item,campaignTask:result.campaignTask} : item;
+      setItems(old=>old.map(apply));setSelected(old=>old?apply(old):old);
+      setMessage(result.campaignTask==="FLOW"?"Marcado Por hacer flujo. El estado de Meta no cambia.":"Pendiente de flujo retirado.");notifyAdvisorSalesChanged();invalidateGroupDirectories();
+    }catch(e){setMessage((e as Error).message);}finally{statusWritePending.current=false;setBusy(false);}})();
   };
   useEffect(()=>setCountryCounts(null),[JSON.stringify([...accountIds].sort()),business,userId]);
   const preferencesKey = `meta-ads:preferences:v1:${userId}`;
@@ -2126,6 +2136,9 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
           name={o.name}
           status={o.status}
           pendingStop={o.campaignTask === "STOP"}
+          pendingFlow={o.campaignTask === "FLOW"}
+          pendingSync={o.campaignTask === "SYNC"}
+          onFlowChange={o.level === "campaign" && o.aliasId && owner ? () => changeFlowTask(o) : undefined}
           checkedAt={o.seenAt}
           stale={o.statusStale}
           delivery={
@@ -2410,6 +2423,9 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
             name={o.name}
             status={o.status}
           pendingStop={o.campaignTask === "STOP"}
+          pendingFlow={o.campaignTask === "FLOW"}
+          pendingSync={o.campaignTask === "SYNC"}
+          onFlowChange={o.level === "campaign" && o.aliasId && owner ? () => changeFlowTask(o) : undefined}
             checkedAt={o.seenAt}
             stale={o.statusStale}
             delivery={

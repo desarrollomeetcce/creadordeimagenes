@@ -13,7 +13,7 @@ export function allCampaignsStopped(statuses: (string | null)[]) {
 
 /**
  * Called inside the existing authorized metadata transaction/884411 lock.
- * Reflect only confirmed stops of currently visible rows, never missing data.
+ * Reflect confirmed campaign activation/stops on visible rows, never missing data.
  */
 export async function retainPausedSalesRows(
   tx: Prisma.TransactionClient,
@@ -25,7 +25,7 @@ export async function retainPausedSalesRows(
     where: {
       id: { in: [...new Set(objectIds)] },
       level: "campaign",
-      status: { in: pausedCampaignStatuses },
+      status: { in: ["ACTIVE", ...pausedCampaignStatuses] },
       seenAt: observedAt,
       aliasId: { not: null },
       account: { connection: { disconnectedAt: null } },
@@ -33,12 +33,13 @@ export async function retainPausedSalesRows(
     select: {
       aliasId: true,
       aliasCountry: true,
+      status: true,
       account: { select: { connection: { select: { ownerId: true } } } },
     },
   });
   const pairs = new Map<
     string,
-    { aliasId: string; country: string; ownerId: string }
+    { aliasId: string; country: string; ownerId: string; activeObserved: boolean }
   >();
   for (const row of changed)
     if (row.aliasId && row.aliasCountry && isCountryCode(row.aliasCountry))
@@ -46,6 +47,7 @@ export async function retainPausedSalesRows(
         aliasId: row.aliasId,
         country: row.aliasCountry,
         ownerId: row.account.connection.ownerId,
+        activeObserved: row.status === "ACTIVE" || pairs.get(row.aliasId + "|" + row.aliasCountry)?.activeObserved === true,
       });
   if (!pairs.size) return 0;
   const owners = await tx.user.findMany({
@@ -113,7 +115,7 @@ export async function retainPausedSalesRows(
     targets
       .filter(
         (p) =>
-          !allCampaignsStopped(statuses.get(p.aliasId + "|" + p.country) ?? []),
+          !p.activeObserved && !allCampaignsStopped(statuses.get(p.aliasId + "|" + p.country) ?? []),
       )
       .map((p) => p.aliasId + "|" + p.country),
   );
@@ -128,11 +130,13 @@ export async function retainPausedSalesRows(
     const state = alias.effectivenessStates.find(
       (s) => s.country === target.country,
     );
+    const active = target.activeObserved;
+    const pinned = active ? (control?.pinned ?? false) : true;
+    const campaignTask = control?.campaignTask ?? "NONE";
     if (
       !config ||
       config.detachedAliases.includes(alias.id) ||
-      control?.campaignTask === "CREATE" ||
-      state?.active === false ||
+      state?.active === active ||
       !alias.effectivenessRows.some((r) => r.country === target.country) ||
       (state?.events[0] && state.events[0].createdAt > observedAt)
     )
@@ -144,25 +148,26 @@ export async function retainPausedSalesRows(
       create: {
         aliasId: alias.id,
         country: target.country,
-        active: false,
+        active,
         revision: 1,
       },
-      update: { active: false, revision: { increment: 1 } },
+      update: { active, revision: { increment: 1 } },
     });
     await tx.metaEffectivenessEvent.create({
       data: {
         stateId: next.id,
         actorId: target.ownerId,
-        active: false,
+        active,
         snapshot: {
           source: "META_STATUS_SYNC",
           observedAt: observedAt.toISOString(),
-          pinned: true,
+          pinned,
+          campaignTask,
           ...(state ? { priorActive: state.active } : {}),
         },
       },
     });
-    config.rows[key] = { ...control, pinned: true, campaignTask: "NONE" };
+    config.rows[key] = { ...control, pinned, campaignTask };
     await tx.metaEffectivenessRow.updateMany({
       where: { aliasId: alias.id, country: target.country, legacy: false },
       data: { hidden: false, revision: { increment: 1 } },
@@ -175,8 +180,9 @@ export async function retainPausedSalesRows(
         detail: {
           source: "META_STATUS_SYNC",
           country: target.country,
-          active: false,
-          pinned: true,
+          active,
+          pinned,
+          campaignTask,
         },
       },
     });
