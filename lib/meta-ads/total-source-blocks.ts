@@ -57,8 +57,18 @@ export function totalSourceBlocks<
     )
       return [];
     const hasCountryData = table.groups.some((g) => !!g.country);
+    const hasPopulatedCountry = table.groups.some(
+      (g) =>
+        !!g.country &&
+        (!currency || g.currency === currency) &&
+        totalGroupHasData(g),
+    );
     const groups = table.groups.filter(
-      (g) => country || g.country || !hasCountryData || totalGroupHasData(g),
+      (g) =>
+        // Explicit country filters keep editable templates. In Todos, do not
+        // place confirmed empty countries under a populated source's heading.
+        (country || !hasPopulatedCountry || g.hasData !== false || totalGroupHasData(g)) &&
+        (country || g.country || !hasCountryData || totalGroupHasData(g)),
     );
     const pairs = new Map(
       groups.map((g) => [

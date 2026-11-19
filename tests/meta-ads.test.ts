@@ -6547,3 +6547,31 @@ test("Calendar partial facts: weighted cost stays visible, missing results never
  assert(!isObservedPartialPeriod({...p,reportedMeta:false}));
  assert.equal(observedPeriodCost({...p,reportedMeta:false}),null);
 });
+
+test("Totales Todos: Argentina no muestra plantillas vacías de México/Paraguay; Bolivia y registros reales se conservan", async () => {
+  const { totalSourceBlocks } = await import("../lib/meta-ads/total-source-blocks");
+  const filled = (country: string, value: number) => ({
+    country, currency: "PEN", hasData: true,
+    days: { "2026-11-18": { sums: { sales: { value, known: 1 } } } },
+  });
+  const empty = (country: string, currency = "PEN") => ({ country, currency, hasData: false, days: {} });
+  const argentina = { tableId: "argentina", name: "ARGENTINA", groups: [filled("AR", 1), empty("MX"), empty("PY")] };
+  const bolivia = { tableId: "bolivia", name: "BOLIVIA", groups: [filled("BO", 5)] };
+  const sources = [argentina, bolivia], before = JSON.stringify(sources);
+  assert.deepEqual(totalSourceBlocks(sources).map(b => [b.table.tableId, b.country]), [["argentina", "AR"], ["bolivia", "BO"]]);
+  assert.equal(JSON.stringify(sources), before);
+  assert.deepEqual(totalSourceBlocks([argentina], "MX").map(b => b.country), ["MX"]);
+  assert.deepEqual(totalSourceBlocks([argentina], "PY", "PEN").map(b => b.country), ["PY"]);
+  // A real zero, explicit N.A., manual override or incomplete old response is never hidden.
+  const exceptional = [
+    filled("MX", 0),
+    { ...empty("MX"), hasData: true },
+    { ...empty("MX"), days: { "2026-11-18": { manual: { baseManual: "NA" } } } },
+    { country: "MX", currency: "PEN" },
+  ];
+  for (const group of exceptional)
+    assert.deepEqual(totalSourceBlocks([{ ...argentina, groups: [filled("AR", 1), group] }]).map(b => b.country), ["AR", "MX"]);
+  // Empty sheets remain editable and a different currency's real data cannot hide this template.
+  assert.equal(totalSourceBlocks([{ ...argentina, groups: [empty("AR")] }])[0].country, "AR");
+  assert.equal(totalSourceBlocks([{ ...argentina, groups: [filled("AR", 1), empty("MX", "USD")] }], "", "USD")[0].country, "MX");
+});

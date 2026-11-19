@@ -1,3 +1,7 @@
+## 19/11 — Países vacíos en Totales de Ventas
+
+La vista Todos ya no presenta plantillas confirmadas vacías de México/Paraguay junto a Argentina cuando Argentina contiene datos. Bolivia conserva su bloque y sus cifras. El filtro explícito permite abrir una plantilla vacía; datos reales, ceros, N.A. y respuestas sin metadatos concluyentes se mantienen. Cambio local de presentación, sin mover registros ni solicitudes nuevas.381 pruebas/build; Chromium con Argentina/México/Paraguay/Bolivia: solo AR y BO en Todos, encabezados de8columnas, selector MX y regreso a Todos,0escrituras/errores. No acredita estado de datos o despliegue VPS reales.
+
 ## 17/11 — Menos lecturas al subir y mostrar imágenes
 
 Proyectos actualiza galería una vez por tanda y conserva subidas confirmadas ante un fallo de lectura, con recuperación manual. Imágenes autorizadas sin doble consulta ni snapshot de trabajo; caché de miniaturas derivadas acotada en RAM, también Meta, con permisos/vigencia vigentes y originales intactos. Progreso automático simultáneo agrupado sin compartir la lectura explícita posterior a cambios. Ver docs/PLATFORM_PERFORMANCE.md para límites y evidencia:380 pruebas, HTTP/PostgreSQL sintético, Chromium y build. No acredita despliegue o limpieza del VPS.
