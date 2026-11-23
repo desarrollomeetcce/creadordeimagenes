@@ -1,4 +1,5 @@
 "use client";
+import { inventoryTopSection } from "../../lib/meta-ads/inventory-top-sections";
 import { Fragment, useRef, useState } from "react";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import { quickRange } from "../../lib/meta-ads/date-range";
@@ -59,7 +60,11 @@ export function InventoryTop({
   onBusyChange,
   source = "budget",
   initialRange,
+  workspace = false,
+  onColumnChange,
 }: {
+  workspace?: boolean;
+  onColumnChange?: (column: string) => void;
   source?: "budget" | "meta";
   initialRange?: [string, string];
   directory: TrialDirectory;
@@ -104,13 +109,14 @@ export function InventoryTop({
     />
   );
   const pending = useRef(false);
+  const country = column.split(":")[1] ?? "";
   const evaluation = useInventoryCountryEvaluation(
     directory.listId,
     column ? [column] : [],
     nonce,
     period === "lifetime"
-      ? { fromActivation: true }
-      : { since: dates[0], until: dates[1] },
+      ? { fromActivation: true, ...(workspace && country ? {country} : {}) }
+      : { since: dates[0], until: dates[1], ...(workspace && country ? {country} : {}) },
   );
   const [confirm, setConfirm] = useState<{
     point: SheetPoint;
@@ -126,7 +132,6 @@ export function InventoryTop({
   const [replacementGroup, setReplacementGroup] = useState("");
   const [replacementFilter, setReplacementFilter] =
     useState<ReplacementUsageFilter>("ALL");
-  const country = column.split(":")[1] ?? "";
   const allOptions = catalog.filter(
     (i) =>
       categoryKey(i.name) !== categoryKey(replaceName) &&
@@ -143,14 +148,15 @@ export function InventoryTop({
     replacementGroup,
     replacementFilter,
   );
+  const sectionRank = (p: SheetPoint) => workspace && inventoryTopSection(p) === "inactive" ? 3 : rank(p);
+  const sections = workspace ? [...bucketNames, "Desactivados"] : bucketNames;
   const rows = catalog
     .map((item) => ({ item, point: point(item.name) }))
     .filter(
       (r): r is { item: (typeof catalog)[number]; point: SheetPoint } =>
         !!r.point &&
-        (r.point.activation === "ACTIVE" ||
-          r.point.activation === "MIXED" ||
-          r.point.campaignTasks.length > 0),
+        (workspace ? inventoryTopSection(r.point) !== null :
+          (r.point.activation === "ACTIVE" || r.point.activation === "MIXED" || r.point.campaignTasks.length > 0)),
     );
   const filtered = rows
     .filter(
@@ -160,8 +166,8 @@ export function InventoryTop({
     )
     .sort(
       (a, b) =>
-        inventoryTopPriority(a.point, source) -
-          inventoryTopPriority(b.point, source) ||
+        sectionRank(a.point) - sectionRank(b.point) ||
+        inventoryTopPriority(a.point, source) - inventoryTopPriority(b.point, source) ||
         (b.point.cac?.[source].assessment.usage ??
           (source === "budget" ? b.point.assessment.usage : null) ??
           -1) -
@@ -170,6 +176,7 @@ export function InventoryTop({
             -1) ||
         a.item.name.localeCompare(b.item.name, "es"),
     );
+  const selectable = filtered.filter(r => !workspace || sectionRank(r.point) !== 3);
   async function mutate(action: () => Promise<unknown>, success: string) {
     if (pending.current) return;
     pending.current = true;
@@ -182,6 +189,7 @@ export function InventoryTop({
       await action();
       committed = true;
       setMessage(success);
+      if (workspace) setSelected([]);
       setNonce((n) => n + 1);
       await onChanged();
       return true;
@@ -261,8 +269,34 @@ export function InventoryTop({
     setReplaceName(names.length === 1 ? names[0] : "");
   }
   const disabled = busy || !directory.canEdit || !evaluation.ready;
+  const activationSlot = (
+    <tr className="inventory-top-activate-slot" key="activate-another">
+      <td colSpan={10}>
+        <div>
+          <span className="inventory-top-plus" aria-hidden="true">＋</span>
+          <div><strong>Activar otro diplomado</strong><small>Elige uno para incorporarlo a este Top.</small></div>
+          <SheetSearchSelect
+            label="Diplomado para activar en el Top"
+            placeholder="Buscar y seleccionar diplomado…"
+            value=""
+            options={allOptions.map(i => ({value:i.name,label:i.name}))}
+            disabled={disabled || !column || !allOptions.length}
+            onSelect={name => {
+              if (!name || disabled) return;
+              const targets = point(name)?.targets ?? [];
+              void mutate(() => api("meta-ads/inventory/sheet-activation", "PATCH", {
+                listId: directory.listId, tableId: column.split(":")[0], country: column.split(":")[1],
+                items: [{name, targets}], active: true,
+              }), name + " activado en Inventario.").then(saved => { if (saved) { setQuery(""); setPrimary(""); } });
+            }}
+          />
+        </div>
+      </td>
+    </tr>
+  );
   return (
-    <div className="inventory-top-manager">
+    <div className={"inventory-top-manager" + (workspace ? " inventory-top-workspace" : "")}>
+      {workspace && <header className="inventory-top-hero"><span aria-hidden="true">★</span><div><h2>Top de diplomados</h2><p>Activos y pendientes arriba. Desactivados al final.</p></div><small>Por hoja y país</small></header>}
       <div className="inventory-top-controls">
         <label>
           Hoja y país
@@ -274,6 +308,7 @@ export function InventoryTop({
             disabled={busy}
             onSelect={(value) => {
               setColumn(value);
+              onColumnChange?.(value);
               setSelected([]);
               setBatch([]);
               setInspect("");
@@ -324,12 +359,12 @@ export function InventoryTop({
         />
       </div>
       <div className="inventory-top-counts">
-        {bucketNames.map((name, index) => (
+        {sections.map((name, index) => (
           <span key={name} data-top-rank={index}>
             {name}{" "}
             <strong>
               {evaluation.ready
-                ? rows.filter((r) => rank(r.point) === index).length
+                ? rows.filter((r) => sectionRank(r.point) === index).length
                 : "—"}
             </strong>
           </span>
@@ -584,10 +619,10 @@ export function InventoryTop({
                   <input
                     type="checkbox"
                     aria-label="Seleccionar todos los diplomados visibles del Top"
-                    disabled={disabled || !filtered.length}
+                    disabled={disabled || !selectable.length}
                     checked={
-                      !!filtered.length &&
-                      filtered.every((r) => selected.includes(r.item.name))
+                      !!selectable.length &&
+                      selectable.every((r) => selected.includes(r.item.name))
                     }
                     onChange={(e) =>
                       setSelected((current) =>
@@ -595,11 +630,11 @@ export function InventoryTop({
                           ? [
                               ...new Set([
                                 ...current,
-                                ...filtered.map((r) => r.item.name),
+                                ...selectable.map((r) => r.item.name),
                               ]),
                             ]
                           : current.filter(
-                              (n) => !filtered.some((r) => r.item.name === n),
+                              (n) => !selectable.some((r) => r.item.name === n),
                             ),
                       )
                     }
@@ -638,24 +673,25 @@ export function InventoryTop({
             <tbody>
               {filtered.map(({ item, point: p }, index) => (
                 <Fragment key={item.id}>
+                  {workspace && sectionRank(p) === 3 && (index === 0 || sectionRank(filtered[index - 1].point) !== 3) && activationSlot}
                   {(index === 0 ||
-                    rank(filtered[index - 1].point) !== rank(p)) && (
-                    <tr className="inventory-top-band" data-top-rank={rank(p)}>
+                    sectionRank(filtered[index - 1].point) !== sectionRank(p)) && (
+                    <tr className="inventory-top-band" data-top-rank={sectionRank(p)}>
                       <th colSpan={10}>
                         <div className="inventory-top-block-heading">
                           <label>
                             <input
                               type="checkbox"
                               aria-label={
-                                "Seleccionar bloque " + bucketNames[rank(p)]
+                                "Seleccionar bloque " + sections[sectionRank(p)]
                               }
-                              disabled={disabled}
+                              disabled={disabled || sectionRank(p) === 3}
                               checked={filtered
-                                .filter((r) => rank(r.point) === rank(p))
+                                .filter((r) => sectionRank(r.point) === sectionRank(p))
                                 .every((r) => selected.includes(r.item.name))}
                               onChange={(e) => {
                                 const names = filtered
-                                  .filter((r) => rank(r.point) === rank(p))
+                                  .filter((r) => sectionRank(r.point) === sectionRank(p))
                                   .map((r) => r.item.name);
                                 setSelected((current) =>
                                   e.target.checked
@@ -664,14 +700,14 @@ export function InventoryTop({
                                 );
                               }}
                             />{" "}
-                            {bucketNames[rank(p)]}
+                            {sections[sectionRank(p)]}
                           </label>
                           <button
                             type="button"
-                            disabled={disabled}
+                            disabled={disabled || sectionRank(p) === 3}
                             onClick={() => {
                               const names = filtered
-                                .filter((r) => rank(r.point) === rank(p))
+                                .filter((r) => sectionRank(r.point) === sectionRank(p))
                                 .map((r) => r.item.name);
                               setSelected(names);
                               reviewReplacements(names);
@@ -688,6 +724,7 @@ export function InventoryTop({
                       selected.includes(item.name) || undefined
                     }
                     data-top-name={item.name}
+                    data-top-section={inventoryTopSection(p)}
                     data-top-kept={
                       kept.includes(JSON.stringify([column, item.name])) ||
                       undefined
@@ -697,7 +734,7 @@ export function InventoryTop({
                       <input
                         type="checkbox"
                         aria-label={"Reemplazar " + item.name}
-                        disabled={disabled}
+                        disabled={disabled || sectionRank(p) === 3}
                         checked={selected.includes(item.name)}
                         onChange={(e) =>
                           setSelected((current) =>
@@ -844,7 +881,7 @@ export function InventoryTop({
                         <button
                           type="button"
                           className="inventory-top-replace-trigger"
-                          disabled={disabled}
+                          disabled={disabled || sectionRank(p) === 3}
                           onClick={() => {
                             setBatch([]);
                             setSelected([item.name]);
@@ -892,6 +929,7 @@ export function InventoryTop({
                   </tr>
                 </Fragment>
               ))}
+              {workspace && !filtered.some(r => sectionRank(r.point) === 3) && activationSlot}
               {!filtered.length && (
                 <tr>
                   <td colSpan={10}>

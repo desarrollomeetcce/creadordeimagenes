@@ -1,5 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
+import "./inventory-top-workspace.css";
+const InventoryTopWorkspace = dynamic(() => import("./inventory-top").then(m => m.InventoryTop), { loading: () => <p role="status">Abriendo Top…</p> });
 const SelectedInventoryEvaluation=dynamic(()=>import("./sheet-sales-detail").then(m=>m.SheetSalesDetail));
 const InventoryCompactEvaluation=dynamic(()=>import("./inventory-compact-evaluation").then(m=>m.InventoryCompactEvaluation));
 import {useInventoryCountryViewport} from "./use-inventory-country-viewport";
@@ -172,6 +174,9 @@ export function InventoryCatalog({
   onChanged: () => Promise<void>;
   onOpenInventory?: (id: string) => void;
 }) {
+  const [workspaceView, setWorkspaceView] = useWorkbookPreference<string>(listId, "inventory-workspace", "catalog");
+  const [workspaceColumn, setWorkspaceColumn] = useWorkbookPreference<string>(listId, "inventory-top-column", "");
+  const inTop = workspaceView === "top";
   const inventoryScroll = useRef<HTMLDivElement>(null);
   const inventoryWindowControls = useRef<{
     changeMode: (mode: FinancialTableWindowMode) => void;
@@ -536,7 +541,7 @@ export function InventoryCatalog({
   };
   const viewportCountries=useInventoryCountryViewport(countryCodes,inventoryWindowMode);
   const evaluationCountries=[...new Set([...viewportCountries,...countryFilters.keys(),...(topSheet?[topSheet]:[]),...(activeCountrySort?[activeCountrySort.country]:[]),...(activeCampaignFilter?[campaignFilterSheet]:[])])].filter(id=>countryCodes.includes(id));
-  const countryEvaluation=useInventoryCountryEvaluation(listId,hasCountryColumns&&trialDirectory&&categories?evaluationCountries:[],countryReload,evaluationRange(evaluationPeriod),true);
+  const countryEvaluation=useInventoryCountryEvaluation(listId,!inTop&&hasCountryColumns&&trialDirectory&&categories?evaluationCountries:[],countryReload,evaluationRange(evaluationPeriod),true);
   const campaignMatches = (name:string) => {
     const matches=(column:string,filter:string)=>{
       const point=countryEvaluation.lookup.get(JSON.stringify([categoryKey(name),column]));
@@ -1757,11 +1762,31 @@ export function InventoryCatalog({
       onClose={() => setFullDetail(null)}
     />
   );
+  const workspaceTabs = <nav className="inventory-workspace-tabs" role="tablist" aria-label="Vista de inventario">
+    <button type="button" role="tab" aria-selected={!inTop} disabled={busy} onClick={() => setWorkspaceView("catalog")}>Inventario</button>
+    <button type="button" role="tab" aria-selected={inTop} disabled={busy} onClick={() => setWorkspaceView("top")}><span aria-hidden="true">★</span> Top</button>
+  </nav>;
+  if (inTop) return <section className="inventory-catalog sheet-view" aria-label="Top del inventario">
+    {workspaceTabs}
+    {fullDetailContent}
+    {trialDirectory && sheetDirectory ? <InventoryTopWorkspace
+      key={listId}
+      workspace
+      directory={trialDirectory}
+      columns={knownCountries.map(value => ({value,label:sheetLabel(value)}))}
+      initialColumn={knownCountries.includes(workspaceColumn) ? workspaceColumn : topSheet || knownCountries[0]}
+      onColumnChange={setWorkspaceColumn}
+      onBusyChange={setBusy}
+      onChanged={async () => { countryEvaluation.refresh(); await onChanged(); }}
+      onDetail={(column,name,aliasId) => setFullDetail({tableId:column.split(":")[0],country:column.split(":")[1],name,aliasId})}
+    /> : <div role={groupLoadError || message ? "alert" : "status"}>{groupLoadError || message || "Cargando inventario para el Top…"}{(groupLoadError || message) && <button type="button" onClick={() => { setMessage(""); void Promise.all([reloadGroups(),reloadSheetDirectory()]).catch(e => setMessage(e.message)); }}>Reintentar</button>}</div>}
+  </section>;
   return (
     <section
       className="inventory-catalog sheet-view"
       aria-label="Inventario sin países"
     >
+      {workspaceTabs}
       {apiAccessOpen && apiOwnerRole === "OWNER" && <InventoryApiPanel listId={listId} onClose={() => setApiAccessOpen(false)} />}
       {fullDetailContent}
       {activationHistory && (

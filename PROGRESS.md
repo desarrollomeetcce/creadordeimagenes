@@ -1,3 +1,7 @@
+## 23/11 — Top dentro de Inventario
+
+Se añade una pestaña Top con los activos/pendientes arriba, una fila buscable para activar otro diplomado y los desactivados con asignación al final, en gris. Reutiliza catálogo, estado y API existentes, con código diferido, evaluación por hoja+país y búsqueda local. La evaluación general se detiene mientras está oculta y se invalida tras cambios para reflejarlos al regresar. El menú compartido de activación mide su tamaño para quedar dentro del viewport, con desplazamiento cuando hace falta.382 pruebas generales, compilación/TypeScript y Chromium con guardado HTTP real sintético: alta, desactivación/fijado, orden, pestañas, móvil, cero consultas por buscar y cero errores. Sin Meta/IA reales; no acredita despliegue VPS.
+
 ## 19/11 — Países vacíos en Totales de Ventas
 
 La vista Todos ya no presenta plantillas confirmadas vacías de México/Paraguay junto a Argentina cuando Argentina contiene datos. Bolivia conserva su bloque y sus cifras. El filtro explícito permite abrir una plantilla vacía; datos reales, ceros, N.A. y respuestas sin metadatos concluyentes se mantienen. Cambio local de presentación, sin mover registros ni solicitudes nuevas.381 pruebas/build; Chromium con Argentina/México/Paraguay/Bolivia: solo AR y BO en Todos, encabezados de8columnas, selector MX y regreso a Todos,0escrituras/errores. No acredita estado de datos o despliegue VPS reales.

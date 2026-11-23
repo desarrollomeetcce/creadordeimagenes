@@ -6575,3 +6575,15 @@ test("Totales Todos: Argentina no muestra plantillas vacías de México/Paraguay
   assert.equal(totalSourceBlocks([{ ...argentina, groups: [empty("AR")] }])[0].country, "AR");
   assert.equal(totalSourceBlocks([{ ...argentina, groups: [filled("AR", 1), empty("MX", "USD")] }], "", "USD")[0].country, "MX");
 });
+
+test("Top workspace keeps active/tasks above inactive; unassigned catalog items remain candidates without invented history", async () => {
+  const { inventoryTopSection } = await import("../lib/meta-ads/inventory-top-sections");
+  const p = { activation: "ACTIVE", campaignTasks: [] as string[], targets: [{}] };
+  assert.equal(inventoryTopSection(p), "active");
+  assert.equal(inventoryTopSection({ ...p, activation: "MIXED" }), "active");
+  assert.equal(inventoryTopSection({ ...p, activation: "INACTIVE" }), "inactive");
+  assert.equal(inventoryTopSection({ ...p, activation: "UNKNOWN", targets: [] }), null);
+  assert.equal(inventoryTopSection({ ...p, activation: "INACTIVE", targets: [] }), null);
+  for (const task of ["CREATE", "FLOW", "STOP", "SYNC"])
+    assert.equal(inventoryTopSection({ ...p, activation: "INACTIVE", campaignTasks: [task] }), "active");
+});

@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { InventoryCampaignTask } from "../../lib/meta-ads/inventory-sheet-activation";
 export type InventoryCampaignChange = {
   active?: boolean;
@@ -27,6 +27,14 @@ export function InventoryCampaignControl({
     popover = useRef<HTMLDivElement>(null),
     [open, setOpen] = useState(false),
     [position, setPosition] = useState({ left: 8, top: 8 });
+  useLayoutEffect(() => {
+    if (!open || !popover.current) return;
+    const bounds = popover.current.getBoundingClientRect();
+    setPosition(current => ({
+      left: Math.max(8, Math.min(current.left, innerWidth - bounds.width - 8)),
+      top: Math.max(8, Math.min(current.top, innerHeight - bounds.height - 8)),
+    }));
+  }, [open]);
   const active = activation === "ACTIVE",
     mixed = activation === "MIXED",
     label = pending ? "Cargando estado" :

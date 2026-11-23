@@ -30,20 +30,22 @@ export function useInventoryCountryEvaluation(
   listId: string,
   tableIds: string[],
   nonce: number,
-  period?: { since?: string; until?: string; fromActivation?: boolean },
+  period?: { since?: string; until?: string; fromActivation?: boolean; country?: string },
   summary = false,
 ) {
   const userId = useContext(CurrentUserId),
     key = [...new Set(tableIds.map((id) => id.split(":")[0]))].sort().join(","),
     since = period?.since ?? "",
     until = period?.until ?? "",
-    fromActivation = period?.fromActivation ?? false;
+    fromActivation = period?.fromActivation ?? false,
+    country = period?.country ?? "";
   const stamp = JSON.stringify([
     userId,
     listId,
     since,
     until,
     fromActivation,
+    country,
     summary,
   ]);
   type Report = InventorySheetActivationReport;
@@ -103,6 +105,7 @@ export function useInventoryCountryEvaluation(
               listId,
               tableIds: needed.join(","),
               byCountry: "true",
+              ...(country ? { country } : {}),
               ...(summary ? { summary: "true" } : {}),
               ...(since && until ? { since, until } : {}),
               ...(fromActivation ? { fromActivation: "true" } : {}),

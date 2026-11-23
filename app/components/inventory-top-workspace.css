@@ -1,0 +1,19 @@
+.inventory-workspace-tabs{display:flex;gap:5px;padding:5px;margin:0 0 14px;width:fit-content;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.inventory-workspace-tabs button{border:0;border-radius:8px;padding:9px 22px;background:transparent;color:var(--muted);font-weight:650}
+.inventory-workspace-tabs button[aria-selected=true]{background:color-mix(in srgb,#b88a26 15%,var(--surface));color:var(--ink);box-shadow:inset 0 0 0 1px color-mix(in srgb,#b88a26 38%,var(--line))}
+.inventory-workspace-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.inventory-top-hero{display:flex;align-items:center;gap:14px;padding:20px;border:1px solid color-mix(in srgb,#b88a26 35%,var(--line));border-radius:16px;margin-bottom:16px;background:linear-gradient(110deg,color-mix(in srgb,#d7a842 12%,var(--surface)),var(--surface))}
+.inventory-top-hero>span{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:color-mix(in srgb,#d7a842 20%,var(--surface));color:#a77713;font-size:27px;flex-shrink:0}
+.inventory-top-hero h2{margin:0 0 5px;font-size:19px}.inventory-top-hero p{margin:0;color:var(--muted);font-size:12px}.inventory-top-hero>small{margin-left:auto;color:var(--muted)}
+.inventory-top-activate-slot>td{padding:15px!important;background:color-mix(in srgb,#26a68d 7%,var(--surface))!important;border-block:1px dashed color-mix(in srgb,#26a68d 50%,var(--line))!important}
+.inventory-top-activate-slot>td>div{display:flex;align-items:center;gap:13px}.inventory-top-activate-slot strong,.inventory-top-activate-slot small{display:block}.inventory-top-activate-slot small{color:var(--muted);margin-top:4px}.inventory-top-activate-slot .sheet-search-trigger{min-width:260px;max-width:400px;flex:1}.inventory-top-plus{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,#26a68d 16%,var(--surface));color:#198970;font-size:24px}
+.inventory-top-workspace tr[data-top-section=inactive]{opacity:.7;background:color-mix(in srgb,var(--muted) 7%,var(--surface))}.inventory-top-workspace tr[data-top-section=inactive]:focus-within,.inventory-top-workspace tr[data-top-section=inactive]:hover{opacity:1}
+.inventory-top-workspace .inventory-top-band[data-top-rank="3"] th{background:color-mix(in srgb,var(--muted) 15%,var(--surface));color:var(--muted)}
+@media(max-width:700px){.inventory-top-hero{padding:14px}.inventory-top-hero>small{display:none}.inventory-workspace-tabs{width:100%}.inventory-workspace-tabs button{flex:1}.inventory-top-activate-slot>td>div{flex-wrap:wrap}}
+
+.inventory-campaign-popover{max-height:calc(100dvh - 16px);overflow-y:auto}
+.inventory-catalog>.inventory-workspace-tabs{flex-direction:row;align-items:center;flex:0 0 auto}
+.inventory-catalog[aria-label="Top del inventario"]{padding:14px;min-width:0}
+.inventory-top-workspace .inventory-top-scroll{max-height:65vh;border-radius:12px}
+.inventory-top-workspace .inventory-top-table thead th{position:sticky;top:0;z-index:2;background:var(--surface)}
+.inventory-top-workspace .inventory-top-band[data-top-rank="3"] th{background:color-mix(in srgb,var(--muted) 15%,var(--surface))!important;color:var(--muted)!important;border-top-color:var(--line)!important}
