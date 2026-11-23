@@ -1767,11 +1767,12 @@ export function InventoryCatalog({
     <button type="button" role="tab" aria-selected={inTop} disabled={busy} onClick={() => setWorkspaceView("top")}><span aria-hidden="true">★</span> Top</button>
   </nav>;
   if (inTop) return <section className="inventory-catalog sheet-view" aria-label="Top del inventario">
-    {workspaceTabs}
+    {(!trialDirectory || !sheetDirectory) && workspaceTabs}
     {fullDetailContent}
     {sheetAddOpen && sheetDirectory && <InventoryAddEvaluationSheet listId={listId} directory={sheetDirectory} onClose={()=>setSheetAddOpen(false)} onSaved={async id=>{await reloadSheetDirectory();setWorkspaceColumns(current=>current===null?null:[...new Set([...current,id])]);setSheetAddOpen(false);await onChanged();}}/>}
     {trialDirectory && sheetDirectory ? <InventoryTopWorkspace
       key={listId}
+      navigation={workspaceTabs}
       directory={trialDirectory}
       columns={knownCountries.map(value => ({value,label:sheetLabel(value)}))}
       visible={workspaceColumns}

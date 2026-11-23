@@ -20,6 +20,12 @@ import {
   InventoryCampaignControl,
   type InventoryCampaignChange,
 } from "./inventory-campaign-control";
+import { InventoryCacStatus } from "./inventory-cac-status";
+import {
+  cacStatusNames,
+  type CacStatus,
+} from "../../lib/meta-ads/inventory-cac-policy";
+import { InventoryTopSummary } from "./inventory-top-summary";
 import { InventoryDeactivationConfirm } from "./inventory-deactivation-confirm";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
@@ -103,6 +109,7 @@ const date = (raw: string | null | undefined) => {
       });
 };
 export function InventoryTopBoard({
+  navigation,
   directory,
   columns,
   visible,
@@ -112,6 +119,7 @@ export function InventoryTopBoard({
   onDetail,
   onBusyChange,
 }: {
+  navigation: ReactNode;
   directory: TrialDirectory;
   columns: Column[];
   visible: string[] | null;
@@ -332,16 +340,58 @@ export function InventoryTopBoard({
     const start = date(p.since),
       end = date(p.activeUntil);
     const ongoing = p.activation === "ACTIVE" || p.activation === "MIXED";
+    const assessment = p.cac?.budget.assessment ?? p.assessment;
     return (
       <article
         key={item.id}
         className="inventory-top-board-card"
         data-top-name={item.name}
+        data-cac-status={assessment.status}
+        aria-label={item.name + ": " + cacStatusNames[assessment.status]}
         data-top-column={column}
         data-top-section={inactive ? "inactive" : "active"}
       >
         <div className="inventory-top-card-title">
-          <h4>{item.name}</h4>
+          <InventoryTopSummary
+            title={item.name}
+            detailDisabled={!p.targets[0]?.aliasId}
+            onDetail={() => onDetail(column, item.name, p.targets[0].aliasId)}
+          >
+            <span
+              className={
+                "trial-status inventory-status-with-dot trial-" +
+                assessment.status
+              }
+            >
+              <InventoryCacStatus status={assessment.status} />
+            </span>
+            {item.primaryNames.length > 0 && (
+              <p className="inventory-top-card-category">
+                {item.primaryNames.join(" · ")}
+              </p>
+            )}
+            <div className="inventory-top-card-dates">
+              <span>Período activo</span>
+              <strong>
+                {start ?? "Inicio no registrado"}{" "}
+                <span aria-hidden="true">→</span>{" "}
+                {ongoing ? "En curso" : (end ?? "Fin no registrado")}
+              </strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Ventas del ciclo</dt>
+                <dd>
+                  {p.sales == null ? "—" : p.sales.toLocaleString("es-PE")}
+                </dd>
+              </div>
+              <div>
+                <dt>Días activos</dt>
+                <dd>{p.activeDays ?? "—"}</dd>
+              </div>
+            </dl>
+            <small>Ventas del último ciclo registrado. Sin registro: —.</small>
+          </InventoryTopSummary>
           <InventoryCampaignControl
             title={item.name}
             activation={p.activation}
@@ -349,78 +399,39 @@ export function InventoryTopBoard({
             disabled={!canEdit(column)}
             onChange={(value) => change(column, p, value)}
             extraActions={
-              !inactive ? (
+              <>
                 <button
                   type="button"
                   role="menuitem"
-                  disabled={!canEdit(column)}
+                  disabled={!p.targets[0]?.aliasId}
                   onClick={(e) => {
                     e.currentTarget
                       .closest<HTMLElement>("[popover]")
                       ?.hidePopover();
-                    startReplacement(column, item);
+                    onDetail(column, item.name, p.targets[0].aliasId);
                   }}
                 >
-                  ↔ Reemplazar diplomado
+                  Ver detalle ↗
                 </button>
-              ) : undefined
+                {!inactive && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!canEdit(column)}
+                    onClick={(e) => {
+                      e.currentTarget
+                        .closest<HTMLElement>("[popover]")
+                        ?.hidePopover();
+                      startReplacement(column, item);
+                    }}
+                  >
+                    ↔ Reemplazar diplomado
+                  </button>
+                )}
+              </>
             }
           />
         </div>
-        {item.primaryNames.length > 0 && (
-          <p className="inventory-top-card-category">
-            {item.primaryNames.join(" · ")}
-          </p>
-        )}
-        <div className="inventory-top-card-dates">
-          <span>Período activo</span>
-          <strong>
-            {start ?? "Inicio no registrado"} <span aria-hidden="true">→</span>{" "}
-            {ongoing ? "En curso" : (end ?? "Fin no registrado")}
-          </strong>
-        </div>
-        <dl>
-          <div>
-            <dt>Ventas del ciclo</dt>
-            <dd>{p.sales == null ? "—" : p.sales.toLocaleString("es-PE")}</dd>
-          </div>
-          <div>
-            <dt>Días activos</dt>
-            <dd>{p.activeDays ?? "—"}</dd>
-          </div>
-        </dl>
-        {p.campaignTasks.length > 0 && (
-          <small className={"inventory-top-card-task task-" + p.campaignTask}>
-            {(
-              {
-                CREATE: "Por hacer campaña",
-                STOP: "Por desactivar",
-                FLOW: "Por hacer flujo",
-                SYNC: "Por sincronizar",
-                MIXED: "Tareas pendientes",
-              } as Record<string, string>
-            )[p.campaignTask] ?? "Tareas pendientes"}
-          </small>
-        )}
-        <footer>
-          {!inactive && (
-            <button
-              type="button"
-              className="inventory-top-card-replace"
-              disabled={!canEdit(column)}
-              onClick={() => startReplacement(column, item)}
-            >
-              ↔ Reemplazar
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={!p.targets[0]?.aliasId}
-            onClick={() => onDetail(column, item.name, p.targets[0].aliasId)}
-          >
-            Ver detalle ↗
-          </button>
-        </footer>
       </article>
     );
   }
@@ -429,17 +440,8 @@ export function InventoryTopBoard({
   );
   return (
     <div className="inventory-top-board">
-      <header className="inventory-top-hero">
-        <span aria-hidden="true">★</span>
-        <div>
-          <h2>Top por país</h2>
-          <p>
-            Tu selección, lado a lado. Arrastra los encabezados para ordenar.
-          </p>
-        </div>
-        <small>{selected.length} columnas</small>
-      </header>
       <div className="inventory-top-board-toolbar">
+        {navigation}
         <label>
           Buscar diplomado
           <input
@@ -506,10 +508,6 @@ export function InventoryTopBoard({
           ↻ Actualizar
         </button>
       </div>
-      <p className="inventory-top-board-note">
-        Las ventas corresponden al último ciclo registrado. Los datos sin
-        registro aparecen como —.
-      </p>
       {(error || evaluation.error) && (
         <p role="alert" className="notice error">
           {error || evaluation.error}
@@ -526,6 +524,17 @@ export function InventoryTopBoard({
           <p>Elige las columnas que quieres ver desde «Agregar país».</p>
         </div>
       )}
+      <div
+        className="inventory-top-board-legend"
+        aria-label="Leyenda de evaluación del Top"
+      >
+        <strong>CAC con presupuesto · período evaluado</strong>
+        {(Object.keys(cacStatusNames) as CacStatus[]).map((status) => (
+          <span key={status}>
+            <InventoryCacStatus status={status} />
+          </span>
+        ))}
+      </div>
       <div
         className="inventory-top-board-columns"
         role="region"
@@ -603,7 +612,10 @@ export function InventoryTopBoard({
                 </button>
                 <div>
                   <h3>{countryName(country)}</h3>
-                  {categoryKey(column.label) !== categoryKey(countryName(country)) && <small>{column.label}</small>}
+                  {categoryKey(column.label) !==
+                    categoryKey(countryName(country)) && (
+                    <small>{column.label}</small>
+                  )}
                 </div>
                 <span className="inventory-top-country-iso">{country}</span>
                 <button
