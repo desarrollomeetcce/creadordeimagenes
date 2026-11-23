@@ -321,7 +321,11 @@ async function handle(
     const user = await actor();
     if (parts[0] === "diploma-api") return await (await import("@/lib/diploma-api")).diplomaApiManagement(req,parts,user,()=>body(req));
     if(parts[0]==="fixed-costs")return await (await import("@/lib/fixed-costs")).fixedCostRoutes(req,parts,user,()=>body(req));
-    if(parts[0]==="creative-studio")return await (await import("@/lib/creative-studio/routes")).creativeStudioRoutes(req,parts,user,()=>body(req));
+    if(parts[0]==="creative-studio") {
+      const response = await (await import("@/lib/creative-studio/routes")).creativeStudioRoutes(req,parts,user,()=>body(req));
+      response.headers.set("X-Media-Pipeline", "bounded-v2");
+      return response;
+    }
     if(parts[0]==="courses-ai")return await (await import("@/lib/courses/routes")).courseRoutes(req,parts,user,()=>body(req));
     if(!hasAiModuleAccess(user) && ['projects','categories','subproducts','variations','jobs','orders','attachments','library','exports','presets','folders','assets','generations','generate','tests','brands'].includes(parts[0]))demand(false,'Esta cuenta no tiene acceso a los módulos de IA.',403);
     if (["SUPERVISOR","ADVISOR"].includes(user.role)) demand(parts[0]==="meta-ads" || ["auth/me","auth/logout","auth/change-password"].includes(route),"Tu rol está destinado a Mi desempeño.",403);

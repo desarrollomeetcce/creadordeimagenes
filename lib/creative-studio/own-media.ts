@@ -15,7 +15,7 @@ import { recordActivity } from "../activity";
 import type { Actor } from "./service";
 export const ownMediaLimit = () =>
   process.env.VERCEL ? 3000000 : 64 * 1024 * 1024;
-export async function validateOwnMedia(file: File) {
+export async function validateOwnMedia(file: File, originalBytes?: Buffer) {
   demand(
     file.size > 0 && file.size <= ownMediaLimit(),
     "El recurso está vacío o supera el límite de subida.",
@@ -23,14 +23,16 @@ export async function validateOwnMedia(file: File) {
   );
   const ext = file.name.split(".").pop()?.toLowerCase();
   if (["png", "jpg", "jpeg", "webp"].includes(ext ?? "")) {
-    const checked = await validateUpload(file);
+    demand(file.size <= 16 * 1024 * 1024, "La imagen supera el máximo de 16 MB.", 413);
+    const checked = await validateUpload(file, originalBytes);
     return { ...checked, mediaType: "IMAGE" };
   }
   demand(
     ext === "mp4" || ext === "mov",
     "Usa PNG, JPG, WebP o un video MP4/MOV.",
   );
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const bytes = originalBytes ?? Buffer.from(await file.arrayBuffer());
+  demand(bytes.length === file.size, "El archivo recibido está incompleto.");
   demand(
     bytes.toString("ascii", 4, 8) === "ftyp",
     "El video no es un MP4/MOV válido.",
@@ -95,8 +97,12 @@ export async function uploadOwnMedia(
   actor: Actor,
   subId: string,
   req: Request,
+  timings?: Record<string, number>,
 ) {
+  let stage = performance.now();
+  const lap = (name: string) => { const now = performance.now(); if (timings) timings[name] = now - stage; stage = now; };
   await resourceAccess(actor, "subproduct", subId, "EDIT");
+  lap("authorize");
   const max = ownMediaLimit() + 16384;
   demand(
     Number(req.headers.get("content-length") ?? 0) <= max,
@@ -124,6 +130,7 @@ export async function uploadOwnMedia(
   const form = await new Response(new Uint8Array(Buffer.concat(chunks)), {
     headers: { "Content-Type": req.headers.get("content-type") ?? "" },
   }).formData();
+  lap("receive");
   const file = form.get("file");
   demand(file instanceof File, "Selecciona una foto o video.");
   const requestId = z.uuid().parse(form.get("requestId")),
@@ -131,14 +138,16 @@ export async function uploadOwnMedia(
       z
         .enum(["folder", "campaign"])
         .parse(form.get("storage") ?? "campaign") === "folder";
+  const originalBytes = Buffer.from(await file.arrayBuffer());
   const digest = createHash("sha256")
-      .update(Buffer.from(await file.arrayBuffer()))
+      .update(originalBytes)
       .digest("hex"),
     jobId = "own-media-" + requestId;
   const previous = await db.generationJob.findUnique({
     where: { id: jobId },
     include: { variation: true },
   });
+  lap("lookup");
   if (previous) {
     const snap = previous.snapshot as any;
     demand(
@@ -160,12 +169,12 @@ export async function uploadOwnMedia(
     );
     return { id: previous.variation.id };
   }
-  const checked = await validateOwnMedia(file),
-    path = await (checked.mediaType === "VIDEO" ? storeVideo : store)(
-      checked.bytes,
-    );
+  const checked = await validateOwnMedia(file, originalBytes);
+  lap("validate");
+  const path = await (checked.mediaType === "VIDEO" ? storeVideo : store)(checked.bytes);
+  lap("store");
   try {
-    return await db.$transaction(async (tx) => {
+    const saved = await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "User" WHERE id=${actor.id} FOR SHARE`;
       demand(
         await tx.user.findFirst({
@@ -253,6 +262,8 @@ export async function uploadOwnMedia(
       });
       return { id: media.id, permanent, mediaType: media.mediaType };
     });
+    lap("commit");
+    return saved;
   } catch (e) {
     if (!(await db.variation.count({ where: { path } })))
       await remove(path).catch(() => {});

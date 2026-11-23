@@ -1,3 +1,7 @@
+## 23/11 — Carga de imágenes y caché fría
+
+Se elimina el bypass del caché al superar8solicitudes y se acota la preparación de miniaturas a2por caché, también después de caducar. Tandas de2fotos pequeñas con grandes/videos aislados; buffer reutilizado en validación y huella, una galería final y recuperación de miniaturas fallidas por acción explícita. Meta recibe imágenes binarias sin expansión base64 y conserva los recibos/protecciones existentes. Cabeceras de versión/tiempos permiten identificar etapas lentas sin exponer datos.389pruebas, build, SQL/HTTP sintéticos y Chromium con éxito parcial y corte de conexión; sin Meta/IA reales. El proxy bloqueó el dominio productivo, por lo que no se certifica el despliegue ni la velocidad del VPS. Detalle en docs/MEDIA_UPLOAD_PERFORMANCE.md.
+
 ## 23/11 — Top dentro de Inventario
 
 Se añade una pestaña Top con los activos/pendientes arriba, una fila buscable para activar otro diplomado y los desactivados con asignación al final, en gris. Reutiliza catálogo, estado y API existentes, con código diferido, evaluación por hoja+país y búsqueda local. La evaluación general se detiene mientras está oculta y se invalida tras cambios para reflejarlos al regresar. El menú compartido de activación mide su tamaño para quedar dentro del viewport, con desplazamiento cuando hace falta.382 pruebas generales, compilación/TypeScript y Chromium con guardado HTTP real sintético: alta, desactivación/fijado, orden, pestañas, móvil, cero consultas por buscar y cero errores. Sin Meta/IA reales; no acredita despliegue VPS.

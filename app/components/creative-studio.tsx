@@ -1,4 +1,5 @@
 "use client";
+import { uploadStudioBatch } from "./studio-upload-batch";
 import { readJsonResponse } from "../../lib/http-response";
 import { downloadArchive } from "./download-archive";
 import { compatibleImageOverrides } from "../../lib/project-image-settings";
@@ -185,6 +186,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
   activeRef.current = activeSub;
   pageRef.current = page;
   productRef.current = product;
+  const [thumbnailRefresh, setThumbnailRefresh] = useState(0);
   const refreshGallery = useCallback(async () => {
     const id = activeRef.current;
     if (!id) return;
@@ -789,10 +791,17 @@ export function CreativeStudio({ userId }: { userId: string }) {
       setManualName("");
     }
     if (!targetSub) throw Error("Elige un diplomado antes de subir recursos.");
+    for (const file of pending) {
+      const photo = /\.(png|jpe?g|webp)$/i.test(file.name);
+      const max = Math.min(context?.maxOwnMediaBytes ?? 64 * 1024 * 1024, photo ? 16 * 1024 * 1024 : 64 * 1024 * 1024);
+      if (!file.size || file.size > max)
+        throw Error(`${file.name}: usa un archivo con contenido de hasta ${Math.floor(max / 1024 / 1024)} MB.`);
+    }
     setUploadProgress({ done: 0, total: pending.length });
-    let uploaded = 0;
+    let uploaded = 0, attempted = 0;
     try {
-      for (const [index, file] of pending.entries()) {
+      await uploadStudioBatch(pending, async (file) => {
+        attempted++;
         const form = new FormData();
         form.set("file", file);
         form.set("requestId", crypto.randomUUID());
@@ -800,24 +809,30 @@ export function CreativeStudio({ userId }: { userId: string }) {
         const r = await fetch("/api/creative-studio/upload/" + targetSub, {
           method: "POST",
           body: form,
+          signal: AbortSignal.timeout(120000),
         });
-        const b = await readJsonResponse(r, "No se pudo subir el recurso.", "POST");
+        return readJsonResponse(r, "No se pudo subir el recurso.", "POST");
+      }, b => {
         uploaded++;
-        setUploadProgress({ done: index + 1, total: pending.length });
+        setUploadProgress({ done: uploaded, total: pending.length });
         if (b.id)
           setSelected((s) => ({
             ...s,
             [targetSub]: [...new Set([...(s[targetSub] ?? []), b.id])],
           }));
-      }
+      });
       setNotice("✓ Recursos propios listos para la campaña");
+    } catch (error) {
+      if (error instanceof TypeError || (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)))
+        throw Error(`${uploaded} recurso(s) confirmados. La conexión no confirmó otra subida. Pulsa Actualizar recursos antes de volver a subir archivos.`);
+      throw error;
     } finally {
       // A gallery read must not interrupt the remaining uploads or repeat saved files.
-      if (uploaded) {
+      if (attempted) {
         await Promise.all([
           refreshGallery(),
           ...(uploadStorage === "folder" ? [reloadProduct()] : []),
-        ]).catch(() => setError("Los recursos se guardaron, pero no se pudo actualizar la vista. Pulsa Actualizar recursos; no necesitas subirlos otra vez."));
+        ]).catch(() => setError(uploaded ? "Los recursos se guardaron, pero no se pudo actualizar la vista. Pulsa Actualizar recursos; no necesitas subirlos otra vez." : "No se pudo comprobar el resultado de la subida. Pulsa Actualizar recursos antes de repetirla."));
       }
       setUploadProgress(null);
     }
@@ -1673,7 +1688,7 @@ export function CreativeStudio({ userId }: { userId: string }) {
                 <span>
                   {gallery.total} recursos · {currentSelection.length} elegidos
                 </span>
-                <button type="button" disabled={busy} onClick={() => void run(refreshGallery)}>
+                <button type="button" disabled={busy} onClick={() => void run(async () => { setThumbnailRefresh(n => n + 1); await refreshGallery(); })}>
                   ↻ Actualizar recursos
                 </button>
                 <button
@@ -1787,7 +1802,8 @@ export function CreativeStudio({ userId }: { userId: string }) {
                       >
                         <img
                           loading="lazy"
-                          src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}`}
+                          decoding="async"
+                          src={`/api/variations/${i.id}?thumbnail=true&v=${i.revision}${thumbnailRefresh ? `&reload=${thumbnailRefresh}` : ""}`}
                           alt={"Afiche de " + active.name}
                         />
                       </button>

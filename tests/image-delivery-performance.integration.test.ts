@@ -73,6 +73,9 @@ test(
           body: form,
         });
         assert.equal(r.status, 201);
+        assert.equal(r.headers.get("x-media-pipeline"), "bounded-v2");
+        assert.match(r.headers.get("server-timing") ?? "", /receive;dur=\d/);
+        assert.match(r.headers.get("server-timing") ?? "", /lookup;dur=\d/);
         return r.json();
       };
       variationId = (await upload()).id;

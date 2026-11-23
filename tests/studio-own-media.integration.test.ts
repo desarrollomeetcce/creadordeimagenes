@@ -244,8 +244,12 @@ test(
       if (["pages", "promote_pages", "assigned_pages"].includes(edge))
         return { data: [{ id: pageId, name: "QA page" }] };
       if (edge === "saved_audiences") return { data: [] };
-      if (edge === "adimages")
+      if (edge === "adimages") {
+        assert(body?.filename instanceof Blob);
+        assert.equal(body.bytes, undefined);
+        assert.deepEqual(Buffer.from(await body.filename.arrayBuffer()), png);
         return { images: { x: { hash: "b".repeat(32) } } };
+      }
       if (edge === "advideos") {
         assert(body?.source instanceof Blob);
         assert.equal(body.source.size, video.length);

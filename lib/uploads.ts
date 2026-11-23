@@ -1,6 +1,7 @@
 import { demand } from "./errors";
-export async function validateUpload(file: File) {
-  let bytes = Buffer.from(await file.arrayBuffer());
+export async function validateUpload(file: File, originalBytes?: Buffer) {
+  let bytes = originalBytes ?? Buffer.from(await file.arrayBuffer());
+  demand(bytes.length === file.size, "El archivo recibido está incompleto.");
   const ext = file.name.split(".").pop()?.toLowerCase();
   let mime = "",
     text = "";

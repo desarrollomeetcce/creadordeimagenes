@@ -340,7 +340,7 @@ export class MetaReader {
     const params = new URLSearchParams();
     if (body) {
       for (const [key, value] of Object.entries(body))
-        if (value !== undefined && !(edge === "advideos" && key === "source"))
+        if (value !== undefined && !(edge === "advideos" && key === "source") && !(edge === "adimages" && key === "filename" && value instanceof Blob))
           params.set(
             key,
             typeof value === "object" ? JSON.stringify(value) : String(value),
@@ -386,6 +386,14 @@ export class MetaReader {
           "appsecret_proof",
           createHmac("sha256", this.appSecret).update(this.token).digest("hex"),
         );
+    }
+    if (edge === "adimages" && body?.filename !== undefined) {
+      demand(body.filename instanceof Blob && body.filename.size > 0 && body.filename.size <= 16 * 1024 * 1024,
+        "Imagen inválida o demasiado grande.");
+      demand(["image/png", "image/jpeg", "image/webp"].includes(body.filename.type), "Formato de imagen no admitido.");
+      multipart = new FormData();
+      for (const [key, value] of params) multipart.set(key, value);
+      multipart.set("filename", body.filename, body.filename.type === "image/jpeg" ? "imagen.jpg" : body.filename.type === "image/webp" ? "imagen.webp" : "imagen.png");
     }
     const response = await external(
       `https://graph.facebook.com/${this.version}/${path}${body ? "" : "?" + params}`,

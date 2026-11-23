@@ -85,3 +85,28 @@ test("Video playback honors a single byte range and rejects invalid ranges", asy
   for (const header of ["bytes=30-", "bytes=2-1", "bytes=-", "bytes=1-2,4-5"])
     assert.equal(videoResponse(b, "video/mp4", header, "id").status, 416);
 });
+
+test("Meta adimages sends the original binary as multipart filename, without base64 expansion or token in URL", async () => {
+  const before = globalThis.fetch;
+  const original = new Uint8Array([255,216,255,0,1,2,3,4]);
+  let calls = 0;
+  globalThis.fetch = async (url, init) => {
+    calls++;
+    const target = new URL(String(url));
+    assert.equal(target.pathname,"/v26.0/act_123/adimages"); assert.equal(target.search,"");
+    assert.equal(init?.method,"POST");assert.equal((init?.headers as any).Authorization,"Bearer synthetic");
+    assert.equal((init?.headers as any)["Content-Type"],undefined);
+    assert.ok(init?.body instanceof FormData);
+    const file=init.body.get("filename");assert.ok(file instanceof File);
+    assert.equal(file.name,"imagen.jpg");assert.equal(file.type,"image/jpeg");
+    assert.deepEqual(new Uint8Array(await file.arrayBuffer()),original);
+    assert.equal(init.body.has("bytes"),false);assert.equal(init.body.has("access_token"),false);
+    assert.ok(init.body.has("appsecret_proof"));
+    return Response.json({images:{image:{hash:"verified-hash"}}});
+  };
+  try {
+    const reader = new MetaReader("synthetic","API","v26.0","synthetic-secret");
+    const result=await reader.launchRequest("123","adimages",{filename:new Blob([original],{type:"image/jpeg"})});
+    assert.equal(result.images.image.hash,"verified-hash");assert.equal(calls,1);
+  } finally {globalThis.fetch=before;}
+});

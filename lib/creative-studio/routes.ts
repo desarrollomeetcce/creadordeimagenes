@@ -145,11 +145,13 @@ export async function creativeStudioRoutes(
     );
   if (p[0] === "images" && p[1] === "save" && method === "POST")
     return send(await studio.saveStudioImages(actor, await body()));
-  if (p[0] === "upload" && p[1] && method === "POST")
-    return send(
-      await (await import("./own-media")).uploadOwnMedia(actor, p[1], req),
-      201,
-    );
+  if (p[0] === "upload" && p[1] && method === "POST") {
+    const timings: Record<string, number> = {};
+    const result = await (await import("./own-media")).uploadOwnMedia(actor, p[1], req, timings);
+    const response = send(result, 201);
+    response.headers.set("Server-Timing", Object.entries(timings).map(([name, dur]) => `${name};dur=${dur.toFixed(1)}`).join(", "));
+    return response;
+  }
   if (
     p[0] === "page-lead-forms" &&
     p[1] &&

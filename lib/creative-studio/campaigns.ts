@@ -1025,7 +1025,7 @@ export async function tickLaunch(actor: Actor, id: string) {
                 type: variation.mime,
               }),
             }
-          : { bytes: bytes.toString("base64") };
+          : { filename: new Blob([new Uint8Array(bytes)], { type: variation.mime }) };
     } else if (step.kind === "VIDEO_READY") {
       remoteId = resolve(`image:${step.campaign}:${step.image}`).id;
       fields = "id,status,picture";

@@ -50,3 +50,45 @@ test("preview memory is bounded by bytes and LRU entries; oversized resources ar
   await read("huge", 20);
   assert.equal(counts.get("huge"), 2);
 });
+
+test("cold and expired galleries bound decoding to two, coalescing duplicates even beyond eight pending resources", async () => {
+  let clock = 0, active = 0, peak = 0, loads = 0;
+  const cache = new PreviewCache(1000, 64, 100, () => clock);
+  const load = async () => {
+    loads++; active++; peak = Math.max(peak, active);
+    await new Promise(r => setTimeout(r, 5)); active--;
+    return Buffer.from("preview");
+  };
+  for (const time of [0, 101]) {
+    clock = time;
+    await Promise.all([
+      ...Array.from({ length: 24 }, (_, i) => cache.read("resource-"+i, load)),
+      ...Array.from({ length: 5 }, () => cache.read("resource-23", load)),
+    ]);
+  }
+  assert.equal(peak, 2);
+  assert.equal(loads, 48);
+  assert.equal(active, 0);
+});
+
+test("photo batches overlap only two small photos; large photos and videos never overlap other uploads", async () => {
+  const { uploadStudioBatch } = await import("../app/components/studio-upload-batch");
+  const files = [new File(["a"],"a.jpg"),new File(["b"],"b.png"),new File(["v"],"v.mp4"),new File([new Uint8Array(9*1024*1024)],"large.jpg"),new File(["c"],"c.webp")];
+  const active: File[] = [], saved: number[] = []; let peak = 0;
+  await uploadStudioBatch(files, async (file,index) => {
+    active.push(file); peak = Math.max(peak,active.length);
+    if(active.some(f=>f.name.endsWith(".mp4")||f.size>8*1024*1024))assert.equal(active.length,1);
+    await new Promise(r=>setTimeout(r,5)); active.splice(active.indexOf(file),1);return index;
+  }, index=>{saved.push(index);});
+  assert.equal(peak,2);assert.deepEqual(saved.sort(),[0,1,2,3,4]);
+});
+
+test("failed photo upload waits for its in-flight peer, preserves success and never starts or repeats later writes", async () => {
+  const { uploadStudioBatch } = await import("../app/components/studio-upload-batch");
+  const sent: number[] = [], saved: number[] = [];
+  await assert.rejects(uploadStudioBatch([0,1,2].map(i=>new File(["x"],i+".jpg")),async (_,i)=>{
+    sent.push(i);if(i===1)throw Error("connection lost");
+    await new Promise(r=>setTimeout(r,10));return i;
+  },i=>{saved.push(i);}),/connection lost/);
+  assert.deepEqual(sent,[0,1]);assert.deepEqual(saved,[0]);
+});
