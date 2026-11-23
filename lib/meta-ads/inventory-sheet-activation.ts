@@ -1520,6 +1520,7 @@ async function activationReport(
             budget,
             complete,
             since: current[0]?.since ?? null,
+            ...(q.byCountry ? {activeUntil: current[0]?.until ?? null} : {}),
             activeDays: current[0]?.days ?? null,
             history: q.historyName ? history : undefined,
             cac:

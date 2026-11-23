@@ -6587,3 +6587,18 @@ test("Top workspace keeps active/tasks above inactive; unassigned catalog items 
   for (const task of ["CREATE", "FLOW", "STOP", "SYNC"])
     assert.equal(inventoryTopSection({ ...p, activation: "INACTIVE", campaignTasks: [task] }), "active");
 });
+
+test("Top country board reorders only presentation and report batches preserve every source within the API limit", async () => {
+  const { inventoryReportBatches } = await import("../lib/meta-ads/inventory-report-batches");
+  const { moveGroupCountry, orderedGroupCountries } = await import("../lib/meta-ads/inventory-group-country-order");
+  const ids=Array.from({length:45},(_,i)=>"sheet-"+i);
+  const batches=inventoryReportBatches([...ids,ids[0],ids[21]]);
+  assert.deepEqual(batches.map(b=>b.length),[20,20,5]);
+  assert.deepEqual(batches.flat(),ids);
+  assert.deepEqual(inventoryReportBatches([]),[]);
+  const columns=[{code:"argentina:AR"},{code:"ecuador:EC"},{code:"bolivia:BO"}];
+  const order=moveGroupCountry(columns.map(c=>c.code),"bolivia:BO","argentina:AR");
+  assert.deepEqual(orderedGroupCountries(columns,order).map(c=>c.code),["bolivia:BO","argentina:AR","ecuador:EC"]);
+  assert.deepEqual(columns.map(c=>c.code),["argentina:AR","ecuador:EC","bolivia:BO"]);
+  assert.equal(new Set(order).size,3);
+});

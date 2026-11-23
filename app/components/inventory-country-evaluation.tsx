@@ -1,4 +1,5 @@
 "use client";
+import { inventoryReportBatches } from "../../lib/meta-ads/inventory-report-batches";
 import { CurrentUserId } from "./role-guide";
 import { compactCountryHidden } from "../../lib/meta-ads/inventory-inline-policy";
 import {
@@ -99,11 +100,13 @@ export function useInventoryCountryEvaluation(
       pending = true;
       if (requested.some((id) => !current.tables.has(id))) setLoading(true);
       try {
-        const report: Report = await api(
+        const parts: Report[] = [];
+        for (const batch of inventoryReportBatches(needed)) {
+          const part: Report = await api(
           "meta-ads/inventory/sheet-activation/report?" +
             new URLSearchParams({
               listId,
-              tableIds: needed.join(","),
+              tableIds: batch.join(","),
               byCountry: "true",
               ...(country ? { country } : {}),
               ...(summary ? { summary: "true" } : {}),
@@ -114,6 +117,9 @@ export function useInventoryCountryEvaluation(
           undefined,
           { signal: controller.signal },
         );
+          parts.push(part);
+        }
+        const report: Report = {...parts[0], canEdit: parts.every(p=>p.canEdit), rows:parts.flatMap(p=>p.rows)};
         if (alive && cache.current === current) {
           for (const id of needed)
             current.tables.set(id, {
@@ -188,9 +194,10 @@ export function useInventoryCountryEvaluation(
       .split(",")
       .filter(Boolean)
       .every((id) => loadedTables.has(id));
+  const canEdit = report?.canEdit === true;
   return useMemo(
-    () => ({ lookup, loading, error, ready, loadedTables, refresh }),
-    [lookup, loading, error, ready, loadedTables, refresh],
+    () => ({ lookup, loading, error, ready, loadedTables, refresh, canEdit }),
+    [lookup, loading, error, ready, loadedTables, refresh, canEdit],
   );
 }
 export function InventoryRowPinIcon() {

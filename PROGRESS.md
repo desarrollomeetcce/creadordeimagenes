@@ -1,3 +1,7 @@
+## 23/11 — Top con columnas simultáneas por país
+
+Se sustituye el selector de un país por un tablero con columnas agregables, ocultables y reordenables. Tarjetas con activación/tareas, intervalo real, días y ventas; cierre desconocido explícito. Reemplazo azul o menú usa operación interna atómica existente y refresca su fuente. Consultas agrupadas hasta20hojas, sin peticiones por orden/búsqueda ni historial por tarjeta.390 pruebas y compilación; integración confirma fechas y conservación exacta de EC tras reemplazo AR; Chromium con AR/EC/BO, arrastre/flechas, fuentes cacheadas,1escritura AR, recarga y móvil sin errores. No se tocaron datos ni campañas reales; despliegue VPS no verificado.
+
 ## 23/11 — Carga de imágenes y caché fría
 
 Se elimina el bypass del caché al superar8solicitudes y se acota la preparación de miniaturas a2por caché, también después de caducar. Tandas de2fotos pequeñas con grandes/videos aislados; buffer reutilizado en validación y huella, una galería final y recuperación de miniaturas fallidas por acción explícita. Meta recibe imágenes binarias sin expansión base64 y conserva los recibos/protecciones existentes. Cabeceras de versión/tiempos permiten identificar etapas lentas sin exponer datos.389pruebas, build, SQL/HTTP sintéticos y Chromium con éxito parcial y corte de conexión; sin Meta/IA reales. El proxy bloqueó el dominio productivo, por lo que no se certifica el despliegue ni la velocidad del VPS. Detalle en docs/MEDIA_UPLOAD_PERFORMANCE.md.

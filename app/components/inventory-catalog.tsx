@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import "./inventory-top-workspace.css";
-const InventoryTopWorkspace = dynamic(() => import("./inventory-top").then(m => m.InventoryTop), { loading: () => <p role="status">Abriendo Top…</p> });
+const InventoryTopWorkspace = dynamic(() => import("./inventory-top-board").then(m => m.InventoryTopBoard), { loading: () => <p role="status">Abriendo Top…</p> });
 const SelectedInventoryEvaluation=dynamic(()=>import("./sheet-sales-detail").then(m=>m.SheetSalesDetail));
 const InventoryCompactEvaluation=dynamic(()=>import("./inventory-compact-evaluation").then(m=>m.InventoryCompactEvaluation));
 import {useInventoryCountryViewport} from "./use-inventory-country-viewport";
@@ -175,7 +175,7 @@ export function InventoryCatalog({
   onOpenInventory?: (id: string) => void;
 }) {
   const [workspaceView, setWorkspaceView] = useWorkbookPreference<string>(listId, "inventory-workspace", "catalog");
-  const [workspaceColumn, setWorkspaceColumn] = useWorkbookPreference<string>(listId, "inventory-top-column", "");
+  const [workspaceColumns, setWorkspaceColumns] = useWorkbookPreference<string[] | null>(listId, "inventory-top-board-columns", null);
   const inTop = workspaceView === "top";
   const inventoryScroll = useRef<HTMLDivElement>(null);
   const inventoryWindowControls = useRef<{
@@ -1769,15 +1769,16 @@ export function InventoryCatalog({
   if (inTop) return <section className="inventory-catalog sheet-view" aria-label="Top del inventario">
     {workspaceTabs}
     {fullDetailContent}
+    {sheetAddOpen && sheetDirectory && <InventoryAddEvaluationSheet listId={listId} directory={sheetDirectory} onClose={()=>setSheetAddOpen(false)} onSaved={async id=>{await reloadSheetDirectory();setWorkspaceColumns(current=>current===null?null:[...new Set([...current,id])]);setSheetAddOpen(false);await onChanged();}}/>}
     {trialDirectory && sheetDirectory ? <InventoryTopWorkspace
       key={listId}
-      workspace
       directory={trialDirectory}
       columns={knownCountries.map(value => ({value,label:sheetLabel(value)}))}
-      initialColumn={knownCountries.includes(workspaceColumn) ? workspaceColumn : topSheet || knownCountries[0]}
-      onColumnChange={setWorkspaceColumn}
+      visible={workspaceColumns}
+      onVisibleChange={setWorkspaceColumns}
+      onAddCountry={()=>setSheetAddOpen(true)}
       onBusyChange={setBusy}
-      onChanged={async () => { countryEvaluation.refresh(); await onChanged(); }}
+      onChanged={async column => { countryEvaluation.refresh([column]); await onChanged(); }}
       onDetail={(column,name,aliasId) => setFullDetail({tableId:column.split(":")[0],country:column.split(":")[1],name,aliasId})}
     /> : <div role={groupLoadError || message ? "alert" : "status"}>{groupLoadError || message || "Cargando inventario para el Top…"}{(groupLoadError || message) && <button type="button" onClick={() => { setMessage(""); void Promise.all([reloadGroups(),reloadSheetDirectory()]).catch(e => setMessage(e.message)); }}>Reintentar</button>}</div>}
   </section>;

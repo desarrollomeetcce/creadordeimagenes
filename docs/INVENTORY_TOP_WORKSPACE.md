@@ -1,15 +1,23 @@
-# Top dentro de Inventario
+# Top por países dentro de Inventario
 
-Top es una vista del mismo inventario, junto a la pestaña Inventario. Reutiliza el catálogo, la activación interna, la evaluación y las acciones existentes; no crea un segundo catálogo ni un nuevo estado publicitario.
+La aclaración posterior del23/11/2026 sustituye el selector de un solo país por columnas simultáneas. Top sigue siendo una vista del mismo inventario: reutiliza catálogo, activación, tareas y APIs existentes. Los diálogos de Top de grupos conservan su presentación anterior.
 
-Muestra activos y pendientes primero, una fila buscable «Activar otro diplomado» y después las filas desactivadas que tienen una asignación real. Los ítems sin asignación siguen disponibles como candidatos, sin inventar activaciones ni historial. Las tareas pendientes se mantienen arriba aunque el booleano de activación sea falso. Las filas inactivas no participan en el reemplazo múltiple de activos.
+Cada columna corresponde a una hoja real y país ISO, sin mezclar fuentes aunque compartan el nombre del país. El encabezado muestra el país; una etiqueta adicional distingue la hoja cuando hace falta. Sus tarjetas incluyen nombre del diplomado, activación/tareas, fechas reales del último período, días activos, ventas del ciclo y acciones. Los desconocidos no se convierten en0ni en fechas inventadas. El cierre se expone como activeUntil a partir del período ya calculado por el informe; no se añade una consulta histórica por tarjeta. Las fechas se presentan según Lima y las ventas conservan la política canónica de pagos posteriores al apagado hasta el siguiente ciclo.
 
-Seleccionar un candidato utiliza PATCH inventory/sheet-activation con nombre, hoja real, país y targets/revisiones del informe actual. Conserva las comprobaciones de catálogo, permisos, revisión y transacción de la API existente. Desactivar conserva la confirmación previa y la opción de fijar. Es activación interna de Inventario; no ejecuta escrituras de campañas ni generaciones de IA.
+En cada país aparecen activos/pendientes, Activar otro diplomado y desactivados con asignación real en gris. El catálogo sin asignación sigue disponible para altas, sin inventar historial. Se dibujan25tarjetas iniciales por sección con opción de mostrar más, sin recortar los cálculos del informe.
 
-La vista y su última columna se recuerdan por usuario e inventario. El código del Top se carga al abrirlo; el catálogo y directorio ya recibidos se reutilizan. Mientras Top está abierto, la evaluación general oculta del inventario no consulta. Top pide solo la hoja y el país elegidos, con un rango acotado y la política de actualización existente. Buscar y filtrar se realiza localmente; el país integra la clave del estado/caché del hook, evitando reutilizar un informe de otro país. No hay caché global nueva de cifras ni permisos. Una mutación relee su evaluación y los datos canónicos necesarios.
+Agregar país permite mostrar columnas disponibles u abrir el diálogo existente para otra hoja/país. Quitar una columna cambia solo la vista, no elimina datos. El orden se modifica con arrastre, flechas o Alt+flechas; columnas visibles y orden se recuerdan por usuario/lista en el navegador.
 
-No hay migración: se guardan únicamente preferencias visuales personales y se usan los registros existentes para activar. El Top operativo de los diálogos de grupos conserva su comportamiento previo.
+Reemplazar está en el botón azul de la tarjeta y en el menú de activación. Se reutiliza la revisión existente de candidatos y el POST replace-batch atómico: anterior STOP, nuevo CREATE, únicamente en la hoja/país elegidos, con targets/revisiones actuales y las validaciones de catálogo/permisos. No hay publicaciones, pausas Meta ni generación IA al ordenar o reemplazar de esta forma. Desactivar conserva la confirmación previa y la elección de fijar. Los antecedentes y el detalle se cargan solo al abrirlos.
 
-La evaluación oculta se invalida después de guardar para que Inventario muestre los cambios al volver. El menú compartido de activación ajusta su posición a su altura real y limita su alto al viewport.
+## Consultas
 
-Verificación23/11/2026:382 pruebas generales, compilación/TypeScript y navegador con HTTP/DB sintéticos reales. Se activó un candidato sin asignación previa, se confirmó su desactivación/fijado, se comprobó el orden antes/después, el cambio de pestañas y la vista390px, sin errores de JavaScript. Buscar no emitió solicitudes; el informe del Top se limitó a una tabla y PE. La red externa estuvo bloqueada. Publicar main no demuestra despliegue productivo.
+El tablero comparte una evaluación entre las columnas visibles. Se deduplican los IDs de hoja y se solicitan en lotes secuenciales de hasta20, conforme al límite existente del endpoint. El estado canEdit de la respuesta también protege los controles. No se introducen caches globales de cifras ni permisos.
+
+La clave de lectura ordena los IDs, por lo que reordenar columnas no consulta ni escribe. Buscar y filtrar son locales. Volver a mostrar una fuente todavía consultada usa el estado actual del hook. Después de una mutación se invalida únicamente su hoja en el tablero; la evaluación general oculta de Inventario no consulta y queda invalidada para actualizarse al regresar.
+
+## Verificación
+
+390 pruebas generales, TypeScript y compilación. La integración delivery_qa comprueba activeUntil con cierre real del10/11/2026 y un reemplazo en AR: EC conserva estados/eventos/filas/ventas idénticos; el candidato aparece una sola vez.
+
+Chromium con API/DB reales sintéticos muestra AR, EC y BO desde una consulta agrupada; comprueba fechas, arrastre y flechas, ocultar/mostrar sin otra consulta, reemplazo AR con una sola escritura y refresco exclusivo de su hoja, orden conservado tras recargar y vista390px, con0errores JS. No hubo llamadas Meta/IA reales. Publicar main no acredita despliegue o modificación de datos del VPS.
