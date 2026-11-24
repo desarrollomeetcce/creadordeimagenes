@@ -135,6 +135,17 @@ export function SidebarAccount({
             <div className="sidebar-admin-group">
               <small>Equipo y planes</small>
               {item("users", "♙", "Usuarios y accesos")}
+              <a
+                className="sidebar-account-link"
+                href="https://pulpo.agenciamagneto.org/users"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Abrir Usuarios y acceso de Pulpo en una pestaña nueva"
+                onClick={close}
+              >
+                <span aria-hidden="true">↗</span>
+                <span>Usuarios de Pulpo</span>
+              </a>
               {user.role === "OWNER" && (
                 <a
                   className="sidebar-account-link"
@@ -147,6 +158,17 @@ export function SidebarAccount({
               )}
             </div>
           )}
+          <a
+            className="sidebar-account-link"
+            href="https://pulpo.agenciamagneto.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Volver a Pulpo Mensajería en una pestaña nueva"
+            onClick={close}
+          >
+            <span aria-hidden="true">↗</span>
+            <span>Pulpo Mensajería</span>
+          </a>
           {item("account", "♙", "Mi cuenta")}
           {ai &&
             !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
