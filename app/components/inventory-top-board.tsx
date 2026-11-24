@@ -1,6 +1,13 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { countryName } from "../../lib/meta-ads/countries";
 import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { inventoryTopSection } from "../../lib/meta-ads/inventory-top-sections";
@@ -10,7 +17,7 @@ import {
   orderedGroupCountries,
 } from "../../lib/meta-ads/inventory-group-country-order";
 import type { TrialDirectory } from "../../lib/meta-ads/inventory-trials";
-import { matchesSearchWords } from "../../lib/search";
+import { normalizeSearchText, searchTerms } from "../../lib/search";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import {
   useInventoryCountryEvaluation,
@@ -25,8 +32,13 @@ import {
   cacStatusNames,
   type CacStatus,
 } from "../../lib/meta-ads/inventory-cac-policy";
+import { InventoryTopActivationPicker } from "./inventory-top-activation-picker";
 import { InventoryTopSummary } from "./inventory-top-summary";
 import { InventoryDeactivationConfirm } from "./inventory-deactivation-confirm";
+import {
+  SheetHorizontalNavigation,
+  horizontalSheetKey,
+} from "./sheet-horizontal-navigation";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { MetaAnalysisPeriod } from "./meta-analysis-period";
 import { quickRange } from "../../lib/meta-ads/date-range";
@@ -129,6 +141,7 @@ export function InventoryTopBoard({
   onDetail: (column: string, name: string, aliasId: string) => void;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const countryScroll = useRef<HTMLDivElement>(null);
   const [order, setOrder] = useWorkbookPreference<string[]>(
     directory.listId,
     "inventory-top-board-order",
@@ -200,43 +213,94 @@ export function InventoryTopBoard({
         to,
       ),
     );
-  const cards = useMemo(
+  const catalogEntries = useMemo(
+    () =>
+      directory.catalog.map((item) => ({
+        item,
+        key: categoryKey(item.name),
+        search: normalizeSearchText(item.name),
+      })),
+    [directory.catalog],
+  );
+  const categoryOptions = useMemo(
+    () => [
+      { value: "", label: "Todas" },
+      ...[...new Set(directory.catalog.flatMap((item) => item.primaryNames))]
+        .sort((a, b) => a.localeCompare(b, "es"))
+        .map((name) => ({ value: name, label: name })),
+    ],
+    [directory.catalog],
+  );
+  // Group and sort only when the source changes, never on each search keystroke.
+  const countryCards = useMemo(
     () =>
       new Map(
         selected.map((column) => {
-          const values: Card[] = [];
-          for (const item of directory.catalog) {
-            const p = evaluation.lookup.get(
-              JSON.stringify([categoryKey(item.name), column.value]),
+          const active: Card[] = [],
+            inactive: Card[] = [],
+            candidates: Item[] = [];
+          for (const { item, key } of catalogEntries) {
+            const point = evaluation.lookup.get(
+              JSON.stringify([key, column.value]),
             );
-            if (
-              p &&
-              inventoryTopSection(p) &&
-              matchesSearchWords(item.name, query) &&
-              (!primary || item.primaryNames.includes(primary))
-            )
-              values.push({ item, point: p });
+            const section = point ? inventoryTopSection(point) : null;
+            if (point && section)
+              (section === "active" ? active : inactive).push({ item, point });
+            if (section !== "active") candidates.push(item);
           }
-          const active = values
-            .filter((r) => inventoryTopSection(r.point) === "active")
-            .sort(
-              (a, b) =>
-                inventoryTopPriority(a.point) - inventoryTopPriority(b.point) ||
-                a.item.name.localeCompare(b.item.name, "es"),
-            );
-          const inactive = values
-            .filter((r) => inventoryTopSection(r.point) === "inactive")
-            .sort((a, b) => a.item.name.localeCompare(b.item.name, "es"));
-          return [column.value, { active, inactive }] as const;
+          active.sort(
+            (a, b) =>
+              inventoryTopPriority(a.point) - inventoryTopPriority(b.point) ||
+              a.item.name.localeCompare(b.item.name, "es"),
+          );
+          inactive.sort((a, b) => a.item.name.localeCompare(b.item.name, "es"));
+          return [
+            column.value,
+            {
+              active,
+              inactive,
+              candidates,
+            },
+          ] as const;
         }),
       ),
-    [selected, directory.catalog, evaluation.lookup, query, primary],
+    [selected, catalogEntries, evaluation.lookup],
+  );
+  const deferredQuery = useDeferredValue(query);
+  const matchingIds = useMemo(() => {
+    const terms = searchTerms(deferredQuery);
+    return new Set(
+      catalogEntries
+        .filter(
+          ({ item, search }) =>
+            terms.every((term) => search.includes(term)) &&
+            (!primary || item.primaryNames.includes(primary)),
+        )
+        .map(({ item }) => item.id),
+    );
+  }, [catalogEntries, deferredQuery, primary]);
+  const cards = useMemo(
+    () =>
+      new Map(
+        [...countryCards].map(
+          ([column, group]) =>
+            [
+              column,
+              {
+                active: group.active.filter((card) =>
+                  matchingIds.has(card.item.id),
+                ),
+                inactive: group.inactive.filter((card) =>
+                  matchingIds.has(card.item.id),
+                ),
+              },
+            ] as const,
+        ),
+      ),
+    [countryCards, matchingIds],
   );
   const candidates = (column: string) =>
-    directory.catalog.filter((i) => {
-      const p = point(i.name, column);
-      return !p || inventoryTopSection(p) !== "active";
-    });
+    countryCards.get(column)?.candidates ?? [];
   async function mutate(
     column: string,
     action: () => Promise<unknown>,
@@ -459,12 +523,7 @@ export function InventoryTopBoard({
             placeholder="Todas"
             value={primary}
             onSelect={setPrimary}
-            options={[
-              { value: "", label: "Todas" },
-              ...[...new Set(directory.catalog.flatMap((i) => i.primaryNames))]
-                .sort((a, b) => a.localeCompare(b, "es"))
-                .map((name) => ({ value: name, label: name })),
-            ]}
+            options={categoryOptions}
           />
         </label>
         <MetaAnalysisPeriod
@@ -536,6 +595,14 @@ export function InventoryTopBoard({
         ))}
       </div>
       <div
+        className="inventory-top-board-navigation"
+        aria-label="Recorrer países del Top"
+      >
+        <SheetHorizontalNavigation target={countryScroll} />
+      </div>
+      <div
+        ref={countryScroll}
+        onKeyDown={(event) => horizontalSheetKey(event, countryScroll.current)}
         className="inventory-top-board-columns"
         role="region"
         aria-label="Top de países desplazable horizontalmente"
@@ -687,24 +754,19 @@ export function InventoryTopBoard({
                     )}
                     <div className="inventory-top-country-add">
                       <strong>＋ Activar otro diplomado</strong>
-                      <SheetSearchSelect
+                      <InventoryTopActivationPicker
                         label={"Activar diplomado en " + column.label}
-                        placeholder="Buscar y seleccionar…"
-                        value=""
                         disabled={!canEdit(column.value)}
-                        options={candidates(column.value).map((i) => ({
-                          value: i.name,
-                          label: i.name,
-                        }))}
-                        onSelect={(name) => {
+                        choices={candidates(column.value)}
+                        onSelect={async (name) => {
                           if (
                             !name ||
                             !candidates(column.value).some(
                               (i) => i.name === name,
                             )
                           )
-                            return;
-                          void mutate(
+                            return false;
+                          return mutate(
                             column.value,
                             () =>
                               api(
@@ -731,6 +793,7 @@ export function InventoryTopBoard({
                               setQuery("");
                               setPrimary("");
                             }
+                            return saved;
                           });
                         }}
                       />
