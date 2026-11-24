@@ -176,43 +176,14 @@
   padding: 4px 7px;
 }
 .inventory-top-card-summary {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: min(290px, calc(100vw - 16px));
-  max-height: calc(100dvh - 16px);
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  margin: 2px 0 4px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--line);
   color: var(--ink);
-  box-shadow: 0 8px 28px #0003;
-}
-.inventory-top-card-summary > header {
-  display: flex;
-  align-items: start;
-  gap: 8px;
-}
-.inventory-top-card-summary > header strong {
-  flex: 1;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.inventory-top-card-summary > header button {
-  padding: 0 5px;
-  min-height: 24px;
-  font-size: 17px;
-}
-.inventory-top-card-summary > small {
-  display: block;
-  font-size: 10px;
-  color: var(--muted);
 }
 .inventory-top-card-summary > button {
-  margin-top: 10px;
   font-size: 11px;
-  padding: 6px 10px;
+  padding: 4px 8px;
 }
 .inventory-top-card-category {
   font-size: 10px;
@@ -220,16 +191,12 @@
   margin: 5px 0 0;
 }
 .inventory-top-card-dates {
-  margin: 10px 0 8px;
-  padding: 8px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--muted) 6%, var(--surface));
+  margin: 5px 0;
 }
 .inventory-top-card-dates > span {
-  display: block;
   font-size: 10px;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-right: 6px;
 }
 .inventory-top-card-dates > strong {
   font-size: 10px;
@@ -242,8 +209,8 @@
 }
 .inventory-top-card-summary dl {
   display: flex;
-  gap: 20px;
-  margin: 10px 0;
+  gap: 12px;
+  margin: 5px 0;
 }
 .inventory-top-card-summary dl > div {
   flex: 1;
@@ -254,9 +221,9 @@
   font-weight: 500;
 }
 .inventory-top-card-summary dd {
-  font-size: 19px;
-  font-weight: 750;
-  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 650;
+  margin: 0;
   font-variant-numeric: tabular-nums;
 }
 .inventory-top-board-card[data-top-section="inactive"] {

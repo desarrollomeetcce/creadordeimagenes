@@ -404,98 +404,93 @@ export function InventoryTopBoard({
     const start = date(p.since),
       end = date(p.activeUntil);
     const ongoing = p.activation === "ACTIVE" || p.activation === "MIXED";
-    const assessment = p.cac?.budget.assessment ?? p.assessment;
+    const status = p.cac?.meta.assessment.status ?? "PENDING";
     return (
       <article
         key={item.id}
         className="inventory-top-board-card"
         data-top-name={item.name}
-        data-cac-status={assessment.status}
-        aria-label={item.name + ": " + cacStatusNames[assessment.status]}
+        data-cac-status={status}
+        aria-label={item.name + ": " + cacStatusNames[status]}
         data-top-column={column}
         data-top-section={inactive ? "inactive" : "active"}
       >
-        <div className="inventory-top-card-title">
-          <InventoryTopSummary
-            title={item.name}
-            detailDisabled={!p.targets[0]?.aliasId}
-            onDetail={() => onDetail(column, item.name, p.targets[0].aliasId)}
-          >
-            <span
-              className={
-                "trial-status inventory-status-with-dot trial-" +
-                assessment.status
-              }
-            >
-              <InventoryCacStatus status={assessment.status} />
-            </span>
-            {item.primaryNames.length > 0 && (
-              <p className="inventory-top-card-category">
-                {item.primaryNames.join(" · ")}
-              </p>
-            )}
-            <div className="inventory-top-card-dates">
-              <span>Período activo</span>
-              <strong>
-                {start ?? "Inicio no registrado"}{" "}
-                <span aria-hidden="true">→</span>{" "}
-                {ongoing ? "En curso" : (end ?? "Fin no registrado")}
-              </strong>
-            </div>
-            <dl>
-              <div>
-                <dt>Ventas del ciclo</dt>
-                <dd>
-                  {p.sales == null ? "—" : p.sales.toLocaleString("es-PE")}
-                </dd>
-              </div>
-              <div>
-                <dt>Días activos</dt>
-                <dd>{p.activeDays ?? "—"}</dd>
-              </div>
-            </dl>
-            <small>Ventas del último ciclo registrado. Sin registro: —.</small>
-          </InventoryTopSummary>
-          <InventoryCampaignControl
-            title={item.name}
-            activation={p.activation}
-            task={p.campaignTask}
-            disabled={!canEdit(column)}
-            onChange={(value) => change(column, p, value)}
-            extraActions={
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!p.targets[0]?.aliasId}
-                  onClick={(e) => {
-                    e.currentTarget
-                      .closest<HTMLElement>("[popover]")
-                      ?.hidePopover();
-                    onDetail(column, item.name, p.targets[0].aliasId);
-                  }}
-                >
-                  Ver detalle ↗
-                </button>
-                {!inactive && (
+        <InventoryTopSummary
+          title={item.name}
+          detailDisabled={!p.targets[0]?.aliasId}
+          onDetail={() => onDetail(column, item.name, p.targets[0].aliasId)}
+          action={
+            <InventoryCampaignControl
+              title={item.name}
+              activation={p.activation}
+              task={p.campaignTask}
+              disabled={!canEdit(column)}
+              onChange={(value) => change(column, p, value)}
+              extraActions={
+                <>
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={!canEdit(column)}
+                    disabled={!p.targets[0]?.aliasId}
                     onClick={(e) => {
                       e.currentTarget
                         .closest<HTMLElement>("[popover]")
                         ?.hidePopover();
-                      startReplacement(column, item);
+                      onDetail(column, item.name, p.targets[0].aliasId);
                     }}
                   >
-                    ↔ Reemplazar diplomado
+                    Ver detalle ↗
                   </button>
-                )}
-              </>
-            }
-          />
-        </div>
+                  {!inactive && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canEdit(column)}
+                      onClick={(e) => {
+                        e.currentTarget
+                          .closest<HTMLElement>("[popover]")
+                          ?.hidePopover();
+                        startReplacement(column, item);
+                      }}
+                    >
+                      ↔ Reemplazar diplomado
+                    </button>
+                  )}
+                </>
+              }
+            />
+          }
+        >
+          <span
+            className={`trial-status inventory-status-with-dot trial-${status}`}
+          >
+            <InventoryCacStatus status={status} />
+            {p.cac?.meta.provisional ? " · Provisional" : ""}
+          </span>
+          {item.primaryNames.length > 0 && (
+            <p className="inventory-top-card-category">
+              {item.primaryNames.join(" · ")}
+            </p>
+          )}
+          <div className="inventory-top-card-dates">
+            <span>Período activo</span>
+            <strong>
+              {start ?? "Inicio no registrado"}{" "}
+              <span aria-hidden="true">→</span>{" "}
+              {ongoing ? "En curso" : (end ?? "Fin no registrado")}
+            </strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Ventas del ciclo</dt>
+              <dd>{p.sales == null ? "—" : p.sales.toLocaleString("es-PE")}</dd>
+            </div>
+            <div>
+              <dt>Días activos</dt>
+              <dd>{p.activeDays ?? "—"}</dd>
+            </div>
+          </dl>
+        </InventoryTopSummary>
       </article>
     );
   }
@@ -587,7 +582,7 @@ export function InventoryTopBoard({
         className="inventory-top-board-legend"
         aria-label="Leyenda de evaluación del Top"
       >
-        <strong>CAC con presupuesto · período evaluado</strong>
+        <strong>CAC con gasto de Meta · período evaluado</strong>
         {(Object.keys(cacStatusNames) as CacStatus[]).map((status) => (
           <span key={status}>
             <InventoryCacStatus status={status} />
