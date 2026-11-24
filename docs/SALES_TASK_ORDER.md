@@ -14,13 +14,13 @@ Colores: FLOW fucsia #dc2787, CREATE morado #9463dc, STOP naranja #e89526, SYNC 
 
 ## Integración con Meta
 
-Las activaciones y pausas confirmadas en el módulo Meta Ads actualizan el booleano interno sin borrar la tarea existente. La sincronización normal también concilia un ACTIVE recibido realmente y las pausas confirmadas de todas las campañas vinculadas, sin nuevos Graph GET, marcadores de posición ni campañas inventadas. Si hay campañas desconocidas/activas, no inferir que el diplomado quedó apagado. Se conserva revisión de conexión, lease, permisos, bloqueo884411 y defensa ante lecturas anteriores a cambios manuales.
+Las activaciones confirmadas conservan las tareas. Desde la aclaración del 24/11, una pausa confirmada de todas las campañas vinculadas actualiza el booleano interno y completa únicamente STOP→NONE; el diplomado permanece visible e inactivo en Inventario y Ventas. La sincronización normal también concilia un ACTIVE recibido realmente y las pausas confirmadas de todas las campañas vinculadas, sin nuevos Graph GET, marcadores de posición ni campañas inventadas. Si hay campañas desconocidas/activas, no inferir que el diplomado quedó apagado. Se conserva revisión de conexión, lease, permisos, bloqueo884411 y defensa ante lecturas anteriores a cambios manuales.
 
 Solo se modifica la fila visible ya vinculada por alias y país. Las filas retiradas/ocultas no se resucitan. Un ACTIVE confirmado puede activar una fila que estaba desactivada, conservando CREATE/FLOW/STOP/SYNC. Un cambio solo de tarea no publica anuncios ni altera Meta. El botón Flujo de Meta Ads usa el permiso actual de edición del módulo y el grant financiero del inventario, con revisión del estado y tarea esperada; no exige ni utiliza una escritura publicitaria.
 
 Una campaña sin alias/país aparece Por sincronizar en Meta Ads. Para ubicarla en una fila de Ventas hay que vincularla al diplomado y país reales mediante la sincronización existente. No se asigna un diplomado por semejanza de nombre, no se crea un inventario automático por ese aviso y no se simula una activación en una hoja desconocida.
 
-CREATE ya no fuerza la activación de una hoja: puede existir un pendiente de campaña con activación falsa y permanencia de fila. No se reescriben masivamente los booleanos históricos por interpretar su tarea. Las tareas no se borran por observar una pausa; Quitarlas es una decisión explícita del usuario.
+CREATE ya no fuerza la activación de una hoja: puede existir un pendiente de campaña con activación falsa y permanencia de fila. No se reescriben masivamente los booleanos históricos por interpretar su tarea. CREATE, FLOW y SYNC no se completan por observar una pausa; STOP sí queda resuelto al confirmarse que todas las campañas vinculadas están apagadas.
 
 ## Proyectos
 

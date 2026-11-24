@@ -269,3 +269,12 @@ test("advisor sections handle unknown advisors and filtered views without empty 
   }
   assert.equal(JSON.stringify(rows), before);
 });
+
+
+ test("confirmed pauses complete STOP while active or unrelated tasks stay unchanged", async () => {
+  const { confirmedCampaignTask } = await import("../lib/meta-ads/confirmed-campaign-task");
+  for (const task of ["NONE", "STOP", "CREATE", "FLOW", "SYNC"] as const) {
+    assert.equal(confirmedCampaignTask(task, true), task);
+    assert.equal(confirmedCampaignTask(task, false), task === "STOP" ? "NONE" : task);
+  }
+});

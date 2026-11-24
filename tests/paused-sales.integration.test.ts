@@ -4,7 +4,12 @@ import { randomUUID } from "node:crypto";
 import { db } from "../lib/db";
 import { writeSyncPage } from "../lib/meta-ads/bulk-sync";
 import { retainPausedSalesRows } from "../lib/meta-ads/paused-sales-retention";
-import { activationSettings } from "../lib/meta-ads/inventory-sheet-activation";
+import { inventoryTopSection } from "../lib/meta-ads/inventory-top-sections";
+import { inventoryActivationPeriods } from "../lib/meta-ads/inventory-usage";
+import {
+  activationSettings,
+  inventoryActivationReport,
+} from "../lib/meta-ads/inventory-sheet-activation";
 import {
   confirmCampaignInventoryStatus,
   setCampaignFlowTask,
@@ -78,6 +83,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
         task?: string;
         hidden?: boolean;
         active?: boolean;
+        pinned?: boolean;
         currency?: string;
       } = {},
     ) {
@@ -122,7 +128,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       });
       const settings = activationSettings(before.config);
       settings.rows[alias.id + "|PE"] = {
-        pinned: false,
+        pinned: extra.pinned ?? false,
         campaignTask: (extra.task ?? "NONE") as any,
       };
       if (extra.hidden) settings.detachedAliases.push(alias.id);
@@ -337,7 +343,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       false,
     );
 
-    const manual = await fixture(["PAUSED"], { currency: "" });
+    const manual = await fixture(["PAUSED"], { currency: "", task: "STOP" });
     await db.$transaction(async (tx) => {
       await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
       await confirmCampaignInventoryStatus(
@@ -357,6 +363,10 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
     });
     assert.equal((await controls()).rows[manual.alias.id + "|PE"].pinned, true);
+    assert.equal(
+      (await controls()).rows[manual.alias.id + "|PE"].campaignTask,
+      "NONE",
+    );
     assert.equal(
       (
         await db.metaEffectivenessRow.findUniqueOrThrow({
@@ -399,7 +409,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
       assert.equal(
         (await controls()).rows[item.alias.id + "|PE"].campaignTask,
-        task,
+        task === "STOP" ? "NONE" : task,
       );
       await db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
@@ -429,7 +439,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
       assert.equal(
         (await controls()).rows[item.alias.id + "|PE"].campaignTask,
-        task,
+        task === "STOP" ? "NONE" : task,
       );
       assert.equal(
         (
@@ -440,6 +450,135 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
         false,
       );
     }
+    // Existing rows already paused by the old synchronizer still need STOP completed.
+    const stopped = await fixture(["PAUSED"], {
+      active: false,
+      pinned: true,
+      task: "STOP",
+    });
+    await db.metaEffectivenessEvent.createMany({
+      data: [
+        {
+          stateId: stopped.state.id,
+          actorId: actor.id,
+          active: true,
+          createdAt: new Date("2026-11-01T15:00:00Z"),
+          snapshot: { priorActive: false },
+        },
+        {
+          stateId: stopped.state.id,
+          actorId: actor.id,
+          active: false,
+          createdAt: new Date("2026-11-10T15:00:00Z"),
+          snapshot: { priorActive: true },
+        },
+      ],
+    });
+    const history = () =>
+      db.metaEffectivenessEvent.findMany({
+        where: { stateId: stopped.state.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+    const periodsBefore = inventoryActivationPeriods(await history(), false);
+    assert.equal(await batch(stopped.ids), 1);
+    assert.equal(
+      (await controls()).rows[stopped.alias.id + "|PE"].campaignTask,
+      "NONE",
+    );
+    assert.equal(
+      (await controls()).rows[stopped.alias.id + "|PE"].pinned,
+      true,
+    );
+    assert.deepEqual(
+      inventoryActivationPeriods(await history(), false),
+      periodsBefore,
+    );
+    assert.equal(await batch(stopped.ids), 0);
+    assert.deepEqual(
+      await db.metaEffectivenessDay.findUniqueOrThrow({
+        where: { rowId_day: { rowId: stopped.row.id, day: stopped.day.day } },
+      }),
+      stopped.day,
+    );
+    const stoppedSales = (
+      await effectiveness(actor, table.id, "2026-11-10", "2026-11-10")
+    ).rows.find((r) => r.aliasId === stopped.alias.id && r.country === "PE");
+    assert(stoppedSales);
+    assert.equal(stoppedSales.active, false);
+    assert.equal(stoppedSales.pinned, true);
+    assert.equal(stoppedSales.campaignTask, "NONE");
+    const inventory = await inventoryActivationReport(actor, {
+      listId: list.id,
+      tableIds: table.id,
+      byCountry: "true",
+      since: "2026-11-10",
+      until: "2026-11-10",
+    });
+    const stoppedInventory = inventory.rows.find(
+      (r) => r.name === stopped.alias.name && r.country === "PE",
+    );
+    assert(stoppedInventory);
+    assert.equal(stoppedInventory.activation, "INACTIVE");
+    assert.equal(stoppedInventory.campaignTask, "NONE");
+    assert.equal(inventoryTopSection(stoppedInventory), "inactive");
+    const retiredStop = await fixture(["PAUSED"], {
+      active: false,
+      pinned: false,
+      task: "STOP",
+    });
+    assert.equal(await batch(retiredStop.ids), 0);
+    assert.equal(
+      (await controls()).rows[retiredStop.alias.id + "|PE"].pinned,
+      false,
+    );
+    const unknownStop = await fixture(["ACTIVE", null], { task: "STOP" });
+    assert.equal(await batch([unknownStop.ids[0]]), 0);
+    assert.equal(
+      (await controls()).rows[unknownStop.alias.id + "|PE"].campaignTask,
+      "STOP",
+    );
+
+    // A manual pause must wait for the other linked campaigns as well.
+    const multiple = await fixture(["PAUSED", "ACTIVE"], {
+      task: "STOP",
+      currency: "",
+    });
+    const confirmMultiple = () =>
+      db.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
+        return confirmCampaignInventoryStatus(
+          tx,
+          {
+            authorized: actor,
+            scope: {
+              listId: list.id,
+              tableId: table.id,
+              aliasId: multiple.alias.id,
+              country: "PE",
+              name: multiple.alias.name,
+            },
+            revision: 0,
+          } as any,
+          "PAUSED",
+        );
+      });
+    assert.deepEqual(await confirmMultiple(), {
+      inventoryActive: true,
+      inventoryCampaignTask: "STOP",
+    });
+    await db.metaAdObject.update({
+      where: { id: multiple.ids[1] },
+      data: { status: "PAUSED" },
+    });
+    assert.deepEqual(await confirmMultiple(), {
+      inventoryActive: false,
+      inventoryCampaignTask: "NONE",
+    });
+    assert.equal(
+      (await controls()).rows[multiple.alias.id + "|PE"].pinned,
+      true,
+    );
+
     const flowItem = await fixture(["ACTIVE"]);
     await setCampaignFlowTask(actor, flowItem.ids[0], "NONE", true);
     assert.equal(

@@ -7,6 +7,7 @@ import {
   scopePermission,
 } from "./financial-access";
 import { inventoryMetaStatusChange, activationSettings } from "./inventory-sheet-activation";
+import { confirmedCampaignTask } from "./confirmed-campaign-task";
 import { isCountryCode } from "./countries";
 import { metaEditorUserWhere } from "./workspace-access";
 import { accountWhere, type Actor } from "./service";
@@ -167,7 +168,7 @@ export async function confirmCampaignInventoryStatus(
   const list = await tx.metaEffectivenessSheet.findUnique({where:{id:scope.listId},select:{config:true}});
   const existingTask = activationSettings(list?.config ?? null).rows[scope.aliasId+"|"+scope.country]?.campaignTask ?? "NONE";
   const active = status === "ACTIVE" || !!outstanding,
-    campaignTask = existingTask !== "NONE" ? existingTask : outstanding ? ("STOP" as const) : ("NONE" as const);
+    campaignTask = confirmedCampaignTask(existingTask !== "NONE" ? existingTask : outstanding ? "STOP" : "NONE", active);
   await inventoryMetaStatusChange(tx, prepared.authorized, scope, {
     active,
     campaignTask,

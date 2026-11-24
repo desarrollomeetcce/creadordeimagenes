@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { isCountryCode } from "./countries";
 import { activationSettings } from "./inventory-sheet-activation";
+import { confirmedCampaignTask } from "./confirmed-campaign-task";
 import { recordActivity } from "../activity";
 
 export const pausedCampaignStatuses = ["PAUSED", "ARCHIVED", "DELETED"];
@@ -39,7 +40,12 @@ export async function retainPausedSalesRows(
   });
   const pairs = new Map<
     string,
-    { aliasId: string; country: string; ownerId: string; activeObserved: boolean }
+    {
+      aliasId: string;
+      country: string;
+      ownerId: string;
+      activeObserved: boolean;
+    }
   >();
   for (const row of changed)
     if (row.aliasId && row.aliasCountry && isCountryCode(row.aliasCountry))
@@ -47,7 +53,10 @@ export async function retainPausedSalesRows(
         aliasId: row.aliasId,
         country: row.aliasCountry,
         ownerId: row.account.connection.ownerId,
-        activeObserved: row.status === "ACTIVE" || pairs.get(row.aliasId + "|" + row.aliasCountry)?.activeObserved === true,
+        activeObserved:
+          row.status === "ACTIVE" ||
+          pairs.get(row.aliasId + "|" + row.aliasCountry)?.activeObserved ===
+            true,
       });
   if (!pairs.size) return 0;
   const owners = await tx.user.findMany({
@@ -115,7 +124,8 @@ export async function retainPausedSalesRows(
     targets
       .filter(
         (p) =>
-          !p.activeObserved && !allCampaignsStopped(statuses.get(p.aliasId + "|" + p.country) ?? []),
+          !p.activeObserved &&
+          !allCampaignsStopped(statuses.get(p.aliasId + "|" + p.country) ?? []),
       )
       .map((p) => p.aliasId + "|" + p.country),
   );
@@ -132,11 +142,21 @@ export async function retainPausedSalesRows(
     );
     const active = target.activeObserved;
     const pinned = active ? (control?.pinned ?? false) : true;
-    const campaignTask = control?.campaignTask ?? "NONE";
+    const campaignTask = confirmedCampaignTask(
+      control?.campaignTask ?? "NONE",
+      active,
+    );
+    // Heal a previously retained paused row whose STOP task was left behind.
+    // A manually retired/unpinned row must not be made visible again.
+    const completedStop =
+      !active &&
+      state?.active === false &&
+      control?.pinned === true &&
+      control.campaignTask === "STOP";
     if (
       !config ||
       config.detachedAliases.includes(alias.id) ||
-      state?.active === active ||
+      (state?.active === active && !completedStop) ||
       !alias.effectivenessRows.some((r) => r.country === target.country) ||
       (state?.events[0] && state.events[0].createdAt > observedAt)
     )

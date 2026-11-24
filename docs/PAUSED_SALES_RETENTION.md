@@ -1,3 +1,5 @@
+> Actualización 24/11: una pausa confirmada completa «Por desactivar campaña» (STOP→NONE). El diplomado permanece en Inventario y Ventas, inactivo y retenido, con la presentación gris existente. Sustituye exclusivamente la conservación de STOP al pausar descrita en la actualización anterior.
+
 > Actualización 17/11: la presentación y las tareas siguen [SALES_TASK_ORDER.md](SALES_TASK_ORDER.md). Ya no se muestra Fijado ni se ordena un inactivo como activo por estar fijado. Las activaciones confirmadas también se reflejan y las tareas se conservan al activar/pausar. Las reglas anteriores de conservar la posición entre activos, bloquear CREATE o evitar toda reactivación quedan sustituidas.
 
 # Campañas desactivadas y fijadas en Ventas
@@ -19,3 +21,11 @@ La proyección de Ventas incluye el fijado y muestra una marca breve. Las filas 
 - Compilación de producción y TypeScript.
 
 No hay migraciones nuevas. Estas pruebas no acreditan un despliegue del servidor de producción ni una actualización ya recibida de cuentas reales de Meta.
+
+## Completar el pendiente de desactivación
+
+El recibo confirmado del módulo Meta Ads y la conciliación de metadatos comparten confirmedCampaignTask. Si todas las campañas vinculadas alias+país están apagadas, active=false y STOP pasa a NONE. Mientras quede alguna activa o desconocida, el pendiente permanece. Activar no completa STOP. CREATE, FLOW y SYNC no se consideran tareas resueltas por pausar una campaña.
+
+Una nueva observación válida también corrige una fila ya inactiva y fijada cuyo STOP quedó pendiente por la lógica anterior. No se ejecuta un barrido sin confirmación ni una migración de datos históricos; se conservan las defensas de observación actual, eventos más nuevos, filas visibles y vinculación. Las filas inactivas desfijadas o retiradas no se hacen reaparecer. La corrección registra la revisión y el evento con priorActive=false, por lo que no añade otro período activo ni cambia su cierre.
+
+La integración sintética verifica STOP→NONE en pausa manual y sincronizada, espera de otras campañas, saneamiento repetible de STOP antiguo, conservación exacta de períodos y ventas, respuestas reales de Inventario y Ventas, clasificación inactiva de Top, otros países, filas retiradas y cero llamadas externas.
