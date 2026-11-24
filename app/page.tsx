@@ -1,4 +1,5 @@
 "use client";
+import { PulpoBrand } from "./components/pulpo-brand";
 import dynamic from "next/dynamic";
 import { isProviderVerified } from "../lib/provider-verification";
 import { ThemeToggle } from "./components/theme-toggle";
@@ -454,7 +455,7 @@ export default function Home() {
           </p>
         </section>
         <section className="login-form">
-          <div className="brand">✳ estudio AI</div>
+          <div className="brand pulpo-generator-brand"><PulpoBrand /></div>
           <h1>Instalación pendiente</h1>
           <p role="status" className="notice">
             {installationError}
@@ -507,20 +508,7 @@ export default function Home() {
   const sidebarContent=<>
 
           <button className="sidebar-collapse" type="button" aria-label={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} title={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} aria-pressed={sidebarMini} onClick={()=>{if(smallNavigation){setMobileMenuOpen(false);return;}setSidebarMini(v=>{ const next=!v; try { localStorage.setItem("sidebar-mini:v1:"+user.id,next?"1":"0"); }catch{} return next; })}}>{smallNavigation?"×":sidebarMini?"☰":"‹"}</button>
-          <div className="brand">
-            <span>✳</span>estudio
-            <span
-              style={{
-                background: "none",
-                color: "#8b9b94",
-                fontSize: 12,
-                width: 20,
-                margin: 0,
-              }}
-            >
-              AI
-            </span>
-          </div>
+          <div className="brand pulpo-generator-brand"><PulpoBrand /></div>
           <div className="eyebrow">Espacio de trabajo</div>
           <SidebarNavigation userId={user.id} view={view} navigate={navigate} items={[
             ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role)||user.advisorLinked?[["performance","◎","Mi desempeño"]]:[]),
@@ -750,8 +738,8 @@ function Login({
         </div>
       </section>
       <section className="login-form">
-        <div className="brand" style={{ marginBottom: 35 }}>
-          ✳ estudio AI
+        <div className="brand pulpo-generator-brand" style={{ marginBottom: 35 }}>
+          <PulpoBrand />
         </div>
         {forgot ? (
           <ForgotPasswordForm onBack={() => setForgot(false)} />

@@ -1,4 +1,5 @@
 "use client";
+import { PulpoBrand } from "./pulpo-brand";
 import { useEffect, useId, useRef, useState } from "react";
 import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
@@ -166,8 +167,8 @@ export function SidebarAccount({
             aria-label="Volver a Pulpo Mensajería en una pestaña nueva"
             onClick={close}
           >
+            <PulpoBrand messaging />
             <span aria-hidden="true">↗</span>
-            <span>Pulpo Mensajería</span>
           </a>
           {item("account", "♙", "Mi cuenta")}
           {ai &&

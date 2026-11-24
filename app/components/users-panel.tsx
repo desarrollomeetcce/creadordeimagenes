@@ -147,11 +147,15 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
             Una fila por persona. Guarda rol, estado y plan con un solo botón.
           </p>
         </div>
-        {isOwner && (
-          <a className="users-plans-link" href="?view=users&tab=plans">
-            ◈ Planes de IA
-          </a>
-        )}
+        <a
+          className="users-plans-link"
+          href="https://pulpo.agenciamagneto.org/users"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Abrir Usuarios y acceso de Pulpo en una pestaña nueva"
+        >
+          Usuarios de Pulpo ↗
+        </a>
       </div>
       {isOwner && (
         <nav

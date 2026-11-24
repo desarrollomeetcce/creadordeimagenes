@@ -3085,3 +3085,21 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 
 /* Main advisor sheet follows the page height; retain horizontal column scrolling. */
 .advisor-sheet > .effectiveness-scroll { height:auto; max-height:none; overflow-x:auto; overscroll-behavior:auto; }
+
+.pulpo-product-mascot { flex: none; object-fit: contain; border-radius: 8px; }
+.pulpo-generator-brand { color: #126447; }
+:root[data-theme="dark"] .pulpo-generator-brand { color: #85e7af; }
+.brand > .pulpo-product-name,
+.sidebar-account-link > .pulpo-product-name {
+  display: grid;
+  align-content: center;
+  width: auto;
+  height: auto;
+  background: none;
+  color: inherit;
+  line-height: 1.15;
+}
+.brand > .pulpo-product-name small,
+.sidebar-account-link > .pulpo-product-name small { font-size: 0.75em; }
+.pulpo-generator-brand > .pulpo-product-name { font-size: 18px; }
+.sidebar-account-link > .pulpo-product-mascot { width: 30px; height: 30px; }
