@@ -3087,11 +3087,21 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .advisor-sheet > .effectiveness-scroll { height:auto; max-height:none; overflow-x:auto; overscroll-behavior:auto; }
 
 .pulpo-product-mascot { flex: none; object-fit: contain; border-radius: 8px; }
-.pulpo-generator-brand { color: #126447; }
+.brand.pulpo-generator-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #126447;
+}
+.pulpo-generator-brand > .pulpo-product-mascot {
+  width: 42px;
+  height: 42px;
+}
 :root[data-theme="dark"] .pulpo-generator-brand { color: #85e7af; }
 .brand > .pulpo-product-name,
 .sidebar-account-link > .pulpo-product-name {
   display: grid;
+  place-items: start;
   align-content: center;
   width: auto;
   height: auto;
@@ -3101,5 +3111,12 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 }
 .brand > .pulpo-product-name small,
 .sidebar-account-link > .pulpo-product-name small { font-size: 0.75em; }
-.pulpo-generator-brand > .pulpo-product-name { font-size: 18px; }
+.brand.pulpo-generator-brand > .pulpo-product-name {
+  margin: 0;
+  letter-spacing: normal;
+  font-size: 18px;
+}
+@media (min-width: 901px) {
+  .sidebar-mini .sidebar > .brand.pulpo-generator-brand { display: none; }
+}
 .sidebar-account-link > .pulpo-product-mascot { width: 30px; height: 30px; }
