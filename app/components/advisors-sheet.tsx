@@ -15,7 +15,7 @@ import { useSheetHeights } from "./use-sheet-heights";
 import { SheetColumnResizer } from "./sheet-column-resizer";
 import { SheetSizedRow } from "./sheet-sized-row";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useWorkbookPreference } from "./use-workbook-preference";
 import { financialRequest as api } from "./financial-request";
 import { useReportDayPages } from "./report-day-pages";
@@ -35,6 +35,9 @@ import type {
 import { countryOptions } from "../../lib/meta-ads/countries";
 import { SheetSearchSelect } from "./sheet-search-select";
 const advisorCountFormat = new Intl.NumberFormat("es-PE");
+const advisorHoursFormat = new Intl.NumberFormat("es-PE", {
+  maximumFractionDigits: 6,
+});
 const advisorRateFormat = new Intl.NumberFormat("es-PE", {
   style: "percent",
   maximumFractionDigits: 2,
@@ -67,6 +70,72 @@ const statuses = [
   { value: "ABSENT", label: "Ausente" },
   { value: "NA", label: "N.A." },
 ];
+
+function AdvisorAttendanceSummary({
+  people,
+  id,
+}: {
+  people: Person[];
+  id: string;
+}) {
+  return (
+    <div className="table-scroll">
+      <table id={id}>
+        <caption>Resumen de asistencia del período</caption>
+        <thead>
+          <tr>
+            <th scope="col">Asesor</th>
+            <th scope="col">Días presentes</th>
+            <th scope="col">Días ausentes</th>
+            <th scope="col">Horas de ausencia confirmadas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {people.map((person) => {
+            let present = 0;
+            let absent = 0;
+            let confirmedHours: number | null = null;
+            let pending = 0;
+            for (const day of Object.values(person.days)) {
+              if (day.status === "PRESENT") present++;
+              if (day.status === "ABSENT") absent++;
+              if (day.absence.hours !== null) {
+                confirmedHours = (confirmedHours ?? 0) + day.absence.hours;
+              }
+              pending += day.absence.pending;
+            }
+            return (
+              <tr key={person.id}>
+                <th scope="row">{person.name}</th>
+                <td>{advisorCountFormat.format(present)}</td>
+                <td>{advisorCountFormat.format(absent)}</td>
+                <td>
+                  {confirmedHours === null
+                    ? "—"
+                    : advisorHoursFormat.format(confirmedHours)}
+                  {pending > 0 && (
+                    <small>
+                      {" · "}
+                      {pending === 1
+                        ? "1 registro abierto"
+                        : `${advisorCountFormat.format(pending)} registros abiertos`}
+                    </small>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {!people.length && (
+            <tr>
+              <td colSpan={4}>No hay asesores para los filtros actuales.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AdvisorsSheet({
   tables,
   listId = "default-advisors",
@@ -86,6 +155,8 @@ export function AdvisorsSheet({
   onChanged: () => Promise<void>;
   onOpenPeriod?: (period: AdvisorPeriodView) => void;
 }) {
+  const [showAttendanceSummary, setShowAttendanceSummary] = useState(false);
+  const attendanceSummaryId = useId();
   const [orderRevision, setOrderRevision] = useState("");
   const orderPending = useRef(false),
     draggedAdvisor = useRef<string | null>(null);
@@ -392,6 +463,14 @@ export function AdvisorsSheet({
               Vista manual
             </button>
           </div>
+          <button
+            type="button"
+            aria-expanded={showAttendanceSummary}
+            aria-controls={showAttendanceSummary ? attendanceSummaryId : undefined}
+            onClick={() => setShowAttendanceSummary((shown) => !shown)}
+          >
+            Resumen de asistencia
+          </button>
           <MetaDateRange
             maxDays={3660}
             activeSince={
@@ -480,6 +559,9 @@ export function AdvisorsSheet({
         </p>
       )}
       {sheetTabs}
+      {showAttendanceSummary && valid && rowsContext === key && (
+        <AdvisorAttendanceSummary people={filtered} id={attendanceSummaryId} />
+      )}
       {valid && (
         <div className="table-scroll effectiveness-scroll">
           <table

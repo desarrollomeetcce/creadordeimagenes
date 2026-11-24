@@ -136,6 +136,7 @@
 }
 .inventory-top-board-card {
   border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--inventory-cac-color);
   border-radius: 7px;
   padding: 2px 6px;
   margin-bottom: 3px;
@@ -261,6 +262,7 @@
 .inventory-top-board-card[data-top-section="inactive"] {
   background: color-mix(in srgb, var(--muted) 6%, var(--surface));
   border-style: dashed;
+  border-inline-start-style: solid;
   color: var(--muted);
 }
 .inventory-top-country-add {
@@ -355,30 +357,8 @@
   align-items: center;
   white-space: nowrap;
 }
-.inventory-top-board-card {
-  --top-health: #87949c;
-  border-inline-start: 4px solid var(--top-health);
-}
-.inventory-top-board-card[data-cac-status="WITHIN"] {
-  --top-health: #20a267;
-}
-.inventory-top-board-card[data-cac-status="ALERT"] {
-  --top-health: #d5a51c;
-}
-.inventory-top-board-card[data-cac-status="SEVERE"] {
-  --top-health: #e46b22;
-}
-.inventory-top-board-card[data-cac-status="CRITICAL"] {
-  --top-health: #e24a58;
-}
-.inventory-top-board-card[data-cac-status="TESTING"] {
-  --top-health: #c99b21;
-}
 .inventory-top-board-card[data-top-section="active"] {
-  background: color-mix(in srgb, var(--top-health) 5%, var(--surface));
-}
-.inventory-top-board-card[data-top-section="inactive"] {
-  border-inline-start-style: solid;
+  background: color-mix(in srgb, var(--inventory-cac-color) 5%, var(--surface));
 }
 
 /* Keep a visible country slider above the grid, even on overlay-scrollbar systems. */
