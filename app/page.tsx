@@ -1,4 +1,5 @@
 "use client";
+import { MessagingRail } from "./components/messaging-rail";
 import { PulpoBrand } from "./components/pulpo-brand";
 import dynamic from "next/dynamic";
 import { isProviderVerified } from "../lib/provider-verification";
@@ -537,7 +538,7 @@ export default function Home() {
   </>;
   return (
     <CurrentUserId.Provider value={user.id}><CurrentRole.Provider value={user.role}>
-      <div className={"shell"+(sidebarMini?" sidebar-mini":"")}>
+      <div className={"shell shell-with-messaging"+(sidebarMini?" sidebar-mini":"")}>
         {smallNavigation?<><div className="mobile-nav-bar"><button type="button" aria-label="Abrir menú principal" aria-expanded={mobileMenuOpen} aria-controls="mobile-sidebar" onClick={()=>setMobileMenuOpen(true)}>☰ Menú</button><span className="mobile-nav-brand">estudio <small>AI</small></span></div><dialog id="mobile-sidebar" ref={sidebarDialog} className="sidebar sidebar-mobile-dialog" aria-label="Menú principal de la plataforma" onClose={()=>setMobileMenuOpen(false)} onCancel={()=>setMobileMenuOpen(false)} onClick={e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)setMobileMenuOpen(false)}}>{sidebarContent}</dialog></>:<aside className="sidebar">{sidebarContent}</aside>}
         <div className="workspace">
           <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":view==="metaads"?"topbar meta-topbar":"topbar"}>
@@ -703,6 +704,7 @@ export default function Home() {
             )}
           </main>
         </div>
+        <MessagingRail userId={user.id} compact={smallNavigation} />
       </div>
     </CurrentRole.Provider></CurrentUserId.Provider>
   );

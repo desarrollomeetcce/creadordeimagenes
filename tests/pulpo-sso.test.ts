@@ -24,6 +24,11 @@ test("validates a short Pulpo assertion and rejects another audience, key or des
   assert.equal(verifyPulpoAssertion(sign({ aud: "otro" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ page: "https://example.com" }), key, 100), null);
 });
+test("accepts only signed, known workspace views on the normal sign-in path", () => {
+  assert.equal(verifyPulpoAssertion(sign({ view: "products" }), key, 100)?.view, "products");
+  assert.equal(verifyPulpoAssertion(sign({ view: "https://example.com" }), key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign({ page: "plans", view: "products" }), key, 100), null);
+});
 test("requires an explicit link for that Pulpo account and the same email", () => {
   const assertion = verifyPulpoAssertion(sign(), key, 100)!;
   const links = JSON.stringify({ [claims.sub]: { id: "generator-id", email: claims.email } });

@@ -1,11 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+const workspaceViews = ["products", "inventory", "advisors", "metaads"] as const;
+type WorkspaceView = (typeof workspaceViews)[number];
+
 type Assertion = {
   sub: string;
   email: string;
   nonce: string;
   exp: number;
   page: "home" | "plans";
+  view?: WorkspaceView;
   provision?: true;
   name?: string;
 };
@@ -26,6 +30,7 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
         typeof claims.nonce !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(claims.nonce) ||
         !Number.isSafeInteger(claims.exp) || claims.exp <= now || claims.exp > now + 35 ||
         (claims.page !== "home" && claims.page !== "plans") ||
+        (claims.view !== undefined && (claims.page !== "home" || !workspaceViews.includes(claims.view))) ||
         (claims.provision !== undefined && (
           claims.provision !== true || typeof claims.name !== "string" ||
           !claims.name.trim() || claims.name.length > 100
