@@ -23,30 +23,62 @@ type Settings = {
 const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
-export function AdvisorPerformance({ owner }: { owner: boolean }) {
+type PerformancePanel = "team" | "advisor";
+
+function PerformanceNavigation({
+  panel,
+  onSelect,
+}: {
+  panel?: PerformancePanel;
+  onSelect?: (panel: PerformancePanel) => void;
+}) {
   return (
-    <>
-      <nav
-        className="performance-panel-tabs performance-workspace-nav"
-        aria-label="Seguimiento"
-      >
-        <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
-          Vista general
-        </a>
+    <nav className="performance-workspace-nav" aria-label="Seguimiento">
+      <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
+        Vista general
+      </a>
+      {onSelect ? (
+        <>
+          <button
+            type="button"
+            aria-pressed={panel === "team"}
+            onClick={() => onSelect("team")}
+          >
+            Configuración de desempeño
+          </button>
+          <button
+            type="button"
+            aria-pressed={panel === "advisor"}
+            onClick={() => onSelect("advisor")}
+          >
+            Desempeño del asesor
+          </button>
+        </>
+      ) : (
         <a href="?view=performance" aria-current="page">
           Mi desempeño
         </a>
-      </nav>
-      {owner ? <ManagedAdvisorPerformance owner /> : <AdvisorPeriodSignals />}
-    </>
+      )}
+    </nav>
+  );
+}
+
+export function AdvisorPerformance({ owner }: { owner: boolean }) {
+  return owner ? (
+    <ManagedAdvisorPerformance owner />
+  ) : (
+    <section className="advisor-performance" aria-label="Mi desempeño">
+      <PerformanceNavigation />
+      <AdvisorPeriodSignals />
+    </section>
   );
 }
 
 function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
   const today = limaToday();
   const [accountsOpen, setAccountsOpen] = useState(false);
-  const [diplomasOpen, setDiplomasOpen] = useState(false);
-  const [panel, setPanel] = useState<"team" | "advisor">(
+
+  const [panel, setPanel] = useState<PerformancePanel>(
     owner ? "team" : "advisor",
   );
   const [settings, setSettings] = useState<Settings | null>(null),
@@ -134,45 +166,17 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
     ) ?? [];
   return (
     <section className="advisor-performance" aria-label="Mi desempeño">
+      <PerformanceNavigation panel={panel} onSelect={setPanel} />
       <header className="performance-heading">
         <div>
-          <p className="eyebrow">VENTAS Y OBJETIVOS · HORA DE LIMA</p>
-          <h1>{owner ? "Desempeño de asesores" : "Mi desempeño"}</h1>
-          <p>
-            {owner
-              ? "Consulta los resultados que verá cada asesor y define sus objetivos."
-              : "Tus ventas, tus bases y el avance hacia tus objetivos."}
-          </p>
+          <h1>
+            {panel === "team" ? "Metas diarias" : "Desempeño de asesores"}
+          </h1>
         </div>
         <button type="button" onClick={() => setReload((n) => n + 1)}>
           Actualizar
         </button>
       </header>
-      {owner && (
-        <div
-          role="tablist"
-          aria-label="Vistas de Mi desempeño"
-          className="performance-panel-tabs"
-        >
-          <button
-            role="tab"
-            aria-selected={panel === "team"}
-            onClick={() => {
-              setPanel("team");
-              setDiplomasOpen(false);
-            }}
-          >
-            Configuración de asesores
-          </button>
-          <button
-            role="tab"
-            aria-selected={panel === "advisor"}
-            onClick={() => setPanel("advisor")}
-          >
-            Vista del asesor
-          </button>
-        </div>
-      )}
       {owner && panel === "team" && (
         <>
           <PerformanceConfiguration reload={reload} />
@@ -368,6 +372,9 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 </div>
               </article>
             )}
+            {advisorId && (
+              <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
+            )}
             <details className="performance-history" open>
               <summary>Mi evolución e histórico diario</summary>
               <div className="row">
@@ -485,15 +492,8 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 registrado por asesor.
               </p>
             </details>
-            <details
-              className="performance-history"
-              onToggle={(event) => setDiplomasOpen(event.currentTarget.open)}
-            >
-              <summary>Diplomados, ventas y observaciones</summary>
-              {diplomasOpen && advisorId && (
-                <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
-              )}
-              <h3>Ventas registradas por diplomado</h3>
+            <details className="performance-history">
+              <summary>Ventas registradas por diplomado</summary>
               {!positive.length ? (
                 <p>No hay ventas positivas registradas en este período.</p>
               ) : (

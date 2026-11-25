@@ -7,9 +7,13 @@ import { limaToday, shiftDay } from "./date-range";
 type Data = Awaited<ReturnType<typeof advisorPeriodSignals>>;
 const captions = {
   active: "Con ventas confirmadas",
-  critical: "Requiere atención",
+  critical: "Crítico",
   insufficient: "Aún hay pocos datos",
 };
+const regionNames = new Intl.DisplayNames(["es"], { type: "region" });
+const countryLabel = (country: string) =>
+  /^[A-Z]{2}$/.test(country) ? (regionNames.of(country) ?? country) : country;
+
 export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
   const today = limaToday();
   const [view, setView] = useState<"today" | "yesterday">("today");
@@ -17,6 +21,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
   const [until, setUntil] = useState(today);
   const [day, setDay] = useState(today);
   const [data, setData] = useState<Data | null>(null);
+  const [country, setCountry] = useState("");
   const [focus, setFocus] = useState("");
   const [body, setBody] = useState("");
   const [status, setStatus] = useState("");
@@ -78,6 +83,19 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
     }
   }
   const valid = data?.since === since && data.until === until;
+  const groups = new Map<string, Data["items"]>();
+  if (valid) {
+    for (const item of data.items) {
+      const items = groups.get(item.country) ?? [];
+      items.push(item);
+      groups.set(item.country, items);
+    }
+  }
+  const countries = [...groups.keys()].sort((a, b) =>
+    countryLabel(a).localeCompare(countryLabel(b), "es"),
+  );
+  const selectedCountry = groups.has(country) ? country : "";
+  const visibleCountries = selectedCountry ? [selectedCountry] : countries;
   const performance = data?.performance;
   const summary = performance?.[view];
   return (
@@ -173,98 +191,142 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
             }}
           />
         </label>
+        {countries.length > 0 && (
+          <label>
+            País
+            <select
+              value={selectedCountry}
+              disabled={busy}
+              onChange={(event) => setCountry(event.target.value)}
+            >
+              <option value="">Todos los países</option>
+              {countries.map((code) => (
+                <option key={code} value={code}>
+                  {countryLabel(code)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {error && <p role="alert">{error}</p>}
       {!valid && !error && <p role="status">Cargando diplomados…</p>}
       {valid && !data?.items.length && (
         <p>No hay diplomados con datos en este periodo.</p>
       )}
-      {valid && data?.items.length ? (
-        <ul>
-          {data.items.map((item) => (
-            <li key={item.key}>
-              <button
-                type="button"
-                className="advisor-period-item"
-                aria-expanded={focus === item.key}
-                onClick={() => {
-                  setFocus(focus === item.key ? "" : item.key);
-                  setBody("");
-                  requestId.current = "";
-                  setStatus("");
-                  setDay(until);
-                }}
+      {visibleCountries.length > 0 && (
+        <>
+          <div
+            className="advisor-period-legend"
+            aria-label="Estados de los diplomados"
+          >
+            {Object.entries(captions).map(([signal, caption]) => (
+              <span
+                key={signal}
+                className="advisor-period-badge"
+                data-signal={signal}
               >
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {item.table} · {item.country}
-                  </small>
-                </span>
-                <span
-                  className="advisor-period-badge"
-                  data-signal={item.signal}
-                >
-                  {captions[item.signal]}
-                </span>
-              </button>
-              {focus === item.key && (
-                <div className="advisor-period-notes">
-                  {!advisorId && (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void submit();
+                {caption}
+              </span>
+            ))}
+          </div>
+          {visibleCountries.map((code) => (
+            <section
+              className="advisor-country-group"
+              key={code}
+              aria-label={countryLabel(code)}
+            >
+              <h3>{countryLabel(code)}</h3>
+              <ul>
+                {groups.get(code)?.map((item) => (
+                  <li key={item.key} data-signal={item.signal}>
+                    <button
+                      type="button"
+                      className="advisor-period-item"
+                      aria-expanded={focus === item.key}
+                      onClick={() => {
+                        setFocus(focus === item.key ? "" : item.key);
+                        setBody("");
+                        requestId.current = "";
+                        setStatus("");
+                        setDay(until);
                       }}
                     >
-                      <label>
-                        Día de la observación
-                        <input
-                          type="date"
-                          value={day}
-                          min={since}
-                          max={until}
-                          disabled={busy}
-                          onChange={(event) => {
-                            setDay(event.target.value);
-                            requestId.current = "";
-                          }}
-                          required
-                        />
-                      </label>
-                      <label>
-                        Observación
-                        <textarea
-                          value={body}
-                          maxLength={2000}
-                          disabled={busy}
-                          onChange={(event) => {
-                            setBody(event.target.value);
-                            requestId.current = "";
-                          }}
-                          required
-                        />
-                      </label>
-                      <button type="submit" disabled={busy || !body.trim()}>
-                        Guardar observación
-                      </button>
-                      {status && <p role="status">{status}</p>}
-                    </form>
-                  )}
-                  {item.notes.map((note) => (
-                    <p key={note.id}>
-                      <time dateTime={note.day}>{note.day}</time> · {note.body}
-                    </p>
-                  ))}
-                  {advisorId && !item.notes.length && (
-                    <p>Sin observaciones en el periodo.</p>
-                  )}
-                </div>
-              )}
-            </li>
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>{item.table}</small>
+                      </span>
+                      <span
+                        className="advisor-period-badge"
+                        data-signal={item.signal}
+                      >
+                        {captions[item.signal]}
+                      </span>
+                    </button>
+                    {focus === item.key && (
+                      <div className="advisor-period-notes">
+                        {!advisorId && (
+                          <form
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void submit();
+                            }}
+                          >
+                            <label>
+                              Día de la observación
+                              <input
+                                type="date"
+                                value={day}
+                                min={since}
+                                max={until}
+                                disabled={busy}
+                                onChange={(event) => {
+                                  setDay(event.target.value);
+                                  requestId.current = "";
+                                }}
+                                required
+                              />
+                            </label>
+                            <label>
+                              Observación
+                              <textarea
+                                value={body}
+                                maxLength={2000}
+                                disabled={busy}
+                                onChange={(event) => {
+                                  setBody(event.target.value);
+                                  requestId.current = "";
+                                }}
+                                required
+                              />
+                            </label>
+                            <button
+                              type="submit"
+                              disabled={busy || !body.trim()}
+                            >
+                              Guardar observación
+                            </button>
+                            {status && <p role="status">{status}</p>}
+                          </form>
+                        )}
+                        {item.notes.map((note) => (
+                          <p key={note.id}>
+                            <time dateTime={note.day}>{note.day}</time> ·{" "}
+                            {note.body}
+                          </p>
+                        ))}
+                        {advisorId && !item.notes.length && (
+                          <p>Sin observaciones en el periodo.</p>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
-      ) : null}
+        </>
+      )}
     </section>
   );
 }

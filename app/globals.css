@@ -3156,35 +3156,66 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .pending-sales-overdue { display:block; color:#c05d33; white-space:nowrap; }
 
 .advisor-period-signals { max-width:860px; }
-.advisor-period-controls { margin:12px 0; }
+.advisor-period-controls { margin:12px 0; flex-wrap:wrap; align-items:end; }
 .advisor-period-controls label,.advisor-period-notes label { display:grid; gap:4px; }
-.advisor-period-signals ul { list-style:none; padding:0; }
-.advisor-period-signals li { border-bottom:1px solid var(--line); }
-.advisor-period-item { width:100%; display:flex; align-items:center; justify-content:space-between; gap:9px; text-align:left; }
+.advisor-period-legend { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+.advisor-country-group { margin:14px 0; }
+.advisor-country-group h3 { font-size:14px; margin:0 0 6px; }
+.advisor-country-group ul { list-style:none; padding:0; margin:0; display:grid; gap:5px; }
+.advisor-country-group li {
+  border:1px solid var(--line);
+  border-inline-start:4px solid var(--advisor-signal);
+  border-radius:8px;
+  background:var(--surface);
+}
+.advisor-period-signals [data-signal="active"] { --advisor-signal:#4a9d68; }
+.advisor-period-signals [data-signal="critical"] { --advisor-signal:#db525b; }
+.advisor-period-signals [data-signal="insufficient"] { --advisor-signal:#90939e; }
+.advisor-period-item {
+  width:100%; display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:6px 14px; text-align:left; border:0; background:transparent;
+}
 .advisor-period-item small { display:block; color:var(--muted); }
-.advisor-period-badge { padding:4px 8px; border-radius:12px; font-size:11px; background:var(--soft); }
-.advisor-period-badge[data-signal="active"] { background:#39845626; }
-.advisor-period-badge[data-signal="critical"] { background:#c84d4d30; }
+.advisor-period-badge {
+  display:inline-flex; align-items:center; gap:6px; padding:4px 8px;
+  border-radius:12px; font-size:11px;
+  background:color-mix(in srgb, var(--advisor-signal) 18%, var(--surface));
+  color:var(--ink);
+}
+.advisor-period-badge::before {
+  content:""; width:7px; height:7px; border-radius:50%; background:var(--advisor-signal);
+}
 .advisor-period-notes { margin:8px 0; padding:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .advisor-period-notes form { display:grid; gap:8px; }
 
-.performance-workspace-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+nav.performance-workspace-nav {
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:4px 0 10px;
+  margin:0 0 10px;
+  border-bottom:1px solid var(--line);
 }
-.performance-workspace-nav a {
-  color: inherit;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 7px 12px;
-  text-decoration: none;
+.performance-workspace-nav :is(a,button) {
+  display:inline-flex;
+  align-items:center;
+  color:var(--ink);
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:7px 11px;
+  font-size:13px;
+  font-weight:550;
+  text-decoration:none;
 }
-.performance-workspace-nav a[aria-current="page"] {
-  background: var(--surface);
-  border-color: currentColor;
-  font-weight: 650;
+.performance-workspace-nav :is(a,button):hover {
+  border-color:var(--accent);
+}
+.performance-workspace-nav :is([aria-current="page"],[aria-pressed="true"]) {
+  background:var(--soft);
+  border-color:var(--accent);
+  font-weight:700;
 }
 .performance-configuration {
   max-width: 720px;
