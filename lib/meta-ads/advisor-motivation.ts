@@ -20,3 +20,15 @@ export function advisorPerformanceTrend(
     ? { kind: "steady", delta: 0 }
     : { kind: delta > 0 ? "improved" : "declined", delta };
 }
+
+export function advisorGoalStatus(
+  value: number | null,
+  target: number | null,
+  partial: boolean,
+  closeBy: number,
+): "met" | "close" | "progress" | "pending" | "unset" {
+  if (target === null) return "unset";
+  if (value === null || partial) return "pending";
+  if (value >= target) return "met";
+  return target - value <= closeBy + 1e-9 ? "close" : "progress";
+}

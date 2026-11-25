@@ -360,6 +360,7 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       basis: "Meta",
       base: currentDay.metaBase,
       partial: currentDay.metaPartial,
+      salesPartial: currentDay.partial,
       percent: performanceRatio(currentDay.sales, currentDay.metaBase, 100),
       previousDay: previous.day,
       previousPercent: performanceRatio(previous.sales, previous.metaBase, 100),

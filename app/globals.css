@@ -3244,3 +3244,29 @@ nav.performance-workspace-nav {
 .performance-configuration > button {
   justify-self: start;
 }
+
+.advisor-goals {
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:14px;
+  margin:14px 0;
+  background:var(--paper);
+}
+.advisor-goals h4 { margin:0 0 10px; font-size:15px; }
+.advisor-goals-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));
+  gap:9px;
+}
+.advisor-goal {
+  display:flex; align-items:center; gap:8px; min-width:0;
+  padding:9px; border-radius:10px; background:var(--surface);
+  border:1px solid var(--line); border-inline-start:4px solid var(--goal-color,#828793);
+}
+.advisor-goal[data-state="met"] { --goal-color:#3a9e75; }
+.advisor-goal[data-state="close"] { --goal-color:#bd7e2b; }
+.advisor-goal[data-state="progress"] { --goal-color:#8170c8; }
+.advisor-goal-art { flex:none; width:58px; color:var(--goal-color,#828793); }
+.advisor-goal span { display:block; color:var(--muted); font-size:12px; }
+.advisor-goal strong { display:block; font-size:23px; font-variant-numeric:tabular-nums; }
+.advisor-goal p { margin:2px 0 0; font-size:12px; }

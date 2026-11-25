@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { advisorPeriodSignals } from "../../lib/meta-ads/advisor-period-signals";
+import { PerformanceMotivation } from "./performance-motivation";
 import { limaToday, shiftDay } from "./date-range";
 
 type Data = Awaited<ReturnType<typeof advisorPeriodSignals>>;
@@ -137,23 +138,14 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
                     }) + " %"}
               </strong>
             </div>
-            <div>
-              <span>Meta de efectividad</span>
-              <strong>
-                {performance.goal === null
-                  ? "Sin definir"
-                  : performance.goal.toLocaleString("es-PE") + " %"}
-              </strong>
-            </div>
-            {summary.dailySalesGoal && (
-              <div>
-                <span>Meta diaria de ventas</span>
-                <strong>
-                  {summary.dailySalesGoal === "met" ? "Alcanzada" : "En curso"}
-                </strong>
-              </div>
-            )}
           </div>
+          <PerformanceMotivation
+            percent={summary.percent}
+            effectivenessTarget={performance.goal}
+            partial={summary.partial}
+            salesTarget={performance.salesTarget}
+            salesStatus={summary.dailySalesGoal}
+          />
           {summary.partial && summary.percent !== null && (
             <p className="hint">Datos parciales para esta fecha.</p>
           )}

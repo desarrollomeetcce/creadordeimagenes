@@ -5,6 +5,7 @@ import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodSignals } from "./advisor-period-signals";
 import { PerformanceConfiguration } from "./performance-configuration";
 import { PerformanceTeam } from "./performance-team";
+import { advisorGoalStatus } from "../../lib/meta-ads/advisor-motivation";
 import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { MetaDateRange } from "./meta-date-range";
@@ -147,17 +148,6 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
     };
   }, [query, reload, owner, advisorId, panel]);
   const card = view === "today" ? current?.metaToday : current?.metaYesterday;
-  const goal = card?.goal;
-  const achieved =
-    card?.percent !== null && card?.percent !== undefined && goal
-      ? card.percent >= goal.percent
-      : null;
-  const progress =
-    card?.percent !== null && card?.percent !== undefined && goal
-      ? goal.percent === 0
-        ? 100
-        : Math.min(100, (card.percent / goal.percent) * 100)
-      : null;
   const positive =
     current?.products.filter((s) =>
       Object.values(s.days).some(
@@ -286,19 +276,22 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                       {card.partial ? " *" : ""}
                     </strong>
                   </div>
-                  <div>
-                    <span>Meta de efectividad</span>
-                    <strong>{goal ? pct(goal.percent) : "Sin definir"}</strong>
-                  </div>
                 </div>
                 <PerformanceMotivation
                   percent={card.percent}
+                  effectivenessTarget={card.goal?.percent ?? null}
                   partial={card.partial}
-                  basis={card.basis}
-                  previousDay={card.previousDay}
-                  previousPercent={card.previousPercent}
-                  previousPartial={card.previousPartial}
-                  goal={card.goal}
+                  salesTarget={card.salesTarget}
+                  salesStatus={advisorGoalStatus(
+                    card.sales,
+                    card.salesTarget,
+                    card.salesPartial,
+                    1,
+                  )}
+                  previous={{
+                    percent: card.previousPercent,
+                    partial: card.previousPartial,
+                  }}
                 />
                 {card.base === null ? (
                   <p className="performance-pending">
@@ -317,39 +310,6 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                       : "Pendiente de registrar ventas."}
                   </p>
                 ) : null}
-                {(goal || card.salesTarget !== null) && (
-                  <div className="performance-goal-progress">
-                    <p>
-                      {goal
-                        ? "Meta diaria de efectividad"
-                        : "Meta diaria de ventas"}
-                    </p>
-                    {progress !== null && (
-                      <>
-                        <progress
-                          aria-label="Avance hacia la meta de efectividad"
-                          max={100}
-                          value={progress}
-                        />
-                        <strong>
-                          {card.partial
-                            ? "Resultado parcial: completa los registros para evaluar la meta."
-                            : achieved
-                              ? "¡Meta de efectividad alcanzada!"
-                              : `Te faltan ${fmt(Math.max(0, (goal?.percent ?? 0) - (card.percent ?? 0)))} puntos porcentuales para tu meta.`}
-                        </strong>
-                      </>
-                    )}
-                    {card.salesTarget !== null && (
-                      <p>
-                        Meta diaria de ventas: {card.salesTarget} ·{" "}
-                        {card.sales === null
-                          ? "Pendiente"
-                          : `${fmt(card.sales)} registradas · faltan ${fmt(Math.max(0, card.salesTarget! - card.sales))}`}
-                      </p>
-                    )}
-                  </div>
-                )}
                 <div className="performance-attendance">
                   <span>
                     Asistencia:{" "}

@@ -5,6 +5,7 @@ import { personalAdvisorSheet } from "./advisors";
 import { localDay, shiftDay } from "./analytics";
 import { isPerformanceManager } from "./performance-access";
 import { performanceMetaGoal } from "./advisor-performance";
+import { advisorGoalStatus } from "./advisor-motivation";
 import { performanceRatio } from "./performance-metrics";
 import type { Actor } from "./service";
 
@@ -82,14 +83,12 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
     return {
       percent: performanceRatio(sales, base?.value ?? null, 100),
       partial,
-      dailySalesGoal:
-        target?.salesTarget != null &&
-        sales !== null &&
-        (sales >= target.salesTarget || !row?.partial)
-          ? sales >= target.salesTarget
-            ? ("met" as const)
-            : ("pending" as const)
-          : null,
+      dailySalesGoal: advisorGoalStatus(
+        sales,
+        target?.salesTarget ?? null,
+        !!row?.partial,
+        1,
+      ),
     };
   };
   demand(
@@ -104,6 +103,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
       ? null
       : {
           goal: goal?.percent ?? null,
+          salesTarget: target?.salesTarget ?? null,
           today: summary(today),
           yesterday: summary(yesterday),
         },
