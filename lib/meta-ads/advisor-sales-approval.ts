@@ -12,7 +12,7 @@ import {
   type SalesAllocation,
 } from "./advisor-sales-plan";
 import type { Actor } from "./service";
-async function review(
+export async function reviewAdvisorSalesCell(
   tx: Prisma.TransactionClient,
   actor: Actor,
   aliasId: string,
@@ -121,7 +121,7 @@ export async function advisorSalesReview(
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      return review(tx, actor, b.aliasId, b.country, b.day);
+      return reviewAdvisorSalesCell(tx, actor, b.aliasId, b.country, b.day);
     },
     { timeout: 60000 },
   );
@@ -149,164 +149,191 @@ export async function approveAdvisorSales(
   return db.$transaction(
     async (tx) => {
       await effectivenessLock(tx, actor);
-      const old = await review(tx, actor, b.aliasId, b.country, b.day);
-      demand(
-        old.token === b.token && old.revision === b.revision,
-        "Las ventas o el reparto cambiaron. Actualiza el reparto antes de aprobar.",
-        409,
-      );
-      const alias = await tx.metaAlias.findUniqueOrThrow({
-        where: { id: b.aliasId },
-      });
-      await assertUnlinkedColumns(tx, alias.tableId, ["sales"], [b.day]);
-      const stored = old.rowId
-        ? { id: old.rowId }
-        : await tx.metaEffectivenessRow.upsert({
-            where: {
-              aliasId_country_currency: {
-                aliasId: b.aliasId,
-                country: b.country,
-                currency: "",
-              },
-            },
-            create: {
-              aliasId: b.aliasId,
-              country: b.country,
-              currency: "",
-              displayCurrency: old.currency,
-            },
-            update: {},
-          });
-      const rowId = stored.id;
-      if (!allocations) {
-        const previous = await tx.metaEffectivenessDay.findUnique({
-          where: { rowId_day: { rowId, day: b.day } },
-        });
-        const annotations = {
-          ...((previous?.annotations as Record<string, Prisma.JsonValue>) ??
-            {}),
-        };
-        delete annotations.sales;
-        if (b.value === "NA") annotations.sales = { value: "NA" };
-        await tx.metaEffectivenessDay.upsert({
-          where: { rowId_day: { rowId, day: b.day } },
-          create: {
-            rowId,
-            day: b.day,
-            sales: null,
-            salesOverridden: true,
-            annotations: annotations as Prisma.InputJsonValue,
-          },
-          update: {
-            sales: null,
-            salesOverridden: true,
-            annotations: annotations as Prisma.InputJsonValue,
-            revision: { increment: 1 },
-          },
-        });
-        await tx.metaAdvisorSalesApproval.deleteMany({
-          where: { rowId, day: b.day },
-        });
-        await recordActivity(tx, {
-          data: {
-            actorId: actor.id,
-            action: "META_VENTAS_POR_ASESOR_VACIADAS",
-            resourceId: rowId,
-            detail: {
-              aliasId: b.aliasId,
-              country: b.country,
-              day: b.day,
-              value: b.value ?? null,
-            },
-          },
-        });
-        return { ok: true, total: null };
-      }
-      demand(
-        allocations.every(
-          (a) =>
-            a.advisorId === null ||
-            old.advisors.some((p) => p.id === a.advisorId),
-        ),
-        "Asesor no disponible.",
-        404,
-      );
-      const total = allocations.reduce((s, a) => s + a.sales, 0);
-      demand(
-        Number.isSafeInteger(total) && total <= 2147483647,
-        "El total de ventas supera el límite permitido.",
-      );
-      const previous = await tx.metaEffectivenessDay.findUnique({
-        where: { rowId_day: { rowId: rowId, day: b.day } },
-      });
-      const annotations = {
-        ...((previous?.annotations as Record<string, Prisma.JsonValue>) ?? {}),
-      };
-      delete annotations.sales;
-      await tx.metaEffectivenessDay.upsert({
-        where: { rowId_day: { rowId: rowId, day: b.day } },
-        create: {
-          rowId: rowId,
-          day: b.day,
-          sales: total,
-          salesOverridden: true,
-          annotations: annotations as Prisma.InputJsonValue,
-        },
-        update: {
-          sales: total,
-          salesOverridden: true,
-          annotations: annotations as Prisma.InputJsonValue,
-          revision: { increment: 1 },
-        },
-      });
-      const basis = {
-        events: old.events,
-        activeAdvisorId: old.activeAdvisorId,
-      };
-      const result = await tx.metaAdvisorSalesApproval.upsert({
-        where: { rowId_day: { rowId: rowId, day: b.day } },
-        create: {
-          rowId: rowId,
-          day: b.day,
-          salesTotal: total,
-          allocations,
-          basis,
-          actorId: actor.id,
-        },
-        update: {
-          salesTotal: total,
-          allocations,
-          basis,
-          actorId: actor.id,
-          revision: { increment: 1 },
-          approvedAt: new Date(),
-        },
-      });
-      await recordActivity(tx, {
-        data: {
-          actorId: actor.id,
-          action: "META_REPARTO_VENTAS_APROBADO",
-          resourceId: rowId,
-          detail: {
-            aliasId: b.aliasId,
-            country: b.country,
-            day: b.day,
-            previousTotal: old.total,
-            total,
-            allocations,
-            revision: result.revision,
-          },
-        },
-      });
-      const fresh = await review(tx, actor, b.aliasId, b.country, b.day);
-      return {
-        ok: true,
-        total,
-        revision: result.revision,
-        token: fresh.token,
-        status: fresh.status,
-      };
+      return applyAdvisorSalesApproval(tx, actor, b, allocations);
     },
     { timeout: 60000 },
   );
+}
+
+export async function applyAdvisorSalesApproval(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  b: {
+    aliasId: string;
+    country: string;
+    day: string;
+    token: string;
+    revision: number;
+    value?: "NA" | null;
+  },
+  allocations: SalesAllocation[] | null,
+) {
+  const old = await reviewAdvisorSalesCell(
+    tx,
+    actor,
+    b.aliasId,
+    b.country,
+    b.day,
+  );
+  demand(
+    old.token === b.token && old.revision === b.revision,
+    "Las ventas o el reparto cambiaron. Actualiza el reparto antes de aprobar.",
+    409,
+  );
+  const alias = await tx.metaAlias.findUniqueOrThrow({
+    where: { id: b.aliasId },
+  });
+  await assertUnlinkedColumns(tx, alias.tableId, ["sales"], [b.day]);
+  const stored = old.rowId
+    ? { id: old.rowId }
+    : await tx.metaEffectivenessRow.upsert({
+        where: {
+          aliasId_country_currency: {
+            aliasId: b.aliasId,
+            country: b.country,
+            currency: "",
+          },
+        },
+        create: {
+          aliasId: b.aliasId,
+          country: b.country,
+          currency: "",
+          displayCurrency: old.currency,
+        },
+        update: {},
+      });
+  const rowId = stored.id;
+  if (!allocations) {
+    const previous = await tx.metaEffectivenessDay.findUnique({
+      where: { rowId_day: { rowId, day: b.day } },
+    });
+    const annotations = {
+      ...((previous?.annotations as Record<string, Prisma.JsonValue>) ?? {}),
+    };
+    delete annotations.sales;
+    if (b.value === "NA") annotations.sales = { value: "NA" };
+    await tx.metaEffectivenessDay.upsert({
+      where: { rowId_day: { rowId, day: b.day } },
+      create: {
+        rowId,
+        day: b.day,
+        sales: null,
+        salesOverridden: true,
+        annotations: annotations as Prisma.InputJsonValue,
+      },
+      update: {
+        sales: null,
+        salesOverridden: true,
+        annotations: annotations as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+      },
+    });
+    await tx.metaAdvisorSalesApproval.deleteMany({
+      where: { rowId, day: b.day },
+    });
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "META_VENTAS_POR_ASESOR_VACIADAS",
+        resourceId: rowId,
+        detail: {
+          aliasId: b.aliasId,
+          country: b.country,
+          day: b.day,
+          value: b.value ?? null,
+        },
+      },
+    });
+    return { ok: true, total: null };
+  }
+  salesAllocationsSchema.parse(allocations);
+  demand(
+    allocations.every(
+      (a) =>
+        a.advisorId === null || old.advisors.some((p) => p.id === a.advisorId),
+    ),
+    "Asesor no disponible.",
+    404,
+  );
+  const total = allocations.reduce((s, a) => s + a.sales, 0);
+  demand(
+    Number.isSafeInteger(total) && total <= 2147483647,
+    "El total de ventas supera el límite permitido.",
+  );
+  const previous = await tx.metaEffectivenessDay.findUnique({
+    where: { rowId_day: { rowId: rowId, day: b.day } },
+  });
+  const annotations = {
+    ...((previous?.annotations as Record<string, Prisma.JsonValue>) ?? {}),
+  };
+  delete annotations.sales;
+  await tx.metaEffectivenessDay.upsert({
+    where: { rowId_day: { rowId: rowId, day: b.day } },
+    create: {
+      rowId: rowId,
+      day: b.day,
+      sales: total,
+      salesOverridden: true,
+      annotations: annotations as Prisma.InputJsonValue,
+    },
+    update: {
+      sales: total,
+      salesOverridden: true,
+      annotations: annotations as Prisma.InputJsonValue,
+      revision: { increment: 1 },
+    },
+  });
+  const basis = {
+    events: old.events,
+    activeAdvisorId: old.activeAdvisorId,
+  };
+  const result = await tx.metaAdvisorSalesApproval.upsert({
+    where: { rowId_day: { rowId: rowId, day: b.day } },
+    create: {
+      rowId: rowId,
+      day: b.day,
+      salesTotal: total,
+      allocations,
+      basis,
+      actorId: actor.id,
+    },
+    update: {
+      salesTotal: total,
+      allocations,
+      basis,
+      actorId: actor.id,
+      revision: { increment: 1 },
+      approvedAt: new Date(),
+    },
+  });
+  await recordActivity(tx, {
+    data: {
+      actorId: actor.id,
+      action: "META_REPARTO_VENTAS_APROBADO",
+      resourceId: rowId,
+      detail: {
+        aliasId: b.aliasId,
+        country: b.country,
+        day: b.day,
+        previousTotal: old.total,
+        total,
+        allocations,
+        revision: result.revision,
+      },
+    },
+  });
+  const fresh = await reviewAdvisorSalesCell(
+    tx,
+    actor,
+    b.aliasId,
+    b.country,
+    b.day,
+  );
+  return {
+    ok: true,
+    total,
+    revision: result.revision,
+    token: fresh.token,
+    status: fresh.status,
+  };
 }

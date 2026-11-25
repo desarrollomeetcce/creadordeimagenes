@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
+import { AdvisorPeriodSignals } from "./advisor-period-signals";
 import { PerformanceTeam } from "./performance-team";
 import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
@@ -22,6 +23,10 @@ const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
 export function AdvisorPerformance({ owner }: { owner: boolean }) {
+  return owner ? <ManagedAdvisorPerformance owner /> : <AdvisorPeriodSignals />;
+}
+
+function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
   const today = limaToday();
   const [panel, setPanel] = useState<"team" | "advisor">(
     owner ? "team" : "advisor",
@@ -125,6 +130,10 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
           Actualizar
         </button>
       </header>
+      {advisorId && panel === "advisor" && <details>
+        <summary>Comentarios por diplomado</summary>
+        <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
+      </details>}
       {owner && (
         <div
           role="tablist"

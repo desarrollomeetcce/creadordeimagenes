@@ -95,6 +95,12 @@ export async function metaRoutes(
 ) {
   const path = parts.slice(1).join("/"),
     method = req.method;
+  if (path === "pending-sales") {
+    const service = await import("./pending-sales");
+    if (method === "GET") return send(await service.pendingSales(actor, req.nextUrl.searchParams));
+    if (method === "POST") return send(await service.createPendingSale(actor, await body()), 201);
+    if (method === "PATCH") return send(await service.confirmPendingSale(actor, await body()));
+  }
   if (path.startsWith("history-import/")) {
     const history = await import("./financial-history-import");
     if (path === "history-import/prepared" && method === "POST")
@@ -245,12 +251,15 @@ export async function metaRoutes(
         await import("./advisor-contact-base")
       ).saveAdvisorContactBase(actor, await body()),
     );
-  if (path === "my-performance" && method === "GET")
-    return send(
-      await (
-        await import("./advisor-performance")
-      ).advisorPerformance(actor, Object.fromEntries(req.nextUrl.searchParams)),
-    );
+  if (path === "my-performance/period-signals") {
+    const signals = await import("./advisor-period-signals");
+    if (method === "GET") return send(await signals.advisorPeriodSignals(actor, Object.fromEntries(req.nextUrl.searchParams)));
+    if (method === "POST") return send(await signals.addAdvisorPeriodNote(actor, await body()), 201);
+  }
+  if (path === "my-performance" && method === "GET") {
+    await (await import("./performance-access")).performanceManager(actor);
+    return send(await (await import("./advisor-performance")).advisorPerformance(actor, Object.fromEntries(req.nextUrl.searchParams)));
+  }
   if (path === "my-performance/settings" && method === "GET")
     return send(
       await (await import("./advisor-performance")).performanceSettings(actor),

@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+const PendingSales = dynamic(() => import("./pending-sales").then((m) => m.PendingSales));
 const FinancialHistoryImport = dynamic(() =>
   import("./financial-history-import").then((m) => m.FinancialHistoryImport),
 );
@@ -75,6 +76,7 @@ export function ProductsCatalog({
     global: "VIEW" | "EDIT" | null;
     grants: { scope: string; permission: "VIEW" | "EDIT" }[];
   } | null>(null);
+  const [pendingSalesOpen, setPendingSalesOpen] = useState(false);
   const [sharingScope, setSharingScope] = useState<string | null>(null);
   const root = useRef<HTMLElement>(null);
   const accessVersion = useRef("");
@@ -700,6 +702,10 @@ export function ProductsCatalog({
         role="tablist"
         aria-label="Pestañas del libro"
       >
+        {module === "sales" && (access?.isOwner || access?.global === "EDIT" ||
+          access?.grants.some((grant) => grant.scope.startsWith("TABLE:") && grant.permission === "EDIT")) && (
+          <button type="button" aria-haspopup="dialog" onClick={() => setPendingSalesOpen(true)}>Pendientes</button>
+        )}
         {([moduleKind] as const).map((kind) => (
           <span className="sheet-tab-group" key={kind}>
             {specials
@@ -908,6 +914,7 @@ export function ProductsCatalog({
       </button>
     </div>
   ) : null;
+  const pendingDialog = pendingSalesOpen ? <PendingSales onClose={() => setPendingSalesOpen(false)} /> : null;
   if (!access)
     return (
       <section
@@ -923,6 +930,7 @@ export function ProductsCatalog({
         className={`products-catalog effectiveness-workbook financial-module financial-module-${module}`}
       >
         {access.grants.length ? sheetTabs : null}
+        {pendingDialog}
         <p role="status" className="notice">
           {access.grants.length
             ? "Selecciona un documento compartido para continuar."
@@ -952,6 +960,7 @@ export function ProductsCatalog({
         </p>
       )}
       {sheetTabs}
+      {pendingDialog}
       {module === "sales" &&
         locationReady &&
         !totals &&

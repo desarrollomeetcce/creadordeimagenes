@@ -1721,3 +1721,32 @@ model FixedCostOption {
  createdAt DateTime @default(now())
  @@unique([kind,key])
 }
+
+model MetaPendingSale {
+  id String @id
+  aliasId String
+  tableId String
+  country String
+  advisorId String
+  customer String
+  day String
+  createdBy String
+  createdAt DateTime @default(now())
+  approvedBy String?
+  approvedAt DateTime?
+
+  @@index([tableId,day,approvedAt])
+}
+
+model MetaAdvisorPeriodNote {
+  id String @id
+  advisorId String
+  aliasId String
+  tableId String
+  country String
+  day String
+  body String
+  createdAt DateTime @default(now())
+
+  @@index([advisorId,day,createdAt])
+}

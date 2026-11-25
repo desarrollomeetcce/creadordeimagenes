@@ -1,0 +1,211 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { advisorPeriodSignals } from "../../lib/meta-ads/advisor-period-signals";
+import { limaToday, shiftDay } from "./date-range";
+
+type Data = Awaited<ReturnType<typeof advisorPeriodSignals>>;
+const captions = {
+  active: "Con ventas confirmadas",
+  critical: "Requiere atención",
+  insufficient: "Aún hay pocos datos",
+};
+export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
+  const today = limaToday();
+  const [since, setSince] = useState(shiftDay(today, -6));
+  const [until, setUntil] = useState(today);
+  const [day, setDay] = useState(today);
+  const [data, setData] = useState<Data | null>(null);
+  const [focus, setFocus] = useState("");
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const requestId = useRef("");
+  const endpoint = "/api/meta-ads/my-performance/period-signals";
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      since,
+      until,
+      ...(advisorId ? { advisorId } : {}),
+    });
+    void fetch(endpoint + "?" + query, { signal: controller.signal })
+      .then(async (result) => {
+        const value = await result.json();
+        if (!result.ok) throw Error(value.error);
+        if (!controller.signal.aborted) setData(value);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(cause.message);
+      });
+    return () => controller.abort();
+  }, [advisorId, since, until, refresh]);
+  const selected = data?.items.find((item) => item.key === focus);
+  async function submit() {
+    if (!selected || busy) return;
+    requestId.current ||= crypto.randomUUID();
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: requestId.current,
+          since,
+          until,
+          day,
+          aliasId: selected.aliasId,
+          tableId: selected.tableId,
+          country: selected.country,
+          body,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error);
+      requestId.current = "";
+      setBody("");
+      setStatus("Observación guardada.");
+      setRefresh((value) => value + 1);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const valid = data?.since === since && data.until === until;
+  return (
+    <section
+      className="advisor-period-signals"
+      aria-label="Diplomados por periodo"
+    >
+      {!advisorId && <h1>Mi desempeño</h1>}
+      <div className="row advisor-period-controls">
+        <label>
+          Desde
+          <input
+            type="date"
+            value={since}
+            max={until}
+            onChange={(e) => {
+              if (e.target.value) {
+                setSince(e.target.value);
+                setError("");
+              }
+            }}
+          />
+        </label>
+        <label>
+          Hasta
+          <input
+            type="date"
+            value={until}
+            min={since}
+            max={today}
+            onChange={(e) => {
+              if (e.target.value) {
+                setUntil(e.target.value);
+                setDay(e.target.value);
+                setError("");
+              }
+            }}
+          />
+        </label>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {!valid && !error && <p role="status">Cargando diplomados…</p>}
+      {valid && !data?.items.length && (
+        <p>No hay diplomados con datos en este periodo.</p>
+      )}
+      {valid && data?.items.length ? (
+        <ul>
+          {data.items.map((item) => (
+            <li key={item.key}>
+              <button
+                type="button"
+                className="advisor-period-item"
+                aria-expanded={focus === item.key}
+                onClick={() => {
+                  setFocus(focus === item.key ? "" : item.key);
+                  setBody("");
+                  requestId.current = "";
+                  setStatus("");
+                  setDay(until);
+                }}
+              >
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>
+                    {item.table} · {item.country}
+                  </small>
+                </span>
+                <span
+                  className="advisor-period-badge"
+                  data-signal={item.signal}
+                >
+                  {captions[item.signal]}
+                </span>
+              </button>
+              {focus === item.key && (
+                <div className="advisor-period-notes">
+                  {!advisorId && (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void submit();
+                      }}
+                    >
+                      <label>
+                        Día de la observación
+                        <input
+                          type="date"
+                          value={day}
+                          min={since}
+                          max={until}
+                          disabled={busy}
+                          onChange={(event) => {
+                            setDay(event.target.value);
+                            requestId.current = "";
+                          }}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Observación
+                        <textarea
+                          value={body}
+                          maxLength={2000}
+                          disabled={busy}
+                          onChange={(event) => {
+                            setBody(event.target.value);
+                            requestId.current = "";
+                          }}
+                          required
+                        />
+                      </label>
+                      <button type="submit" disabled={busy || !body.trim()}>
+                        Guardar observación
+                      </button>
+                      {status && <p role="status">{status}</p>}
+                    </form>
+                  )}
+                  {item.notes.map((note) => (
+                    <p key={note.id}>
+                      <time dateTime={note.day}>{note.day}</time> · {note.body}
+                    </p>
+                  ))}
+                  {advisorId && !item.notes.length && (
+                    <p>Sin observaciones en el periodo.</p>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
