@@ -124,10 +124,10 @@ export function PerformanceConfiguration({ reload }: { reload: number }) {
                     </th>
                     <td>
                       <input
-                        type="number"
-                        min="1"
-                        max="100000000"
-                        step="1"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="0*(?:[1-9][0-9]{0,7}|100000000)"
+                        title="Escribe un número entero del 1 al 100000000."
                         aria-label={`Meta diaria de ${person.name} · ${person.sheet}`}
                         placeholder="Sin meta"
                         disabled={busy}
