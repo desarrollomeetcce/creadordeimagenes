@@ -58,7 +58,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   const yesterday = shiftDay(today, -1);
   const historical = since > yesterday || until < today;
   const [current, notes, daily, goal, target] = await Promise.all([
-    personalAdvisorSheet(actor, advisorId, since, until),
+    personalAdvisorSheet(actor, advisorId, since, until, true),
     db.metaAdvisorPeriodNote.findMany({
       where: { advisorId, day: { gte: since, lte: until } },
       orderBy: [{ day: "desc" }, { createdAt: "desc" }],
@@ -117,6 +117,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
           table: tableName,
           name: alias,
           signal: periodSignal(Object.values(days)),
+          cacStatus: current.inventoryStatus[same(product)] ?? "PENDING",
           notes: notes
             .filter((note) => same(note) === same(product))
             .map(({ id, day, body }) => ({ id, day, body })),

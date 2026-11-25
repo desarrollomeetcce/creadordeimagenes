@@ -3168,9 +3168,6 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
   border-radius:8px;
   background:var(--surface);
 }
-.advisor-period-signals [data-signal="active"] { --advisor-signal:#4a9d68; }
-.advisor-period-signals [data-signal="critical"] { --advisor-signal:#db525b; }
-.advisor-period-signals [data-signal="insufficient"] { --advisor-signal:#90939e; }
 .advisor-period-item {
   width:100%; display:flex; align-items:center; justify-content:space-between;
   flex-wrap:wrap; gap:6px 14px; text-align:left; border:0; background:transparent;
@@ -3270,3 +3267,7 @@ nav.performance-workspace-nav {
 .advisor-goal span { display:block; color:var(--muted); font-size:12px; }
 .advisor-goal strong { display:block; font-size:23px; font-variant-numeric:tabular-nums; }
 .advisor-goal p { margin:2px 0 0; font-size:12px; }
+
+.advisor-period-signals [data-cac-status] {
+  --advisor-signal:var(--inventory-cac-color, #87949c);
+}

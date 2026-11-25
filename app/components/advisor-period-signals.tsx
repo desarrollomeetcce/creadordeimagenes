@@ -2,15 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { advisorPeriodSignals } from "../../lib/meta-ads/advisor-period-signals";
+import { cacStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
+import { MetaDateRange } from "./meta-date-range";
 import { PerformanceMotivation } from "./performance-motivation";
 import { limaToday, shiftDay } from "./date-range";
 
 type Data = Awaited<ReturnType<typeof advisorPeriodSignals>>;
-const captions = {
-  active: "Con ventas confirmadas",
-  critical: "Crítico",
-  insufficient: "Aún hay pocos datos",
-};
 const regionNames = new Intl.DisplayNames(["es"], { type: "region" });
 const countryLabel = (country: string) =>
   /^[A-Z]{2}$/.test(country) ? (regionNames.of(country) ?? country) : country;
@@ -165,36 +162,23 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
       )}
       <h2>Diplomados por periodo</h2>
       <div className="row advisor-period-controls">
-        <label>
-          Desde
-          <input
-            type="date"
-            value={since}
-            max={until}
-            onChange={(e) => {
-              if (e.target.value) {
-                setSince(e.target.value);
-                setError("");
-              }
-            }}
-          />
-        </label>
-        <label>
-          Hasta
-          <input
-            type="date"
-            value={until}
-            min={since}
-            max={today}
-            onChange={(e) => {
-              if (e.target.value) {
-                setUntil(e.target.value);
-                setDay(e.target.value);
-                setError("");
-              }
-            }}
-          />
-        </label>
+        <MetaDateRange
+          from={since}
+          to={until}
+          maxDays={31}
+          triggerAriaLabel="Periodo de evaluación de diplomados"
+          applyLabel="Evaluar periodo"
+          onChange={(from, to) => {
+            setSince(from);
+            setUntil(to);
+            setDay(to);
+            setFocus("");
+            setBody("");
+            setStatus("");
+            setError("");
+            requestId.current = "";
+          }}
+        />
         {countries.length > 0 && (
           <label>
             País
@@ -213,6 +197,10 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
           </label>
         )}
       </div>
+      <p className="hint">
+        Evaluación de Inventario con gasto de Meta y ventas registradas en las
+        fechas elegidas.
+      </p>
       {error && <p role="alert">{error}</p>}
       {!valid && !error && <p role="status">Cargando diplomados…</p>}
       {valid && !data?.items.length && (
@@ -224,11 +212,11 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
             className="advisor-period-legend"
             aria-label="Estados de los diplomados"
           >
-            {Object.entries(captions).map(([signal, caption]) => (
+            {Object.entries(cacStatusNames).map(([signal, caption]) => (
               <span
                 key={signal}
                 className="advisor-period-badge"
-                data-signal={signal}
+                data-cac-status={signal}
               >
                 {caption}
               </span>
@@ -243,7 +231,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
               <h3>{countryLabel(code)}</h3>
               <ul>
                 {groups.get(code)?.map((item) => (
-                  <li key={item.key} data-signal={item.signal}>
+                  <li key={item.key} data-cac-status={item.cacStatus}>
                     <button
                       type="button"
                       className="advisor-period-item"
@@ -262,9 +250,9 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
                       </span>
                       <span
                         className="advisor-period-badge"
-                        data-signal={item.signal}
+                        data-cac-status={item.cacStatus}
                       >
-                        {captions[item.signal]}
+                        {cacStatusNames[item.cacStatus]}
                       </span>
                     </button>
                     {focus === item.key && (

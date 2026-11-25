@@ -11,6 +11,9 @@ import {
   type AdvisorFinancialRow,
 } from "./advisor-financial-metrics";
 import { advisorBaseEstimate } from "./advisor-base-estimate";
+import { inventoryCacSummary, readCacRules, type CacStatus } from "./inventory-cac";
+import type { FxRates } from "./exchange-rates";
+import type { EffectivenessRow } from "./effectiveness";
 import { inventoryBaseContext } from "./inventory-base-context";
 import {
   advisorAssignmentPeriods,
@@ -760,8 +763,11 @@ export async function personalAdvisorSheet(
   advisorId: string,
   since: string,
   until: string,
+  includeInventoryStatus = false,
 ) {
-  return readAdvisorSheet(actor, "all", since, until, { advisorId }, true);
+  return readAdvisorSheet(
+    actor, "all", since, until, { advisorId, includeInventoryStatus }, true,
+  );
 }
 async function readAdvisorSheet(
   actor: Actor,
@@ -774,6 +780,7 @@ async function readAdvisorSheet(
     advisorId?: string;
     advisorListId?: string;
     periodId?: string;
+    includeInventoryStatus?: boolean;
   } = {},
   personal = false,
   managed = false,
@@ -1002,6 +1009,7 @@ async function readAdvisorSheet(
         cutoffSales: number | null;
       }[] = [];
       const activityStarts = new Map<string, string>();
+      const scopedInventoryRows = new Map<string, EffectivenessRow>();
       for (const table of tables) {
         const sheet = managed
             ? await performanceEffectivenessSource(
@@ -1236,6 +1244,13 @@ async function readAdvisorSheet(
             }
           }
           breakdown.push(...sources.values());
+          if (personal && filters.includeInventoryStatus &&
+              filters.advisorId && sources.has(filters.advisorId)) {
+            scopedInventoryRows.set(
+              JSON.stringify([table.id, row.aliasId, row.country]),
+              row,
+            );
+          }
         }
       }
       if (filters.periodId)
@@ -1248,6 +1263,30 @@ async function readAdvisorSheet(
           "Selecciona una asignación válida con hoja, inventario, país y asesor.",
           404,
         );
+      const inventoryStatus: Record<string, CacStatus> = {};
+      if (scopedInventoryRows.size) {
+        const [aliases, rates] = await Promise.all([
+          tx.metaAlias.findMany({
+            where: { id: { in: [...new Set([...scopedInventoryRows.values()].map(({ aliasId }) => aliasId))] } },
+            select: { id: true, inventorySheet: { select: { kind: true, archivedAt: true, config: true } } },
+          }),
+          tx.metaFxDay.findMany({
+            where: { day: { gte: since, lte: until } },
+            select: { day: true, rates: true },
+          }),
+        ]);
+        const rules = new Map(aliases.flatMap(({ id, inventorySheet }) => {
+          if (inventorySheet?.kind !== "INVENTORY" || inventorySheet.archivedAt) return [];
+          const config = inventorySheet.config as { inventoryActivation?: { cacRules?: unknown } } | null;
+          return [[id, readCacRules(config?.inventoryActivation?.cacRules)] as const];
+        }));
+        const fx = new Map(rates.map((day) => [day.day, day.rates as FxRates]));
+        for (const [key, row] of scopedInventoryRows) {
+          const limits = rules.get(row.aliasId);
+          if (limits) inventoryStatus[key] =
+            inventoryCacSummary({ row, since, until, rates: fx, rules: limits }).meta.assessment.status;
+        }
+      }
       const financialRates = !personal && !managed && financialRows.some(r=>r.currency && r.currency!=="PEN") ? await tx.metaFxDay.findMany({where:{day:{gte:since,lte:until}},select:{day:true,rates:true}}) : [];
       const financial = advisorFinancialMetrics(
         financialRows,
@@ -1263,6 +1302,7 @@ async function readAdvisorSheet(
         aliasId: filters.aliasId ?? "",
         country: filters.country ?? "",
         breakdown,
+        inventoryStatus,
         manualBaseBreakdown,
         advisorBaseBreakdown,
         assignmentHistory,
