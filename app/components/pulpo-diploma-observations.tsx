@@ -21,10 +21,11 @@ export function PulpoDiplomaObservations(props: {
   aliasId: string;
   tableId: string;
   country: string;
+  campaign?: string;
 }) {
   const [open, setOpen] = useState(false);
   const role = useContext(CurrentRole);
-  if (role !== "OWNER") return null;
+  if (!["OWNER", "ADMIN", "USER"].includes(role)) return null;
   return (
     <details
       className="pulpo-diploma-observations"
@@ -45,10 +46,12 @@ function History({
   aliasId,
   tableId,
   country,
+  campaign,
 }: {
   aliasId: string;
   tableId: string;
   country: string;
+  campaign?: string;
 }) {
   const [pages, setPages] = useState<Note[]>([]);
   const [offset, setOffset] = useState(0);
@@ -61,6 +64,7 @@ function History({
       alias: aliasId,
       table: tableId,
       country,
+      ...(campaign ? { campaign } : {}),
       offset: String(offset),
     });
     void (async () => {
@@ -84,7 +88,7 @@ function History({
       }
     })();
     return () => controller.abort();
-  }, [aliasId, tableId, country, offset]);
+  }, [aliasId, tableId, country, campaign, offset]);
   return (
     <section aria-label="Historial de observaciones">
       {error && <p role="alert">{error}</p>}

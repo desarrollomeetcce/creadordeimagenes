@@ -4214,7 +4214,7 @@ function MetaDetail({
         <strong>{countryName(o.aliasCountry)}</strong>
         {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>setReplacementOpen(v=>!v)} aria-expanded={replacementOpen}>↔ Reemplazar</button>}
       </p>
-      {replacement && o.aliasId && <PulpoDiplomaObservations aliasId={o.aliasId} tableId={replacement.tableId} country={replacement.country} />}
+      {replacement && o.aliasId && <PulpoDiplomaObservations aliasId={o.aliasId} tableId={replacement.tableId} country={replacement.country} campaign={o.id} />}
       {replacementOpen && replacement && <MetaInventoryReplacement {...replacement} names={[replacement.name]} source="meta" sheetName={o.alias?.table?.name??"Hoja sincronizada"} since={o.periods[period]?.since??""} until={o.periods[period]?.until??""} onClose={()=>setReplacementOpen(false)} onChanged={onChanged} onCompleted={onCompleted}/>}
 
 
