@@ -104,7 +104,19 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
       className="advisor-period-signals"
       aria-label="Diplomados por periodo"
     >
-      {!advisorId && <h1>Mi desempeño</h1>}
+      {!advisorId && (
+        <header>
+          <h1>
+            {performance?.advisorName
+              ? `¡Hola, ${performance.advisorName}!`
+              : "Mi desempeño"}
+          </h1>
+          <p>
+            Revisa tus resultados y elige qué seguimiento priorizar para
+            acercarte a tus metas.
+          </p>
+        </header>
+      )}
       {performance && summary && (
         <article className="performance-day">
           <div

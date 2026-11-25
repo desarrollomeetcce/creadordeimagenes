@@ -9,10 +9,23 @@ type GoalStatus = ReturnType<typeof advisorGoalStatus>;
 const messages: Record<GoalStatus, string> = {
   met: "¡Meta alcanzada!",
   close: "Estás cerca de tu meta",
-  progress: "Sigue avanzando hacia tu meta",
+  progress: "La meta sigue por delante",
   pending: "Pendiente de datos completos",
   unset: "Meta sin definir",
 };
+const nextStep = {
+  effectiveness: {
+    met: "Identifica qué conversaciones avanzaron mejor y repite lo que funcionó.",
+    progress:
+      "Empieza por las conversaciones con interés y acuerda el próximo paso.",
+  },
+  sales: {
+    met: "Buen trabajo. Deja programados los próximos seguimientos.",
+    close:
+      "Estás a una venta. Revisa qué conversación está más cerca de cerrar.",
+    progress: "Prioriza los seguimientos con una decisión de compra pendiente.",
+  },
+} as const;
 const format = (value: number) =>
   value.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 
@@ -72,6 +85,12 @@ export function PerformanceMotivation({
               <span>{label}</span>
               <strong>{target === null ? "—" : format(target) + suffix}</strong>
               <p>{messages[status]}</p>
+              {(status === "met" || status === "progress") && (
+                <small>{nextStep[kind][status]}</small>
+              )}
+              {kind === "sales" && status === "close" && (
+                <small>{nextStep.sales.close}</small>
+              )}
               {kind === "effectiveness" &&
                 status === "close" &&
                 target !== null &&

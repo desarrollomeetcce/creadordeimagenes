@@ -102,6 +102,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
     performance: requested
       ? null
       : {
+          advisorName: current.rows[0]?.name ?? null,
           goal: goal?.percent ?? null,
           salesTarget: target?.salesTarget ?? null,
           today: summary(today),
