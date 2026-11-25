@@ -508,8 +508,21 @@ export default function Home() {
   const sidebarContent=<>
 
           <button className="sidebar-collapse" type="button" aria-label={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} title={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} aria-pressed={sidebarMini} onClick={()=>{if(smallNavigation){setMobileMenuOpen(false);return;}setSidebarMini(v=>{ const next=!v; try { localStorage.setItem("sidebar-mini:v1:"+user.id,next?"1":"0"); }catch{} return next; })}}>{smallNavigation?"×":sidebarMini?"☰":"‹"}</button>
-          <div className="brand pulpo-generator-brand"><PulpoBrand /></div>
-          <div className="eyebrow">Espacio de trabajo</div>
+          <div className="sidebar-products" role="group" aria-label="Aplicaciones Pulpo">
+            <div className="brand pulpo-generator-brand" aria-current="true" aria-label="Pulpo Generador">
+              <PulpoBrand />
+            </div>
+            <a
+              className="brand sidebar-messaging-product"
+              href="https://pulpo.agenciamagneto.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Abrir Pulpo Mensajería en una pestaña nueva"
+              title="Abrir Pulpo Mensajería"
+            >
+              <PulpoBrand messaging />
+            </a>
+          </div>
           <SidebarNavigation userId={user.id} view={view} navigate={navigate} items={[
             ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role)||user.advisorLinked?[["performance","◎","Mi desempeño"]]:[]),
             ["projects","▦","Proyectos"],["library","▧","Biblioteca"],["metaads","▥","Meta Ads"],

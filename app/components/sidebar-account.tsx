@@ -1,5 +1,4 @@
 "use client";
-import { PulpoBrand } from "./pulpo-brand";
 import { useEffect, useId, useRef, useState } from "react";
 import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
@@ -159,17 +158,6 @@ export function SidebarAccount({
               )}
             </div>
           )}
-          <a
-            className="sidebar-account-link"
-            href="https://pulpo.agenciamagneto.org/"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Volver a Pulpo Mensajería en una pestaña nueva"
-            onClick={close}
-          >
-            <PulpoBrand messaging />
-            <span aria-hidden="true">↗</span>
-          </a>
           {item("account", "♙", "Mi cuenta")}
           {ai &&
             !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&
