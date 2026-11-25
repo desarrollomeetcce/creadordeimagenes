@@ -3271,3 +3271,9 @@ nav.performance-workspace-nav {
 .advisor-period-signals [data-cac-status] {
   --advisor-signal:var(--inventory-cac-color, #87949c);
 }
+
+.advisor-goals-heading { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.advisor-goals-heading svg { flex:none; width:62px; height:62px; }
+.advisor-goals-heading h4 { margin:0 0 3px; color:var(--muted); }
+.advisor-goals-heading strong { font-size:18px; }
+.advisor-goal small { display:block; margin-top:4px; color:var(--muted); }

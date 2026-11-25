@@ -35,6 +35,7 @@ export function PerformanceMotivation({
   partial,
   salesTarget,
   salesStatus,
+  salesRemaining,
   previous,
 }: {
   percent: number | null;
@@ -42,6 +43,7 @@ export function PerformanceMotivation({
   partial: boolean;
   salesTarget: number | null;
   salesStatus: GoalStatus;
+  salesRemaining?: number;
   previous?: { percent: number | null; partial: boolean };
 }) {
   const effectivenessStatus = advisorGoalStatus(
@@ -74,9 +76,52 @@ export function PerformanceMotivation({
       status: salesStatus,
     },
   ] as const;
+  const states = [effectivenessStatus, salesStatus];
+  const message = states.every((state) => state === "met")
+    ? "¡Alcanzaste las dos metas!"
+    : states.includes("met")
+      ? "¡Ya alcanzaste una meta!"
+      : states.includes("close")
+        ? "¡Ya casi llegas!"
+        : states.includes("progress")
+          ? "Cada seguimiento cuenta"
+          : "Tus metas, paso a paso";
   return (
     <section className="advisor-goals" aria-label="Metas del día">
-      <h4>Metas del día</h4>
+      <div className="advisor-goals-heading">
+        <svg viewBox="0 0 70 70" aria-hidden="true" focusable="false">
+          <path
+            d="M35 10C48 9 59 20 59 34S49 59 35 60C21 60 10 49 10 35S21 10 35 10Z"
+            fill="#ffd977"
+            stroke="#a86123"
+            strokeWidth="2.5"
+          />
+          <path
+            d="M23 31q3-5 6-1m12 0q3-5 6 0M25 40q10 14 20-1"
+            fill="none"
+            stroke="#6b3c23"
+            strokeWidth="2.8"
+            strokeLinecap="round"
+          />
+          <path
+            d="M16 38h4m30 0h4"
+            stroke="#ee885f"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="m6 14 4 4m46-9-2 5m8 6 5-2M60 55l5 3"
+            fill="none"
+            stroke="#c7823e"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+        <div>
+          <h4>Metas del día</h4>
+          <strong>{message}</strong>
+        </div>
+      </div>
       <div className="advisor-goals-grid">
         {goals.map(({ kind, label, target, suffix, status }) => (
           <div className="advisor-goal" data-state={status} key={kind}>
@@ -88,11 +133,23 @@ export function PerformanceMotivation({
               {(status === "met" || status === "progress") && (
                 <small>{nextStep[kind][status]}</small>
               )}
-              {kind === "sales" && status === "close" && (
-                <small>{nextStep.sales.close}</small>
-              )}
-              {kind === "effectiveness" &&
+              {kind === "sales" &&
                 status === "close" &&
+                salesRemaining === undefined && (
+                  <small>{nextStep.sales.close}</small>
+                )}
+              {kind === "sales" &&
+                salesRemaining !== undefined &&
+                salesRemaining > 0 &&
+                (status === "close" || status === "progress") && (
+                  <small>
+                    {salesRemaining === 1
+                      ? "Te falta 1 venta."
+                      : `Te faltan ${format(salesRemaining)} ventas.`}
+                  </small>
+                )}
+              {kind === "effectiveness" &&
+                (status === "close" || status === "progress") &&
                 target !== null &&
                 percent !== null && (
                   <small>

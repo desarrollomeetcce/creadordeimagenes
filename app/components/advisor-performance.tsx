@@ -288,6 +288,11 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                     card.salesPartial,
                     1,
                   )}
+                  salesRemaining={
+                    card.sales === null || card.salesTarget === null
+                      ? undefined
+                      : Math.max(0, card.salesTarget - card.sales)
+                  }
                   previous={{
                     percent: card.previousPercent,
                     partial: card.previousPartial,
