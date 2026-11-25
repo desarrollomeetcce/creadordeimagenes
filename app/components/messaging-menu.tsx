@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { PulpoBrand } from "./pulpo-brand";
 import "./messaging-menu.css";
 
@@ -28,29 +28,152 @@ const links = [
   },
 ];
 
-export function MessagingMenu() {
+type Placement = "header" | "left" | "right";
+const preferenceEvent = "pulpo-menu-position";
+const fallback = new Map<string, string>();
+const defaultPosition = "header:50";
+function subscribe(update: () => void) {
+  window.addEventListener(preferenceEvent, update);
+  window.addEventListener("storage", update);
+  return () => {
+    window.removeEventListener(preferenceEvent, update);
+    window.removeEventListener("storage", update);
+  };
+}
+
+export function MessagingMenu({ userId }: { userId: string }) {
   const id = useId();
+  const key = "pulpo-menu-position:v1:" + userId;
+  const preference = useSyncExternalStore(
+    subscribe,
+    () => {
+      if (fallback.has(key)) return fallback.get(key)!;
+      try {
+        return localStorage.getItem(key) ?? defaultPosition;
+      } catch {
+        return defaultPosition;
+      }
+    },
+    () => defaultPosition,
+  );
+  const [side, percent] = preference.split(":");
+  const stored = {
+    side: side === "left" || side === "right" ? side : "header",
+    y: Number.isFinite(Number(percent))
+      ? Math.max(0, Math.min(100, Number(percent)))
+      : 50,
+  } as const;
+  const [drag, setDrag] = useState<{ side: Placement; y: number } | null>(null);
+  const placement = drag ?? stored;
+  const floating = placement.side !== "header";
+  const movement = useRef<{
+    pointer: number;
+    side: Placement;
+    y: number;
+  } | null>(null);
   const popover = useRef<HTMLElement>(null);
-  const [position, setPosition] = useState({ left: 8, top: 8 });
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+  }>({ left: 8, top: 8 });
+
+  function save(side: Placement, y = stored.y) {
+    const value = side + ":" + y;
+    try {
+      localStorage.setItem(key, value);
+      fallback.delete(key);
+    } catch {
+      fallback.set(key, value);
+    }
+    window.dispatchEvent(new Event(preferenceEvent));
+  }
+
   return (
-    <div className="messaging-menu">
+    <div
+      className="messaging-menu"
+      data-placement={placement.side}
+      style={
+        floating
+          ? { top: `clamp(54px, ${placement.y}dvh, calc(100dvh - 54px))` }
+          : undefined
+      }
+    >
       <button
+        ref={trigger}
         type="button"
         className="messaging-menu-trigger"
         aria-label="Menú de Pulpo Mensajería"
         popoverTarget={id}
         onClick={(event) => {
           const anchor = event.currentTarget.getBoundingClientRect();
-          setPosition({
-            left: Math.max(8, Math.min(anchor.left, innerWidth - 208)),
-            top: anchor.bottom + 5,
-          });
+          const left = Math.max(8, Math.min(anchor.left, innerWidth - 208));
+          setPosition(
+            innerHeight - anchor.bottom < 300 && anchor.top > innerHeight / 2
+              ? { left, bottom: innerHeight - anchor.top + 5 }
+              : { left, top: anchor.bottom + 5 },
+          );
         }}
       >
         <PulpoBrand messaging />
-        <span>Pulpo</span>
+        {!floating && <span>Pulpo</span>}
         <span aria-hidden="true">⌄</span>
       </button>
+      {floating && (
+        <button
+          type="button"
+          className="messaging-menu-grip"
+          aria-label="Mover menú de Pulpo"
+          title="Arrastra el menú. También puedes usar las flechas."
+          onPointerDown={(event) => {
+            if (event.button !== 0 || movement.current) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            movement.current = { pointer: event.pointerId, ...stored };
+          }}
+          onPointerMove={(event) => {
+            if (movement.current?.pointer !== event.pointerId) return;
+            const side = event.clientX < innerWidth / 2 ? "left" : "right";
+            const y = Math.max(
+              0,
+              Math.min(100, Math.round((event.clientY / innerHeight) * 100)),
+            );
+            movement.current = { pointer: event.pointerId, side, y };
+            setDrag({ side, y });
+          }}
+          onPointerUp={(event) => {
+            if (movement.current?.pointer !== event.pointerId) return;
+            save(movement.current.side, movement.current.y);
+            movement.current = null;
+            setDrag(null);
+          }}
+          onLostPointerCapture={() => {
+            movement.current = null;
+            setDrag(null);
+          }}
+          onKeyDown={(event) => {
+            if (
+              !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+                event.key,
+              )
+            )
+              return;
+            event.preventDefault();
+            if (event.key === "ArrowLeft") save("left");
+            else if (event.key === "ArrowRight") save("right");
+            else
+              save(
+                stored.side,
+                Math.max(
+                  0,
+                  Math.min(100, stored.y + (event.key === "ArrowUp" ? -5 : 5)),
+                ),
+              );
+          }}
+        >
+          ⠿
+        </button>
+      )}
       <nav
         id={id}
         ref={popover}
@@ -86,6 +209,32 @@ export function MessagingMenu() {
             </span>
           </a>
         ))}
+        <div
+          className="messaging-menu-positions"
+          role="group"
+          aria-label="Ubicación del menú"
+        >
+          {(
+            [
+              ["header", "Arriba"],
+              ["left", "Izquierda"],
+              ["right", "Derecha"],
+            ] as const
+          ).map(([side, label]) => (
+            <button
+              type="button"
+              key={side}
+              aria-pressed={stored.side === side}
+              onClick={() => {
+                save(side);
+                popover.current?.hidePopover();
+                trigger.current?.focus();
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </nav>
     </div>
   );
