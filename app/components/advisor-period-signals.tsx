@@ -136,25 +136,27 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
               Ayer
             </button>
           </div>
-          <div className="performance-values">
-            <div>
-              <span>Efectividad · Base de Meta</span>
-              <strong>
-                {summary.percent === null
-                  ? "Sin datos"
-                  : summary.percent.toLocaleString("es-PE", {
-                      maximumFractionDigits: 2,
-                    }) + " %"}
-              </strong>
+          <div className="performance-overview-row">
+            <div className="performance-values">
+              <div>
+                <span>Efectividad · Base de Meta</span>
+                <strong>
+                  {summary.percent === null
+                    ? "Sin datos"
+                    : summary.percent.toLocaleString("es-PE", {
+                        maximumFractionDigits: 2,
+                      }) + " %"}
+                </strong>
+              </div>
             </div>
+            <PerformanceMotivation
+              percent={summary.percent}
+              effectivenessTarget={performance.goal}
+              partial={summary.partial}
+              salesTarget={performance.salesTarget}
+              salesStatus={summary.dailySalesGoal}
+            />
           </div>
-          <PerformanceMotivation
-            percent={summary.percent}
-            effectivenessTarget={performance.goal}
-            partial={summary.partial}
-            salesTarget={performance.salesTarget}
-            salesStatus={summary.dailySalesGoal}
-          />
           {summary.partial && summary.percent !== null && (
             <p className="hint">Datos parciales para esta fecha.</p>
           )}

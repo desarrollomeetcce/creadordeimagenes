@@ -257,47 +257,49 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                     {card.partial ? " · Cobertura parcial" : ""}
                   </span>
                 </div>
-                <div className="performance-values">
-                  <div>
-                    <span>Ventas registradas</span>
-                    <strong>
-                      {card.na ? "N.A." : fmt(card.sales)}
-                      {card.partial ? " *" : ""}
-                    </strong>
+                <div className="performance-overview-row">
+                  <div className="performance-values">
+                    <div>
+                      <span>Ventas registradas</span>
+                      <strong>
+                        {card.na ? "N.A." : fmt(card.sales)}
+                        {card.partial ? " *" : ""}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Base de Meta</span>
+                      <strong>{fmt(card.base)}</strong>
+                    </div>
+                    <div>
+                      <span>Efectividad</span>
+                      <strong>
+                        {pct(card.percent)}
+                        {card.partial ? " *" : ""}
+                      </strong>
+                    </div>
                   </div>
-                  <div>
-                    <span>Base de Meta</span>
-                    <strong>{fmt(card.base)}</strong>
-                  </div>
-                  <div>
-                    <span>Efectividad</span>
-                    <strong>
-                      {pct(card.percent)}
-                      {card.partial ? " *" : ""}
-                    </strong>
-                  </div>
+                  <PerformanceMotivation
+                    percent={card.percent}
+                    effectivenessTarget={card.goal?.percent ?? null}
+                    partial={card.partial}
+                    salesTarget={card.salesTarget}
+                    salesStatus={advisorGoalStatus(
+                      card.sales,
+                      card.salesTarget,
+                      card.salesPartial,
+                      1,
+                    )}
+                    salesRemaining={
+                      card.sales === null || card.salesTarget === null
+                        ? undefined
+                        : Math.max(0, card.salesTarget - card.sales)
+                    }
+                    previous={{
+                      percent: card.previousPercent,
+                      partial: card.previousPartial,
+                    }}
+                  />
                 </div>
-                <PerformanceMotivation
-                  percent={card.percent}
-                  effectivenessTarget={card.goal?.percent ?? null}
-                  partial={card.partial}
-                  salesTarget={card.salesTarget}
-                  salesStatus={advisorGoalStatus(
-                    card.sales,
-                    card.salesTarget,
-                    card.salesPartial,
-                    1,
-                  )}
-                  salesRemaining={
-                    card.sales === null || card.salesTarget === null
-                      ? undefined
-                      : Math.max(0, card.salesTarget - card.sales)
-                  }
-                  previous={{
-                    percent: card.previousPercent,
-                    partial: card.previousPartial,
-                  }}
-                />
                 {card.base === null ? (
                   <p className="performance-pending">
                     Aún no hay conversaciones reportadas por Meta para esta
