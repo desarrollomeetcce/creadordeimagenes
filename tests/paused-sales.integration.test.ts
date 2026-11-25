@@ -396,7 +396,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
       assert.equal(
         (await controls()).rows[item.alias.id + "|PE"].campaignTask,
-        task,
+        task === "SYNC" ? "NONE" : task,
       );
       assert.equal(await batch(item.ids), 1);
       assert.equal(
@@ -409,7 +409,7 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
       assert.equal(
         (await controls()).rows[item.alias.id + "|PE"].campaignTask,
-        task === "STOP" ? "NONE" : task,
+        task === "STOP" || task === "SYNC" ? "NONE" : task,
       );
       await db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(884411)");
@@ -439,8 +439,13 @@ test("confirmed Meta pauses keep sales inactive, pinned and visible without chan
       );
       assert.equal(
         (await controls()).rows[item.alias.id + "|PE"].campaignTask,
-        task === "STOP" ? "NONE" : task,
+        task === "STOP" || task === "SYNC" ? "SYNC" : task,
       );
+      if (task === "SYNC") {
+        assert.equal(await batch(item.ids, new Date(), [], "ACTIVE"), 1);
+        assert.equal((await controls()).rows[item.alias.id + "|PE"].campaignTask, "NONE");
+        assert.equal(await batch(item.ids, new Date(), [], "ACTIVE"), 0);
+      }
       assert.equal(
         (
           await db.metaEffectivenessRow.findUniqueOrThrow({

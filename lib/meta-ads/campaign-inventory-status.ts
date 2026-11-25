@@ -168,7 +168,11 @@ export async function confirmCampaignInventoryStatus(
   const list = await tx.metaEffectivenessSheet.findUnique({where:{id:scope.listId},select:{config:true}});
   const existingTask = activationSettings(list?.config ?? null).rows[scope.aliasId+"|"+scope.country]?.campaignTask ?? "NONE";
   const active = status === "ACTIVE" || !!outstanding,
-    campaignTask = confirmedCampaignTask(existingTask !== "NONE" ? existingTask : outstanding ? "STOP" : "NONE", active);
+    campaignTask = confirmedCampaignTask(
+      existingTask !== "NONE" ? existingTask : outstanding ? "STOP" : "NONE",
+      active,
+      status === "ACTIVE" ? false : undefined,
+    );
   await inventoryMetaStatusChange(tx, prepared.authorized, scope, {
     active,
     campaignTask,

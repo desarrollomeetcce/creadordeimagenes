@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { isCountryCode } from "./countries";
 import { activationSettings } from "./inventory-sheet-activation";
-import { confirmedCampaignTask } from "./confirmed-campaign-task";
+import { confirmedCampaignTask, hasConfirmedCampaignDelivery } from "./confirmed-campaign-task";
 import { recordActivity } from "../activity";
 
 export const pausedCampaignStatuses = ["PAUSED", "ARCHIVED", "DELETED"];
@@ -107,16 +107,19 @@ export async function retainPausedSalesRows(
     lists.map((list) => [list.id, activationSettings(list.config)]),
   );
   const known = await tx.metaAdObject.groupBy({
-    by: ["aliasId", "aliasCountry", "status"],
+    by: ["aliasId", "aliasCountry", "status", "effectiveStatus"],
     where: {
       level: "campaign",
       OR: targets.map((p) => ({ aliasId: p.aliasId, aliasCountry: p.country })),
     },
   });
   const statuses = new Map<string, (string | null)[]>();
+  const unverifiedActive = new Set<string>();
   for (const row of known) {
     const key = row.aliasId + "|" + row.aliasCountry;
     const values = statuses.get(key) ?? [];
+    if (row.status === "ACTIVE" && !hasConfirmedCampaignDelivery(row.effectiveStatus))
+      unverifiedActive.add(key);
     values.push(row.status);
     statuses.set(key, values);
   }
@@ -145,6 +148,7 @@ export async function retainPausedSalesRows(
     const campaignTask = confirmedCampaignTask(
       control?.campaignTask ?? "NONE",
       active,
+      active ? !unverifiedActive.has(key) : undefined,
     );
     // Heal a previously retained paused row whose STOP task was left behind.
     // A manually retired/unpinned row must not be made visible again.
@@ -156,7 +160,8 @@ export async function retainPausedSalesRows(
     if (
       !config ||
       config.detachedAliases.includes(alias.id) ||
-      (state?.active === active && !completedStop) ||
+      (state?.active === active && !completedStop &&
+        (!active || campaignTask === (control?.campaignTask ?? "NONE"))) ||
       !alias.effectivenessRows.some((r) => r.country === target.country) ||
       (state?.events[0] && state.events[0].createdAt > observedAt)
     )
