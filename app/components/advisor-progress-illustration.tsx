@@ -61,3 +61,58 @@ export function AdvisorProgressIllustration({
     </svg>
   );
 }
+
+export function AdvisorOverallIllustration({
+  stage,
+}: {
+  stage: "goal" | "near" | "half" | "decline" | "start" | "pending";
+}) {
+  const color =
+    stage === "goal" || stage === "near"
+      ? "#208965"
+      : stage === "decline"
+        ? "#bc7439"
+        : stage === "pending"
+          ? "#778299"
+          : "#7863b9";
+  return (
+    <svg
+      viewBox="0 0 70 70"
+      aria-hidden="true"
+      focusable="false"
+      style={{ color }}
+    >
+      <path
+        d="M11 29C16 12 32 9 45 12c16 4 25 21 18 36-5 12-17 15-30 13C15 59 5 46 11 29Z"
+        fill="currentColor"
+        opacity=".15"
+      />
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {stage === "goal" && (
+          <path d="M24 22h23v13a11 11 0 0 1-23 0Zm0 3H16v5q0 10 10 10m21-15h8v5q0 10-10 10M35 46v9m-9 0h18M32 17l3-5 3 5" />
+        )}
+        {stage === "near" && (
+          <path d="M15 57q10 0 14-11t13-12m0 1V16q8-4 17 1l-3 9q-7-3-14 1m-7 31h10" />
+        )}
+        {stage === "half" && (
+          <path d="M13 51h44M18 51l11-20 8 12 8-17 13 25M29 31l4 3m8 18h-7m-13-4 7-6" />
+        )}
+        {stage === "decline" && (
+          <path d="M17 49q8-14 17-8 8 5 17-14m-9 2 10-3-1 10M17 20h13m-13 6h8m29 29h-9" />
+        )}
+        {stage === "start" && (
+          <path d="M35 56V36Q35 22 51 21q2 13-15 17m-1 4q-18 1-18-13 13-1 17 11M22 56h26" />
+        )}
+        {stage === "pending" && (
+          <path d="M24 20h23v33H24Zm8 9h8m-8 8h8m-8 8h5m1-29v8m-5-4h10" />
+        )}
+      </g>
+    </svg>
+  );
+}

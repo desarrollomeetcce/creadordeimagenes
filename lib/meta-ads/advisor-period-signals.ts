@@ -56,7 +56,8 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   const advisorId = await advisorFor(actor, requested);
   const today = localDay("America/Lima");
   const yesterday = shiftDay(today, -1);
-  const historical = since > yesterday || until < today;
+  const comparisonSince = shiftDay(today, -2);
+  const historical = since > comparisonSince || until < today;
   const [current, notes, daily, goal, target] = await Promise.all([
     personalAdvisorSheet(actor, advisorId, since, until, true),
     db.metaAdvisorPeriodNote.findMany({
@@ -64,7 +65,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
       orderBy: [{ day: "desc" }, { createdAt: "desc" }],
     }),
     !requested && historical
-      ? personalAdvisorSheet(actor, advisorId, yesterday, today)
+      ? personalAdvisorSheet(actor, advisorId, comparisonSince, today)
       : null,
     requested ? null : performanceMetaGoal(),
     requested
@@ -107,6 +108,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
           salesTarget: target?.salesTarget ?? null,
           today: summary(today),
           yesterday: summary(yesterday),
+          dayBeforeYesterday: summary(comparisonSince),
         },
     items: current.breakdown.map(
       ({ tableId, aliasId, country, tableName, alias, days }) => {

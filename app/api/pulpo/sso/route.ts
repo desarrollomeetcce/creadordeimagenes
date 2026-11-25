@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
   if (!admitted) return denied();
 
   const path = assertion.page === "plans" ? "/?view=users&tab=plans"
-    : assertion.view ? "/?view=" + assertion.view : "/";
+    : assertion.view ? "/?view=" + assertion.view + (assertion.panel ? "&panel=" + assertion.panel : "") : "/";
   const response = NextResponse.redirect("https://generator.agenciamagneto.org" + path, { status: 303, headers });
   response.cookies.set("session", raw, {
     httpOnly: true, secure: true, sameSite: "strict", path: "/", expires,

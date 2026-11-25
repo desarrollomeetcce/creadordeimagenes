@@ -155,6 +155,11 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
               partial={summary.partial}
               salesTarget={performance.salesTarget}
               salesStatus={summary.dailySalesGoal}
+              previous={
+                view === "today"
+                  ? performance.yesterday
+                  : performance.dayBeforeYesterday
+              }
             />
           </div>
           {summary.partial && summary.percent !== null && (

@@ -1,4 +1,7 @@
-import { AdvisorProgressIllustration } from "./advisor-progress-illustration";
+import {
+  AdvisorOverallIllustration,
+  AdvisorProgressIllustration,
+} from "./advisor-progress-illustration";
 import {
   advisorGoalStatus,
   advisorPerformanceTrend,
@@ -50,7 +53,7 @@ export function PerformanceMotivation({
     percent,
     effectivenessTarget,
     partial,
-    0.5,
+    (effectivenessTarget ?? 0) * 0.15,
   );
   const trend = previous
     ? advisorPerformanceTrend(
@@ -76,50 +79,42 @@ export function PerformanceMotivation({
       status: salesStatus,
     },
   ] as const;
-  const states = [effectivenessStatus, salesStatus];
-  const message = states.every((state) => state === "met")
-    ? "¡Alcanzaste las dos metas!"
-    : states.includes("met")
-      ? "¡Ya alcanzaste una meta!"
-      : states.includes("close")
-        ? "¡Ya casi llegas!"
-        : states.includes("progress")
-          ? "Cada seguimiento cuenta"
-          : "Tus metas, paso a paso";
+  const progress =
+    percent !== null &&
+    effectivenessTarget !== null &&
+    effectivenessTarget > 0 &&
+    !partial
+      ? percent / effectivenessTarget
+      : null;
+  const stage =
+    effectivenessStatus === "met"
+      ? "goal"
+      : progress === null
+        ? "pending"
+        : progress >= 0.85
+          ? "near"
+          : trend?.delta != null &&
+              effectivenessTarget !== null &&
+              trend.delta <= -effectivenessTarget * 0.2
+            ? "decline"
+            : progress >= 0.5
+              ? "half"
+              : "start";
+  const headline = {
+    goal: "¡Meta de efectividad alcanzada!",
+    near: "Vas en buen camino",
+    half: "Ya vas por la mitad de tu meta",
+    decline: "¿Qué cambió en tu jornada?",
+    start: "Cada seguimiento cuenta",
+    pending: "Tus metas, paso a paso",
+  }[stage];
   return (
     <section className="advisor-goals" aria-label="Metas del día">
       <div className="advisor-goals-heading">
-        <svg viewBox="0 0 70 70" aria-hidden="true" focusable="false">
-          <path
-            d="M35 10C48 9 59 20 59 34S49 59 35 60C21 60 10 49 10 35S21 10 35 10Z"
-            fill="#ffd977"
-            stroke="#a86123"
-            strokeWidth="2.5"
-          />
-          <path
-            d="M23 31q3-5 6-1m12 0q3-5 6 0M25 40q10 14 20-1"
-            fill="none"
-            stroke="#6b3c23"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M16 38h4m30 0h4"
-            stroke="#ee885f"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="m6 14 4 4m46-9-2 5m8 6 5-2M60 55l5 3"
-            fill="none"
-            stroke="#c7823e"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
+        <AdvisorOverallIllustration stage={stage} />
         <div>
           <h4>Metas del día</h4>
-          <strong>{message}</strong>
+          <strong>{headline}</strong>
         </div>
       </div>
       <div className="advisor-goals-grid">
@@ -166,6 +161,8 @@ export function PerformanceMotivation({
       </div>
       {trend?.delta != null && trend.delta !== 0 && (
         <p className="hint">
+          {stage === "decline" &&
+            "Revisa qué conversaciones quedaron pendientes. "}
           La efectividad {trend.delta > 0 ? "subió" : "bajó"}{" "}
           {format(Math.abs(trend.delta))} puntos porcentuales frente al día
           anterior.

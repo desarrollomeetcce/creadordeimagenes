@@ -31,7 +31,7 @@ export function PulpoDiplomaObservations(props: {
       className="pulpo-diploma-observations"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>Observaciones de Pulpo Mensajería</summary>
+      <summary>Comentarios del diplomado</summary>
       {open && (
         <History
           key={props.aliasId + "|" + props.country + "|" + props.tableId}

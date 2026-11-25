@@ -64,9 +64,15 @@ function PerformanceNavigation({
   );
 }
 
-export function AdvisorPerformance({ owner }: { owner: boolean }) {
+export function AdvisorPerformance({
+  owner,
+  initialPanel,
+}: {
+  owner: boolean;
+  initialPanel?: PerformancePanel;
+}) {
   return owner ? (
-    <ManagedAdvisorPerformance owner />
+    <ManagedAdvisorPerformance owner initialPanel={initialPanel} />
   ) : (
     <section className="advisor-performance" aria-label="Mi desempeño">
       <PerformanceNavigation />
@@ -75,13 +81,17 @@ export function AdvisorPerformance({ owner }: { owner: boolean }) {
   );
 }
 
-function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
+function ManagedAdvisorPerformance({
+  owner,
+  initialPanel,
+}: {
+  owner: boolean;
+  initialPanel?: PerformancePanel;
+}) {
   const today = limaToday();
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const [panel, setPanel] = useState<PerformancePanel>(
-    owner ? "team" : "advisor",
-  );
+  const [panel, setPanel] = useState<PerformancePanel>(initialPanel ?? "team");
   const [settings, setSettings] = useState<Settings | null>(null),
     [advisorId, setAdvisorId] = useState(""),
     [since, setSince] = useState(shiftDay(today, -14)),

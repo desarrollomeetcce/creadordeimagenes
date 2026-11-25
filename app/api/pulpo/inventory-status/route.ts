@@ -8,6 +8,7 @@ import {
 } from "@/lib/meta-ads/financial-access";
 import { inventoryActivationReport } from "@/lib/meta-ads/inventory-sheet-activation";
 import { catalog } from "@/lib/meta-ads/inventory-trials";
+import { accountWhere } from "@/lib/meta-ads/service";
 import { categoryKey } from "@/lib/meta-ads/category-paste";
 
 const messagingOrigin = "https://pulpo.agenciamagneto.org";
@@ -161,23 +162,63 @@ export async function POST(request: Request) {
       summary: "true",
     }).catch(() => null);
     if (!report) continue;
-    const byProductCountry = new Map<string, Set<string>>();
+    const activeCampaigns = await db.metaAdObject.findMany({
+      where: {
+        level: "campaign",
+        effectiveStatus: "ACTIVE",
+        aliasId: {
+          in: [
+            ...new Set(
+              report.rows.flatMap((row) =>
+                row.targets.map((target) => target.aliasId),
+              ),
+            ),
+          ],
+        },
+        account: await accountWhere(authorized),
+      },
+      select: { aliasId: true, aliasCountry: true },
+      distinct: ["aliasId", "aliasCountry"],
+    });
+    const activeAliases = new Set(
+      activeCampaigns.map(({ aliasId, aliasCountry }) =>
+        JSON.stringify([aliasId, aliasCountry]),
+      ),
+    );
+    const byProductCountry = new Map<
+      string,
+      { states: Set<string>; inventoryActive: boolean; metaActive: boolean }
+    >();
     for (const row of report.rows) {
       if (!row.country) continue;
       const key = JSON.stringify([categoryKey(row.name), row.country]);
-      const states = byProductCountry.get(key) ?? new Set<string>();
-      states.add(row.cac?.meta.assessment.status ?? "PENDING");
-      byProductCountry.set(key, states);
+      const entry = byProductCountry.get(key) ?? {
+        states: new Set<string>(),
+        inventoryActive: false,
+        metaActive: false,
+      };
+      entry.states.add(row.cac?.meta.assessment.status ?? "PENDING");
+      entry.inventoryActive ||=
+        row.activation === "ACTIVE" || row.activation === "MIXED";
+      entry.metaActive ||= row.targets.some(
+        (target) =>
+          target.country === row.country &&
+          activeAliases.has(JSON.stringify([target.aliasId, target.country])),
+      );
+      byProductCountry.set(key, entry);
     }
     for (const entry of entries) {
       const item = byId.get(entry.itemId);
       if (!item) continue;
-      const states = byProductCountry.get(
+      const evaluation = byProductCountry.get(
         JSON.stringify([categoryKey(item.name), entry.country]),
       );
       statuses.push({
         ...entry,
-        status: states?.size === 1 ? [...states][0] : "PENDING",
+        status:
+          evaluation?.states.size === 1 ? [...evaluation.states][0] : "PENDING",
+        inventoryActive: !!evaluation?.inventoryActive,
+        metaActive: !!evaluation?.metaActive,
       });
     }
   }
