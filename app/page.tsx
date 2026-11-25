@@ -21,7 +21,7 @@ const CoursesAI=dynamic(()=>import("./components/courses-ai").then(m=>m.CoursesA
 const MetaAds=dynamic(()=>import("./components/meta-ads").then(m=>m.MetaAds),{loading:()=> <p role="status">Cargando Meta Ads…</p>});
 import { reasoningLevel } from "../lib/creative-level";
 import {useGenerationChoices} from "./components/generation-choices";
-import { CreativeFinish } from "./components/creative-finish";
+const CreativeFinish = dynamic(() => import("./components/creative-finish").then((m) => m.CreativeFinish));
 import { PasswordInput } from "./components/password-input";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {useSubproductStatuses,SubproductStatus,SubproductCounters} from "./components/subproduct-status";
@@ -29,7 +29,7 @@ import {DateRange} from "./components/date-range";
 import type {SubproductStatistics} from "../lib/subproduct-statistics-types";
 import type {OrderProgress} from "./components/order-progress";
 import { ReviewInstructions, type ReviewInstructionsHandle } from "./components/review-instructions";
-import { ProductTrash } from "./components/product-trash";
+const ProductTrash = dynamic(() => import("./components/product-trash").then((m) => m.ProductTrash));
 import { InstructionPolicyControls } from "./components/instruction-policy-controls";
 import { useReusableConfiguration } from "./components/reusable-configuration";
 import type { InstructionPolicy } from "../lib/instruction-policy";
@@ -54,7 +54,7 @@ import { VisualAuditNotice } from "./components/visual-audit-notice";
 const CampaignAuditPanel = dynamic(() => import("./components/campaign-audit").then(m => m.CampaignAuditPanel));
 const VisualAuditPanel = dynamic(() => import("./components/visual-audit").then(m => m.VisualAuditPanel));
 const VariationEditor = dynamic(() => import("./components/variation-editor").then(m => m.VariationEditor), { loading: () => <p role="status">Cargando…</p> });
-import { ProjectSharing } from "./components/project-sharing";
+const ProjectSharing = dynamic(() => import("./components/project-sharing").then((m) => m.ProjectSharing));
 const UsagePanel = dynamic(() => import("./components/usage-panel").then(m => m.UsagePanel), { loading: () => <p role="status">Cargando…</p> });
 const LibraryWorkspace = dynamic(() => import("./components/library-workspace").then(m => m.LibraryWorkspace), { loading: () => <p role="status">Cargando…</p> });
 import {
@@ -63,14 +63,14 @@ import {
   useProductionController,
   type ExecutionMode,
 } from "./components/production-controls";
-import { QuickStart } from "./components/quick-start";
-import { BrandKit } from "./components/brand-kit";
+const QuickStart = dynamic(() => import("./components/quick-start").then((m) => m.QuickStart));
+const BrandKit = dynamic(() => import("./components/brand-kit").then((m) => m.BrandKit));
 import {
   OwnerEmergencyKit,
   EmergencyOwnerForm,
 } from "./components/owner-emergency";
 import { clearGallerySession } from "./components/gallery-session";
-import { SubproductTrash } from "./components/subproduct-trash";
+const SubproductTrash = dynamic(() => import("./components/subproduct-trash").then((m) => m.SubproductTrash));
 
 
 const StorageUsage = dynamic(() => import("./components/storage-usage").then(m => m.StorageUsage), { loading: () => <p role="status">Cargando…</p> });

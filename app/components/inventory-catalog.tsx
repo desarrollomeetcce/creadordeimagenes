@@ -247,7 +247,10 @@ export function InventoryCatalog({
     const request=api("meta-ads/inventory/trials?"+new URLSearchParams({listId,mode:"usage"})).then((data:TrialDirectory)=>setTrialDirectory(current=>current?.listId===listId?{...current,usage:data.usage,countries:data.countries,campaignStates:data.campaignStates,usageReady:true}:current)).catch(e=>setUsageError(e.message)).finally(()=>{if(usageLoading.current?.request===request)usageLoading.current=null;});
     usageLoading.current={listId,request};return request;
   },[listId]);
-  useEffect(()=>{if(trialDirectory?.listId===listId&&trialDirectory.usageReady===false)void reloadUsage();},[listId,trialDirectory?.listId,trialDirectory?.usageReady,reloadUsage]);
+  useEffect(() => {
+    if (!inTop && trialDirectory?.listId === listId && trialDirectory.usageReady === false)
+      void reloadUsage();
+  }, [inTop, listId, trialDirectory?.listId, trialDirectory?.usageReady, reloadUsage]);
   const categoryDrag = useRef<{
       name: string;
       categoryId: string;
@@ -714,6 +717,7 @@ export function InventoryCatalog({
     await Promise.all([onChanged(), reloadCategories(), reloadSheetDirectory()]);
   }, [onChanged, reloadCategories, reloadSheetDirectory]);
   useEffect(() => {
+    if (inTop) return;
     let active = true;
     setCategories(null);
     void api("meta-ads/inventory/categories?" + new URLSearchParams({ listId }))
@@ -726,7 +730,7 @@ export function InventoryCatalog({
     return () => {
       active = false;
     };
-  }, [listId]);
+  }, [listId, inTop]);
   const saveCategory = async (action: InventoryCategoryAction) => {
     if (!categories) throw Error("Recarga las categorías antes de guardar.");
     setBusy(true);

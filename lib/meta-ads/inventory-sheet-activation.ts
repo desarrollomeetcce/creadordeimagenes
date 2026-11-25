@@ -1257,17 +1257,22 @@ async function activationReport(
         sourceUntil,
         tx,
       );
+      const rowsByAlias = new Map<string, typeof source.rows>();
+      for (const row of source.rows) {
+        if (q.country && row.country !== q.country) continue;
+        const rows = rowsByAlias.get(row.aliasId) ?? [];
+        rows.push(row);
+        rowsByAlias.set(row.aliasId, rows);
+      }
       for (const alias of tableAliases) {
-        const states = alias.effectivenessStates,
-          allRows = source.rows.filter(
-            (r) =>
-              r.aliasId === alias.id &&
-              (!q.country || r.country === q.country) &&
-              (states.some((state) => state.country === r.country) ||
-                alias.effectivenessRows.some(
-                  (row) => row.country === r.country,
-                )),
-          );
+        const states = alias.effectivenessStates;
+        const countries = new Set([
+          ...states.map((state) => state.country),
+          ...alias.effectivenessRows.map((row) => row.country),
+        ]);
+        const allRows = (rowsByAlias.get(alias.id) ?? []).filter((row) =>
+          countries.has(row.country),
+        );
         for (const rows of q.byCountry
           ? allRows.map((row) => [row])
           : [allRows]) {
@@ -1385,7 +1390,7 @@ async function activationReport(
               complete = complete && salesComplete;
               history.push({
                 ...period,
-                cac: since
+                cac: q.historyName && since
                   ? inventoryCacSummary({
                       row,
                       since,

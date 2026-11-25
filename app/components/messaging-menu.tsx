@@ -7,7 +7,7 @@ import "./messaging-menu.css";
 const messaging = "https://pulpo.agenciamagneto.org/";
 const links = [
   {
-    label: "Vista general",
+    label: "Desempeño",
     section: "Vista general",
     path: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
   },

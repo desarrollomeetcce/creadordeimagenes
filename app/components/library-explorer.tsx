@@ -183,6 +183,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
       null,
     );
   const loadingRequest = useRef<AbortController | null>(null);
+  const lastStarted = useRef(0);
   const revision = useRef(0),
     latest = useRef<Data | null>(null);
   latest.current = data;
@@ -210,6 +211,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     loadingRequest.current?.abort();
     const controller = new AbortController();
     loadingRequest.current = controller;
+    lastStarted.current = Date.now();
     setRefreshing(true);
     try {
       const result = await api(
@@ -227,6 +229,7 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
       if (seq === revision.current)
         setError(e instanceof Error ? e.message : "No se pudo actualizar.");
     } finally {
+      if (loadingRequest.current === controller) loadingRequest.current = null;
       if (seq === revision.current) setRefreshing(false);
     }
   }, [params]);
@@ -238,8 +241,21 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
     };
   }, [refresh]);
   useEffect(() => {
+    let queued: number | undefined;
     const load = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState === "visible" && !loadingRequest.current)
+        void refresh();
+    };
+    const update = () => {
+      if (queued !== undefined || document.hidden) return;
+      queued = window.setTimeout(() => {
+        queued = undefined;
+        if (loadingRequest.current) update();
+        else load();
+      }, 250);
+    };
+    const focus = () => {
+      if (Date.now() - lastStarted.current >= 15000) load();
     };
     const timer = setInterval(() => {
       if (
@@ -252,12 +268,13 @@ export function Library({ picker }: { picker?: LibraryPicker } = {}) {
       )
         load();
     }, 5000);
-    window.addEventListener("focus", load);
+    window.addEventListener("focus", focus);
     const channel = new BroadcastChannel("studio-updates");
-    channel.onmessage = load;
+    channel.onmessage = update;
     return () => {
       clearInterval(timer);
-      window.removeEventListener("focus", load);
+      window.removeEventListener("focus", focus);
+      window.clearTimeout(queued);
       channel.close();
     };
   }, [refresh]);

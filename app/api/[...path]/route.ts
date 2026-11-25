@@ -645,18 +645,28 @@ async function handle(
       if (method === "PUT")
         return send(await saveBrand(user, project.id, await body(req)));
     }
-    if (route === "auth/me" && method === "GET")
+    if (route === "auth/me" && method === "GET") {
+      const [grants] = await db.$queryRaw<{
+        fixedCostsShared: boolean;
+        effectivenessShared: boolean;
+        metaAdsShared: boolean;
+        advisorLinked: boolean;
+      }[]>`
+        SELECT
+          EXISTS (SELECT 1 FROM "FixedCostGrant" WHERE "userId" = ${user.id}) AS "fixedCostsShared",
+          EXISTS (SELECT 1 FROM "EffectivenessGrant" WHERE "userId" = ${user.id}) AS "effectivenessShared",
+          EXISTS (SELECT 1 FROM "MetaWorkspaceGrant" WHERE "userId" = ${user.id}) AS "metaAdsShared",
+          EXISTS (SELECT 1 FROM "MetaAdvisorPortal" WHERE "userId" = ${user.id}) AS "advisorLinked"
+      `;
       return send({
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-        aiAccessEnabled:user.aiAccessEnabled,
-        fixedCostsShared: !!(await db.fixedCostGrant.findUnique({where:{userId:user.id},select:{userId:true}})),
-        effectivenessShared: !!(await db.effectivenessGrant.findFirst({where:{userId:user.id},select:{scope:true}})),
-        metaAdsShared: !!(await db.metaWorkspaceGrant.findUnique({where:{userId:user.id},select:{userId:true}})),
-        advisorLinked: !!(await db.metaAdvisorPortal.findUnique({where:{userId:user.id},select:{advisorId:true}})),
+        aiAccessEnabled: user.aiAccessEnabled,
+        ...grants,
       });
+    }
     if (route === "auth/logout" && method === "POST") {
       const c = await cookies(),
         raw = c.get("session")?.value;

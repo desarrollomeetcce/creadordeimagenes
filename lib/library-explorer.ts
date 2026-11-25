@@ -363,8 +363,12 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
     ...(foldersOnly || kind === "documents" ? { id: "" } : {}),
   };
-  const dismissed = await dismissedOrderIds(user.id);
   const resultsOnly = params.get("resultsOnly") === "true";
+  const showPending =
+    !resultsOnly && !query && !personal && !foldersOnly &&
+    folder !== "loose:root" && kind !== "documents" &&
+    review !== "approved" && user.role !== "OBSERVER";
+  const dismissed = showPending ? await dismissedOrderIds(user.id) : [];
   const pendingWhere: Prisma.GenerationJobWhereInput = {
     status: { in: ["PENDING", "RUNNING", "FAILED", "UNCERTAIN"] },
     variation: null,
@@ -380,16 +384,7 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     ],
     ...(user.role === "OWNER" ? {} : { actorId: user.id }),
     ...(Object.keys(dates).length ? { createdAt: dates } : {}),
-    ...(resultsOnly ||
-    query ||
-    personal ||
-    foldersOnly ||
-    folder === "loose:root" ||
-    kind === "documents" ||
-    review === "approved" ||
-    user.role === "OBSERVER"
-      ? { id: "" }
-      : {}),
+    ...(!showPending ? { id: "" } : {}),
   };
   const slotsWhere: Prisma.GenerationJobWhereInput = {
     ...(resultsOnly
@@ -404,8 +399,8 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
     inflightTotal,
     copyTotal,
   ] = await Promise.all([
-    db.variation.count({ where }),
-    db.libraryDocument.findMany({
+    where.id === "" ? Promise.resolve(0) : db.variation.count({ where }),
+    documentWhere.id === "" ? Promise.resolve([]) : db.libraryDocument.findMany({
       where: documentWhere,
       select: {
         id: true,
@@ -449,11 +444,9 @@ export async function explorerData(user: Actor, incoming: URLSearchParams) {
           },
           _count: true,
         }),
-    db.libraryDocument.count({ where: documentWhere }),
-    resultsOnly
-      ? Promise.resolve(0)
-      : db.generationJob.count({ where: pendingWhere }),
-    db.libraryImageCopy.count({ where: copyWhere }),
+    documentWhere.id === "" ? Promise.resolve(0) : db.libraryDocument.count({ where: documentWhere }),
+    showPending ? db.generationJob.count({ where: pendingWhere }) : Promise.resolve(0),
+    copyWhere.id === "" ? Promise.resolve(0) : db.libraryImageCopy.count({ where: copyWhere }),
   ]);
   const variationSelect = {
     mediaType: true,

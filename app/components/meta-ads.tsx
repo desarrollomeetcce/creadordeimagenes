@@ -772,24 +772,10 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
     Promise.all([
       api("meta-ads/aliases"),
       api("meta-ads/alias-table-options"),
-      owner && assignmentRequested
-        ? api("meta-ads/alias-catalog")
-        : Promise.resolve([]),
-      owner && assignmentRequested
-        ? api("meta-ads/meta-advisor-options")
-        : Promise.resolve([]),
-      owner && assignmentRequested
-        ? api("meta-ads/workspace-inventories")
-        : Promise.resolve([]),
     ])
-      .then(([rows, tables, catalog, people, sheets]) => {
+      .then(([rows, tables]) => {
         if (active) {
-          setInventories(
-            sheets.filter((s: { kind: string }) => s.kind === "INVENTORY"),
-          );
           setAliases(rows);
-          setAliasCatalog(catalog);
-          setAssignmentAdvisors(people);
           setAliasTables(tables);
           setAliasFilter((current) =>
             current &&
@@ -803,6 +789,25 @@ export function MetaAds({ role, userId, canCreateCampaign=false }: { role: strin
       .catch((e) => {
         if (active) setMessage(e.message);
       });
+    return () => {
+      active = false;
+    };
+  }, [revision, moduleReady]);
+  useEffect(() => {
+    if (!moduleReady || !owner || !assignmentRequested) return;
+    let active = true;
+    Promise.all([
+      api("meta-ads/alias-catalog"),
+      api("meta-ads/meta-advisor-options"),
+      api("meta-ads/workspace-inventories"),
+    ]).then(([catalog, people, sheets]) => {
+      if (!active) return;
+      setInventories(sheets.filter((s: { kind: string }) => s.kind === "INVENTORY"));
+      setAliasCatalog(catalog);
+      setAssignmentAdvisors(people);
+    }).catch((e) => {
+      if (active) setMessage(e.message);
+    });
     return () => {
       active = false;
     };

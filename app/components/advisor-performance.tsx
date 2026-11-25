@@ -38,7 +38,7 @@ function PerformanceNavigation({
   return (
     <nav className="performance-workspace-nav" aria-label="Seguimiento">
       <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
-        Vista general
+        Desempeño
       </a>
       {onSelect ? (
         <>

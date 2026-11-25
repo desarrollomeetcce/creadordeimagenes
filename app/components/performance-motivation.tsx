@@ -110,10 +110,10 @@ export function PerformanceMotivation({
   }[stage];
   return (
     <section className="advisor-goals" aria-label="Metas del día">
-      <div className="advisor-goals-heading">
+      <div className="advisor-goals-heading" data-stage={stage}>
         <AdvisorOverallIllustration stage={stage} />
         <div>
-          <h4>Metas del día</h4>
+          <h4>Avance de efectividad</h4>
           <strong>{headline}</strong>
         </div>
       </div>
