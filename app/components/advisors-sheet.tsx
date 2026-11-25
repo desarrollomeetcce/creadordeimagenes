@@ -6,7 +6,6 @@ import { AdvisorContactBaseEditor } from "./advisor-contact-base-editor";
 import { notifyAdvisorSalesChanged } from "./advisor-sales-events";
 import { advisorDayEffectiveness } from "../../lib/meta-ads/advisor-day-effectiveness";
 import { matchesSearchWords } from "../../lib/search";
-import { CacStateBadge } from "./cac-state-badge";
 import { useSheetTextFit } from "./use-sheet-text-fit";
 import { SheetDataFillBadge } from "./sheet-data-fill-badge";
 import type { AdvisorPeriodView } from "../../lib/meta-ads/advisor-period-history";
@@ -196,7 +195,7 @@ export function AdvisorsSheet({
         ["sales", 60],
         ["metaBase", 90],
         ["metaSpend", 110],
-        ["metaMetrics", 124],
+        ["metaEffectiveness", 86],
       ] as const)
     : ([
         ["attendance", 84],
@@ -1004,28 +1003,9 @@ function FragmentHeaders({
         <>
           {header("metaBase", "B Meta", "Base de Meta", "automatic")}
           {header("metaSpend", "G Meta", "Gasto de Meta", "automatic")}
-          <th
-            scope="col"
-            aria-label="Efectividad, CAC y estado Meta"
-            className="advisor-meta-metrics-heading"
-          >
-            <span className="advisor-statistics-title">Estadísticas</span>
-            {handle(day + "metaMetrics", "Efectividad, CAC y estado Meta " + day)}
-            <div className="advisor-metric-half">
-              <span>
-                Efectividad<small>V / B Meta × 100</small>
-              </span>
-            </div>
-            <div className="advisor-metric-half">
-              <span>
-                CAC Meta<small>G Meta / V</small>
-              </span>
-            </div>
-            <div className="advisor-metric-half">
-              <span>
-                Estado<small>CAC del día</small>
-              </span>
-            </div>
+          <th scope="col" data-fill-kind="automatic" title="V / B Meta × 100">
+            Efectividad
+            {handle(day + "metaEffectiveness", "Efectividad Meta " + day)}
           </th>
         </>
       )}
@@ -1209,62 +1189,15 @@ function AdvisorDay({
               : "—"}
           </td>
           <td
+            aria-label={`Efectividad Meta ${person.name} ${day}`}
             data-readonly="true"
             data-fill-kind="automatic"
-            className="advisor-meta-metrics"
+            title={metaRate.reason}
           >
-            <div
-              className="advisor-metric-half"
-              aria-label={`Efectividad Meta ${person.name} ${day}`}
-              title={metaRate.reason}
-            >
-              <small>Efect.</small>
-              <strong>
-                {metaRate.value === null
-                  ? "—"
-                  : advisorRateFormat.format(metaRate.value) +
-                    (metaPartial || cell.partial ? " *" : "")}
-              </strong>
-            </div>
-            <div
-              className="advisor-metric-half"
-              aria-label={`CAC Meta ${person.name} ${day}`}
-              title="Gasto Meta / ventas de la misma fecha y moneda; sin ventas no se divide."
-            >
-              <small>CAC</small>
-              <strong>
-                {metaMoney.length
-                  ? metaMoney.map((v) => (
-                      <span key={v.currency} style={{ display: "block" }}>
-                        {formatMetaMoney(v.metaCac, v.currency)}
-                        {v.metaCac !== null && (metaPartial || v.partial)
-                          ? " *"
-                          : ""}
-                      </span>
-                    ))
-                  : "—"}
-              </strong>
-            </div>
-            <div
-              className="advisor-metric-half"
-              aria-label={`Estado CAC ${person.name} ${day}`}
-            >
-              <small>Estado</small>
-              {metaMoney.length ? (
-                metaMoney.map((m) => (
-                  <span key={m.currency}>
-                    {metaMoney.length > 1 ? m.currency + " · " : ""}
-                    <CacStateBadge
-                      status={m.status}
-                      partial={m.statusPartial}
-                      fxPending={m.fxPending}
-                    />
-                  </span>
-                ))
-              ) : (
-                <CacStateBadge />
-              )}
-            </div>
+            {metaRate.value === null
+              ? "—"
+              : advisorRateFormat.format(metaRate.value) +
+                (metaPartial || cell.partial ? " *" : "")}
           </td>
         </>
       )}
