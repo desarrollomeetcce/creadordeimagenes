@@ -823,6 +823,11 @@ function Login({
                     : "Ingresar"}
               </button>
             </form>
+            {mode === "login" && (
+              <a className="secondary" href="https://pulpo.agenciamagneto.org/login?app=generador">
+                Continuar con mi cuenta de Pulpo
+              </a>
+            )}
             {!setup && (
               <button
                 style={{ marginTop: 20 }}

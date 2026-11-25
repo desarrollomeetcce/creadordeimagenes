@@ -28,6 +28,8 @@ model User {
   @@index([archivedAt])
   id String @id @default(cuid())
   email String @unique
+  pulpoUserId String? @unique
+  pulpoManagedLogin Boolean @default(false)
   name String
   passwordHash String
   role Role @default(USER)

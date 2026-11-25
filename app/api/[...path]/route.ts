@@ -229,10 +229,11 @@ async function handle(
         const user = await db.user.findUnique({ where: { email: b.email } });
         const dummy =
           "$argon2id$v=19$m=65536,t=3,p=4$C2X8lQ97naJ+dA6gNHSPZg$zrMnmAObyP0Qw11BYl6LBjx2wTmbqkGJT0yXHXXF0ms";
+        const managedPassword = user?.pulpoManagedLogin;
         const ok = await argon2
-          .verify(user?.passwordHash ?? dummy, b.password)
+          .verify(user && !managedPassword ? user.passwordHash : dummy, b.password)
           .catch(() => false);
-        demand(user && ok, "Correo o contraseña incorrectos.", 401);
+        demand(user && !managedPassword && ok, "Correo o contraseña incorrectos.", 401);
         demand(
           user.status === "APPROVED",
           "Tu cuenta todavía no está aprobada o está suspendida.",

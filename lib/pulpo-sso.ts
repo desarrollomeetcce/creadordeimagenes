@@ -6,6 +6,8 @@ type Assertion = {
   nonce: string;
   exp: number;
   page: "home" | "plans";
+  provision?: true;
+  name?: string;
 };
 
 export function verifyPulpoAssertion(token: string, key: string, now = Math.floor(Date.now() / 1000)): Assertion | null {
@@ -23,7 +25,11 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
         typeof claims.email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(claims.email) ||
         typeof claims.nonce !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(claims.nonce) ||
         !Number.isSafeInteger(claims.exp) || claims.exp <= now || claims.exp > now + 35 ||
-        (claims.page !== "home" && claims.page !== "plans")) return null;
+        (claims.page !== "home" && claims.page !== "plans") ||
+        (claims.provision !== undefined && (
+          claims.provision !== true || typeof claims.name !== "string" ||
+          !claims.name.trim() || claims.name.length > 100
+        ))) return null;
     return claims;
   } catch {
     return null;

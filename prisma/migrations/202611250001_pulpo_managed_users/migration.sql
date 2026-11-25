@@ -1,0 +1,3 @@
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pulpoUserId" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pulpoManagedLogin" BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS "User_pulpoUserId_key" ON "User"("pulpoUserId");
