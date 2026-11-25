@@ -1,0 +1,55 @@
+.messaging-menu {
+  flex: 0 0 auto;
+}
+.messaging-menu .messaging-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.messaging-menu-trigger img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+.messaging-menu-trigger .pulpo-product-name { display: none; }
+.messaging-menu-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(200px, calc(100vw - 16px));
+  max-height: min(55vh, 250px);
+  padding: 7px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 8px 24px #0003;
+}
+.messaging-menu-panel:not(:popover-open) { display: none; }
+.messaging-menu-panel > strong {
+  display: block;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.messaging-menu-panel a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 13px;
+}
+.messaging-menu-panel a:hover,
+.messaging-menu-panel a:focus-visible { background: var(--soft); }
+.messaging-menu-panel svg { flex: none; color: var(--accent); }
+.messaging-external { margin-left: auto; color: var(--muted); }
