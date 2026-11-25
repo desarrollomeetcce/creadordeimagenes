@@ -1,4 +1,5 @@
 "use client";
+import { PulpoDiplomaObservations } from "./pulpo-diploma-observations";
 import { CampaignTiming } from "./campaign-timing";
 import { countryName } from "../../lib/meta-ads/countries";
 import {
@@ -406,6 +407,7 @@ export function EffectivenessHistory({
                     </p>
                   )}
                 </DetailStickyHeader>
+                {country && <PulpoDiplomaObservations aliasId={aliasId} tableId={tableId} country={country} />}
                 {data?.timing && <CampaignTiming {...data.timing}/>}
                 {!valid && (
                   <p role="alert">

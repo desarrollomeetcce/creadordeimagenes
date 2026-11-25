@@ -1,0 +1,6 @@
+.pulpo-diploma-observations { margin-block: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; }
+.pulpo-diploma-observations summary { cursor: pointer; font-weight: 650; color: var(--accent); }
+.pulpo-diploma-observations ol { padding-inline-start: 20px; }
+.pulpo-diploma-observations li { margin-block: 10px; }
+.pulpo-diploma-observations li p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; }
+.pulpo-diploma-observations li small { color: var(--muted); }

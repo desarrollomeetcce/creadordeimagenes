@@ -1,4 +1,5 @@
 "use client";
+import { PulpoDiplomaObservations } from "./pulpo-diploma-observations";
 import dynamic from "next/dynamic";
 import { MetaCountryCampaigns } from "./meta-country-campaigns";
 import type { LinkedCampaignCountryCount } from "../../lib/meta-ads/linked-campaign-counts";
@@ -4213,6 +4214,7 @@ function MetaDetail({
         <strong>{countryName(o.aliasCountry)}</strong>
         {canReplace && replacement && <button type="button" className="meta-inventory-replace-trigger" onClick={()=>setReplacementOpen(v=>!v)} aria-expanded={replacementOpen}>↔ Reemplazar</button>}
       </p>
+      {replacement && o.aliasId && <PulpoDiplomaObservations aliasId={o.aliasId} tableId={replacement.tableId} country={replacement.country} />}
       {replacementOpen && replacement && <MetaInventoryReplacement {...replacement} names={[replacement.name]} source="meta" sheetName={o.alias?.table?.name??"Hoja sincronizada"} since={o.periods[period]?.since??""} until={o.periods[period]?.until??""} onClose={()=>setReplacementOpen(false)} onChanged={onChanged} onCompleted={onCompleted}/>}
 
 
