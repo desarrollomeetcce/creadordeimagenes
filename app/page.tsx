@@ -597,9 +597,9 @@ export default function Home() {
                 )}
               </>
             ) : view === "performance" ? (
-              <AdvisorPerformance owner={["OWNER","SUPERVISOR"].includes(user.role)} initialPanel={new URLSearchParams(location).get("panel")==="advisor"?"advisor":"team"} />
+              <AdvisorPerformance canViewInventory={user.role==="OWNER"||!!user.effectivenessShared} owner={["OWNER","SUPERVISOR"].includes(user.role)} initialPanel={new URLSearchParams(location).get("panel")==="advisor"?"advisor":"team"} />
             ) : financialViews.includes(view) && (user.role === "OWNER"||user.effectivenessShared) ? (
-              <ProductsCatalog key={view} module={view==="inventory"?"inventory":view==="advisors"?"advisors":"sales"} initialAdvisorPeriod={view==="products"?salesAdvisorPeriod:null} onSalesPeriod={period=>{navigate("products");setSalesAdvisorPeriod(period)}} />
+              <ProductsCatalog key={view} initialTop={view==="inventory"&&new URLSearchParams(location).get("panel")==="top"} module={view==="inventory"?"inventory":view==="advisors"?"advisors":"sales"} initialAdvisorPeriod={view==="products"?salesAdvisorPeriod:null} onSalesPeriod={period=>{navigate("products");setSalesAdvisorPeriod(period)}} />
             ) : view === "fixed-costs" && (user.role==="OWNER"||user.fixedCostsShared) ? (
               <FixedCosts />
             ) : view === "metaads" ? (

@@ -167,7 +167,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
           )}
         </article>
       )}
-      <h2>Diplomados por periodo</h2>
+      <h2 id="diplomados-por-periodo">Diplomados por periodo</h2>
       <div className="row advisor-period-controls">
         <MetaDateRange
           from={since}

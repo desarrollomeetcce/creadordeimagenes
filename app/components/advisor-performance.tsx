@@ -29,7 +29,9 @@ type PerformancePanel = "team" | "advisor";
 function PerformanceNavigation({
   panel,
   onSelect,
+  canViewInventory,
 }: {
+  canViewInventory: boolean;
   panel?: PerformancePanel;
   onSelect?: (panel: PerformancePanel) => void;
 }) {
@@ -60,6 +62,21 @@ function PerformanceNavigation({
           Mi desempeño
         </a>
       )}
+      {!canViewInventory && onSelect && panel === "team" ? (
+        <button type="button" onClick={() => onSelect("advisor")}>
+          Diplomados
+        </button>
+      ) : (
+        <a
+          href={
+            canViewInventory
+              ? "?view=inventory&panel=top"
+              : "#diplomados-por-periodo"
+          }
+        >
+          Diplomados
+        </a>
+      )}
     </nav>
   );
 }
@@ -67,15 +84,21 @@ function PerformanceNavigation({
 export function AdvisorPerformance({
   owner,
   initialPanel,
+  canViewInventory = false,
 }: {
+  canViewInventory?: boolean;
   owner: boolean;
   initialPanel?: PerformancePanel;
 }) {
   return owner ? (
-    <ManagedAdvisorPerformance owner initialPanel={initialPanel} />
+    <ManagedAdvisorPerformance
+      owner
+      initialPanel={initialPanel}
+      canViewInventory={canViewInventory}
+    />
   ) : (
     <section className="advisor-performance" aria-label="Mi desempeño">
-      <PerformanceNavigation />
+      <PerformanceNavigation canViewInventory={canViewInventory} />
       <AdvisorPeriodSignals />
     </section>
   );
@@ -84,7 +107,9 @@ export function AdvisorPerformance({
 function ManagedAdvisorPerformance({
   owner,
   initialPanel,
+  canViewInventory,
 }: {
+  canViewInventory: boolean;
   owner: boolean;
   initialPanel?: PerformancePanel;
 }) {
@@ -166,7 +191,11 @@ function ManagedAdvisorPerformance({
     ) ?? [];
   return (
     <section className="advisor-performance" aria-label="Mi desempeño">
-      <PerformanceNavigation panel={panel} onSelect={setPanel} />
+      <PerformanceNavigation
+        panel={panel}
+        onSelect={setPanel}
+        canViewInventory={canViewInventory}
+      />
       <header className="performance-heading">
         <div>
           <h1>

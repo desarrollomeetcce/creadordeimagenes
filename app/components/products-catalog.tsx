@@ -56,9 +56,11 @@ export function ProductsCatalog({
   module = "sales",
   onSalesPeriod,
   initialAdvisorPeriod,
+  initialTop = false,
 }: {
   module?: "sales" | "inventory" | "advisors";
   onSalesPeriod?: (period: AdvisorPeriodView) => void;
+  initialTop?: boolean;
   initialAdvisorPeriod?: AdvisorPeriodView | null;
 }) {
   const moduleKind =
@@ -1036,6 +1038,7 @@ export function ProductsCatalog({
         <InventoryCatalog
           key={special!.id}
           listId={special!.id}
+          initialTop={initialTop}
           tables={orderedTables}
           initialTableId={table?.id ?? ""}
           sheetTabs={null}

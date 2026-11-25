@@ -165,7 +165,9 @@ export function InventoryCatalog({
   toolbarActions,
   onChanged,
   onOpenInventory,
+  initialTop = false,
 }: {
+  initialTop?: boolean;
   listId?: string;
   tables: Table[];
   initialTableId: string;
@@ -176,7 +178,12 @@ export function InventoryCatalog({
 }) {
   const [workspaceView, setWorkspaceView] = useWorkbookPreference<string>(listId, "inventory-workspace", "catalog");
   const [workspaceColumns, setWorkspaceColumns] = useWorkbookPreference<string[] | null>(listId, "inventory-top-board-columns", null);
-  const inTop = workspaceView === "top";
+  const [linkedTop, setLinkedTop] = useState(initialTop);
+  const inTop = linkedTop || workspaceView === "top";
+  function chooseWorkspace(view: "catalog" | "top") {
+    setLinkedTop(false);
+    setWorkspaceView(view);
+  }
   const inventoryScroll = useRef<HTMLDivElement>(null);
   const inventoryWindowControls = useRef<{
     changeMode: (mode: FinancialTableWindowMode) => void;
@@ -1763,8 +1770,8 @@ export function InventoryCatalog({
     />
   );
   const workspaceTabs = <nav className="inventory-workspace-tabs" role="tablist" aria-label="Vista de inventario">
-    <button type="button" role="tab" aria-selected={!inTop} disabled={busy} onClick={() => setWorkspaceView("catalog")}>Inventario</button>
-    <button type="button" role="tab" aria-selected={inTop} disabled={busy} onClick={() => setWorkspaceView("top")}><span aria-hidden="true">★</span> Top</button>
+    <button type="button" role="tab" aria-selected={!inTop} disabled={busy} onClick={() => chooseWorkspace("catalog")}>Inventario</button>
+    <button type="button" role="tab" aria-selected={inTop} disabled={busy} onClick={() => chooseWorkspace("top")}><span aria-hidden="true">★</span> Top</button>
   </nav>;
   if (inTop) return <section className="inventory-catalog sheet-view" aria-label="Top del inventario">
     {(!trialDirectory || !sheetDirectory) && workspaceTabs}
