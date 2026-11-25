@@ -132,6 +132,7 @@ export function PendingSales({ onClose }: { onClose: () => void }) {
         <label>
           Hoja
           <select
+            aria-label="Hoja"
             value={table}
             onChange={(e) => {
               setTable(e.target.value);
@@ -151,6 +152,7 @@ export function PendingSales({ onClose }: { onClose: () => void }) {
         <label>
           Diplomado
           <select
+            aria-label="Diplomado"
             value={alias}
             onChange={(e) => {
               const next = e.target.value;
@@ -172,6 +174,7 @@ export function PendingSales({ onClose }: { onClose: () => void }) {
         <label>
           País
           <select
+            aria-label="País"
             value={country}
             onChange={(e) => setCountry(e.target.value)}
             required
@@ -187,6 +190,7 @@ export function PendingSales({ onClose }: { onClose: () => void }) {
         <label>
           Asesor
           <select
+            aria-label="Asesor"
             value={advisor}
             onChange={(e) => setAdvisor(e.target.value)}
             required
