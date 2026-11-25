@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodSignals } from "./advisor-period-signals";
+import { PerformanceConfiguration } from "./performance-configuration";
 import { PerformanceTeam } from "./performance-team";
 import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
@@ -23,11 +24,28 @@ const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
 export function AdvisorPerformance({ owner }: { owner: boolean }) {
-  return owner ? <ManagedAdvisorPerformance owner /> : <AdvisorPeriodSignals />;
+  return (
+    <>
+      <nav
+        className="performance-panel-tabs performance-workspace-nav"
+        aria-label="Seguimiento"
+      >
+        <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
+          Vista general
+        </a>
+        <a href="?view=performance" aria-current="page">
+          Mi desempeño
+        </a>
+      </nav>
+      {owner ? <ManagedAdvisorPerformance owner /> : <AdvisorPeriodSignals />}
+    </>
+  );
 }
 
 function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
   const today = limaToday();
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [diplomasOpen, setDiplomasOpen] = useState(false);
   const [panel, setPanel] = useState<"team" | "advisor">(
     owner ? "team" : "advisor",
   );
@@ -96,7 +114,7 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
       document.removeEventListener("visibilitychange", load);
     };
   }, [query, reload, owner, advisorId, panel]);
-  const card = current?.[view];
+  const card = view === "today" ? current?.metaToday : current?.metaYesterday;
   const goal = card?.goal;
   const achieved =
     card?.percent !== null && card?.percent !== undefined && goal
@@ -126,14 +144,10 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
               : "Tus ventas, tus bases y el avance hacia tus objetivos."}
           </p>
         </div>
-        <button disabled={false} onClick={() => setReload((n) => n + 1)}>
+        <button type="button" onClick={() => setReload((n) => n + 1)}>
           Actualizar
         </button>
       </header>
-      {advisorId && panel === "advisor" && <details>
-        <summary>Comentarios por diplomado</summary>
-        <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
-      </details>}
       {owner && (
         <div
           role="tablist"
@@ -143,9 +157,12 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
           <button
             role="tab"
             aria-selected={panel === "team"}
-            onClick={() => setPanel("team")}
+            onClick={() => {
+              setPanel("team");
+              setDiplomasOpen(false);
+            }}
           >
-            Mis asesores
+            Configuración de asesores
           </button>
           <button
             role="tab"
@@ -157,13 +174,24 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
         </div>
       )}
       {owner && panel === "team" && (
-        <PerformanceTeam
-          reload={reload}
-          onDetail={(id) => {
-            setAdvisorId(id);
-            setPanel("advisor");
-          }}
-        />
+        <>
+          <PerformanceConfiguration reload={reload} />
+          <details
+            className="performance-history"
+            onToggle={(event) => setAccountsOpen(event.currentTarget.open)}
+          >
+            <summary>Cuentas de acceso</summary>
+            {accountsOpen && (
+              <PerformanceTeam
+                reload={reload}
+                onDetail={(id) => {
+                  setAdvisorId(id);
+                  setPanel("advisor");
+                }}
+              />
+            )}
+          </details>
+        </>
       )}
       <div hidden={owner && panel !== "advisor"}>
         {owner && panel === "advisor" && (
@@ -208,13 +236,13 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 aria-pressed={view === "today"}
                 onClick={() => setView("today")}
               >
-                Hoy · avance provisional
+                Hoy
               </button>
               <button
                 aria-pressed={view === "yesterday"}
                 onClick={() => setView("yesterday")}
               >
-                Ayer · día completo
+                Ayer
               </button>
             </div>
             {card && (
@@ -244,15 +272,11 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                     </strong>
                   </div>
                   <div>
-                    <span>
-                      {view === "today"
-                        ? "Base por contactar (BC)"
-                        : "Base manual (BM)"}
-                    </span>
+                    <span>Base de Meta</span>
                     <strong>{fmt(card.base)}</strong>
                   </div>
                   <div>
-                    <span>Efectividad · V/{card.basis}</span>
+                    <span>Efectividad</span>
                     <strong>
                       {pct(card.percent)}
                       {card.partial ? " *" : ""}
@@ -272,15 +296,10 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                   previousPartial={card.previousPartial}
                   goal={card.goal}
                 />
-                <p className="hint">
-                  {view === "today"
-                    ? "BC es la base que declaras disponible para contactar. No significa que ya hayas contactado a todas esas personas ni que sea exclusivamente la base ingresada hoy."
-                    : "BM corresponde a las 24 horas de ayer, de 00:00 a 00:00 en Lima, y se registra al día siguiente en Totales."}
-                </p>
                 {card.base === null ? (
                   <p className="performance-pending">
-                    Pendiente de registrar {card.basis}. Todavía no se puede
-                    calcular tu efectividad.
+                    Aún no hay conversaciones reportadas por Meta para esta
+                    fecha.
                   </p>
                 ) : card.base === 0 ? (
                   <p className="performance-pending">
@@ -296,7 +315,11 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 ) : null}
                 {(goal || card.salesTarget !== null) && (
                   <div className="performance-goal-progress">
-                    <p>{goal ? "Meta diaria de efectividad · "+card.basis : "Meta diaria de ventas"}</p>
+                    <p>
+                      {goal
+                        ? "Meta diaria de efectividad"
+                        : "Meta diaria de ventas"}
+                    </p>
                     {progress !== null && (
                       <>
                         <progress
@@ -403,7 +426,7 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 rows={current.history.map((d) => ({
                   day: d.day,
                   results: d.sales,
-                  cost: view === "today" ? d.bc : d.bm,
+                  cost: d.metaBase,
                   spend: null,
                 }))}
                 bars="results"
@@ -414,10 +437,7 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 until={until}
                 labels={{
                   results: "Ventas (V)",
-                  cost:
-                    view === "today"
-                      ? "Base por contactar (BC)"
-                      : "Base manual (BM)",
+                  cost: "Base de Meta",
                   spend: "",
                 }}
                 units={{ results: "count", cost: "count", spend: "count" }}
@@ -438,10 +458,8 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                     <tr>
                       <th>Fecha</th>
                       <th>Ventas</th>
-                      <th>BC</th>
-                      <th>V/BC</th>
-                      <th>BM</th>
-                      <th>V/BM</th>
+                      <th>Base de Meta</th>
+                      <th>Efectividad</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -452,19 +470,10 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                           {d.na ? "N.A." : fmt(d.sales)}
                           {d.partial ? " *" : ""}
                         </td>
-                        <td>{fmt(d.bc)}</td>
+                        <td>{fmt(d.metaBase)}</td>
                         <td>
-                          {pct(performanceRatio(d.sales, d.bc, 100))}
-                          {d.partial ? " *" : ""}
-                        </td>
-                        <td>{fmt(d.bm)}</td>
-                        <td>
-                          {pct(
-                            d.day < today && !d.partial
-                              ? performanceRatio(d.sales, d.bm, 100)
-                              : null,
-                          )}
-                          {d.partial ? " *" : ""}
+                          {pct(performanceRatio(d.sales, d.metaBase, 100))}
+                          {d.metaPartial ? " *" : ""}
                         </td>
                       </tr>
                     ))}
@@ -472,13 +481,19 @@ function ManagedAdvisorPerformance({ owner }: { owner: boolean }) {
                 </table>
               </div>
               <p className="hint">
-                * Cobertura parcial · — sin dato. BM y BC se reciben del reparto
-                de Totales; las ventas respetan el reparto registrado por
-                asesor, aunque cambie el responsable.
+                * Cobertura parcial · — sin dato. Las ventas respetan el reparto
+                registrado por asesor.
               </p>
             </details>
-            <details className="performance-history">
-              <summary>Qué diplomados vendí en el período</summary>
+            <details
+              className="performance-history"
+              onToggle={(event) => setDiplomasOpen(event.currentTarget.open)}
+            >
+              <summary>Diplomados, ventas y observaciones</summary>
+              {diplomasOpen && advisorId && (
+                <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
+              )}
+              <h3>Ventas registradas por diplomado</h3>
               {!positive.length ? (
                 <p>No hay ventas positivas registradas en este período.</p>
               ) : (

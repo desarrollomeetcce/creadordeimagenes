@@ -3490,6 +3490,32 @@ test("Base aproximada: cuenta el día entero por asignación, deduplica relevos 
   );
 });
 
+test("Mi desempeño toma la base original de Meta del asesor y descarta reemplazos manuales", async () => {
+  const { advisorBaseEstimate } = await import("../lib/meta-ads/advisor-base-estimate");
+  const day = "2026-11-25";
+  const base = { sales: null, spend: null, fixedCost: null, campaigns: 1 };
+  const rows = [
+    { advisorId: "ana", campaigns: 1, changes: [], days: {
+      [day]: { ...base, base: 500, sourceBase: 24, manual: ["base"] as const },
+    } },
+    { advisorId: "ana", campaigns: 1, changes: [], days: {
+      [day]: { ...base, base: 80, sourceBase: null, campaigns: 0 },
+    } },
+    { advisorId: "ana", campaigns: 0, changes: [], days: {
+      [day]: { ...base, base: 70 },
+    } },
+    { advisorId: "beto", campaigns: 1, changes: [], days: {
+      [day]: { ...base, base: 900, sourceBase: 900 },
+    } },
+  ];
+  const result = advisorBaseEstimate(rows, [day], "ana", new Date(day + "T20:00:00Z"), true);
+  assert.equal(result.days[day].value, 24);
+  assert.equal(result.days[day].expected, 2);
+  assert.equal(result.days[day].partial, true);
+  const missing = advisorBaseEstimate(rows.slice(1, 2), [day], "ana", new Date(day + "T20:00:00Z"), true);
+  assert.equal(missing.days[day].value, null);
+});
+
 test("Períodos guardados: relativos a Lima, cruces de año/mes bisiesto y consultas mayores a31 días", async () => {
   const { detailPeriodPreset } =
     await import("../lib/meta-ads/detail-period-presets");

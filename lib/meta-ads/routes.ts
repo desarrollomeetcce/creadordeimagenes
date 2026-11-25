@@ -214,6 +214,11 @@ export async function metaRoutes(
       ).setMetaStatus(actor, parts[2], b.status, b.expectedStatus),
     );
   }
+  if (path === "my-performance/configuration") {
+    const configuration = await import("./advisor-performance");
+    if (method === "GET") return send(await configuration.performanceConfiguration(actor));
+    if (method === "PUT") return send(await configuration.savePerformanceConfiguration(actor, await body()));
+  }
   if (path === "my-performance/team" && method === "GET")
     return send(
       await (await import("./advisor-performance")).performanceTeam(actor),

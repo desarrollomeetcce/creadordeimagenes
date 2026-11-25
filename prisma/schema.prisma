@@ -1750,3 +1750,9 @@ model MetaAdvisorPeriodNote {
 
   @@index([advisorId,day,createdAt])
 }
+
+model MetaAdvisorPerformanceConfig {
+  id       String @id
+  percent  Float?
+  revision Int    @default(1)
+}

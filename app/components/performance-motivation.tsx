@@ -87,16 +87,13 @@ export function PerformanceMotivation({
         </p>
         {trend.kind !== "pending" && previousPercent !== null && (
           <small>
-            Comparación con {previousDay}: V/{basis} de{" "}
+            Comparación con {previousDay}, ventas sobre base de {basis},{" "}
             {number(previousPercent)} % a {number(percent!)} %. Misma base de
             cálculo.
           </small>
         )}
         {trend.kind === "pending" && (
-          <small>
-            Se compara {basis} con {basis} del día anterior; no se mezclan BM y
-            BC.
-          </small>
+          <small>La comparación usa la base de {basis} de cada día.</small>
         )}
       </div>
     </section>

@@ -283,7 +283,10 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       403,
     );
   if (manager) await performanceManager(actor);
-  const targets = await db.metaAdvisorTarget.findMany({ where: { advisorId } });
+  const [targets, metaGoal] = await Promise.all([
+    db.metaAdvisorTarget.findMany({ where: { advisorId } }),
+    performanceMetaGoal(),
+  ]);
   const goals = await db.metaAdvisorGoal.findMany({
     where: { advisorId },
     orderBy: [{ since: "desc" }, { basis: "asc" }],
@@ -298,6 +301,8 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       partial: !!c?.partial,
       bm: c?.manualBase ?? null,
       bc: c?.advisorBase ?? null,
+      metaBase: source.performanceMetaBase?.[day]?.value ?? null,
+      metaPartial: !!source.performanceMetaBase?.[day]?.partial || !!c?.partial,
       attendance: c?.status ?? null,
       hours: c?.absence.hours ?? null,
       pending: c?.absence.pending ?? 0,
@@ -347,8 +352,27 @@ export async function advisorPerformance(actor: Actor, input: unknown) {
       salesTarget: target ? target.salesTarget : (legacy?.salesTarget ?? null),
     };
   };
+  const metaCard = (day: string) => {
+    const currentDay = daily(current, day);
+    const previous = daily(current, shiftDay(day, -1));
+    return {
+      ...currentDay,
+      basis: "Meta",
+      base: currentDay.metaBase,
+      partial: currentDay.metaPartial,
+      percent: performanceRatio(currentDay.sales, currentDay.metaBase, 100),
+      previousDay: previous.day,
+      previousPercent: performanceRatio(previous.sales, previous.metaBase, 100),
+      previousPartial: previous.metaPartial,
+      goal: metaGoal.percent === null ? null : { percent: metaGoal.percent },
+      salesTarget:
+        targets.find((target) => target.basis === "B")?.salesTarget ?? null,
+    };
+  };
   return {
     person,
+    metaToday: metaCard(today),
+    metaYesterday: metaCard(yesterday),
     today: card(today, "BC"),
     yesterday: card(yesterday, "BM"),
     since,
@@ -567,3 +591,131 @@ export async function performanceTeam(actor: Actor) {
   };
 }
 export type PerformanceTeam = Awaited<ReturnType<typeof performanceTeam>>;
+
+const metaGoalId = "global";
+export async function performanceMetaGoal() {
+  return (
+    (await db.metaAdvisorPerformanceConfig.findUnique({
+      where: { id: metaGoalId },
+      select: { percent: true, revision: true },
+    })) ?? { percent: null, revision: 0 }
+  );
+}
+
+export async function performanceConfiguration(actor: Actor) {
+  await performanceManager(actor);
+  const [goal, people] = await Promise.all([
+    performanceMetaGoal(),
+    db.metaAdvisor.findMany({
+      where: { sheet: { archivedAt: null } },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        sheet: { select: { name: true } },
+        targets: {
+          where: { basis: "B" },
+          select: { salesTarget: true, revision: true },
+        },
+      },
+    }),
+  ]);
+  await performanceManager(actor);
+  return {
+    goal,
+    people: people.map(({ id, name, sheet, targets }) => ({
+      id,
+      name,
+      sheet: sheet.name,
+      salesTarget: targets[0]?.salesTarget ?? null,
+      revision: targets[0]?.revision ?? 0,
+    })),
+  };
+}
+
+const configurationInput = z
+  .object({
+    goal: z
+      .object({
+        percent: z.number().finite().min(0).max(100).nullable(),
+        revision: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    people: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(100),
+            salesTarget: z.number().int().min(1).max(100000000).nullable(),
+            revision: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(1000),
+  })
+  .strict()
+  .refine(
+    ({ people }) => new Set(people.map(({ id }) => id)).size === people.length,
+  );
+
+export async function savePerformanceConfiguration(
+  actor: Actor,
+  input: unknown,
+) {
+  await performanceManager(actor);
+  const { goal, people } = configurationInput.parse(input);
+  await db.$transaction(async (tx) => {
+    await performanceLock(tx, actor);
+    if (goal) {
+      const where = { id: metaGoalId };
+      const current = await tx.metaAdvisorPerformanceConfig.findUnique({
+        where,
+      });
+      demand(
+        (current?.revision ?? 0) === goal.revision,
+        "La meta cambió. Actualiza la configuración.",
+        409,
+      );
+      await tx.metaAdvisorPerformanceConfig.upsert({
+        where,
+        create: { ...where, percent: goal.percent },
+        update: { percent: goal.percent, revision: { increment: 1 } },
+      });
+    }
+    for (const person of people) {
+      const advisor = await tx.metaAdvisor.findFirst({
+        where: { id: person.id, sheet: { archivedAt: null } },
+        select: {
+          id: true,
+          targets: { where: { basis: "B" }, select: { revision: true } },
+        },
+      });
+      demand(advisor, "Asesor no disponible.", 404);
+      demand(
+        (advisor.targets[0]?.revision ?? 0) === person.revision,
+        "Una meta cambió. Actualiza la configuración.",
+        409,
+      );
+      const key = { advisorId: advisor.id, basis: "B" };
+      await tx.metaAdvisorTarget.upsert({
+        where: { advisorId_basis: key },
+        create: { ...key, salesTarget: person.salesTarget },
+        update: { salesTarget: person.salesTarget, revision: { increment: 1 } },
+      });
+    }
+    await recordActivity(tx, {
+      data: {
+        actorId: actor.id,
+        action: "ASESOR_METAS_DIARIAS_GUARDADAS",
+        resourceId: metaGoalId,
+        detail: {
+          base: "B",
+          effectivenessChanged: !!goal,
+          advisors: people.map(({ id }) => id),
+        },
+      },
+    });
+  });
+  return performanceConfiguration(actor);
+}

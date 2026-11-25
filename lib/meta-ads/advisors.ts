@@ -1270,6 +1270,9 @@ async function readAdvisorSheet(
         assignedBaseEstimate: filters.advisorId
           ? advisorBaseEstimate(estimateRows, dates, filters.advisorId)
           : undefined,
+        performanceMetaBase: personal && filters.advisorId
+          ? advisorBaseEstimate(estimateRows, dates, filters.advisorId, new Date(), true).days
+          : undefined,
         advisorOrderRevision: advisorList ? advisorOrderRevision(advisorList.config, people) : undefined,
         rows: orderedAdvisors(people, advisorList?.config).map((p) => ({
           ...p,

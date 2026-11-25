@@ -12,6 +12,7 @@ const captions = {
 };
 export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
   const today = limaToday();
+  const [view, setView] = useState<"today" | "yesterday">("today");
   const [since, setSince] = useState(shiftDay(today, -6));
   const [until, setUntil] = useState(today);
   const [day, setDay] = useState(today);
@@ -77,12 +78,70 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
     }
   }
   const valid = data?.since === since && data.until === until;
+  const performance = data?.performance;
+  const summary = performance?.[view];
   return (
     <section
       className="advisor-period-signals"
       aria-label="Diplomados por periodo"
     >
       {!advisorId && <h1>Mi desempeño</h1>}
+      {performance && summary && (
+        <article className="performance-day">
+          <div
+            className="performance-view-picker"
+            role="group"
+            aria-label="Día del desempeño"
+          >
+            <button
+              type="button"
+              aria-pressed={view === "today"}
+              onClick={() => setView("today")}
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "yesterday"}
+              onClick={() => setView("yesterday")}
+            >
+              Ayer
+            </button>
+          </div>
+          <div className="performance-values">
+            <div>
+              <span>Efectividad · Base de Meta</span>
+              <strong>
+                {summary.percent === null
+                  ? "Sin datos"
+                  : summary.percent.toLocaleString("es-PE", {
+                      maximumFractionDigits: 2,
+                    }) + " %"}
+              </strong>
+            </div>
+            <div>
+              <span>Meta de efectividad</span>
+              <strong>
+                {performance.goal === null
+                  ? "Sin definir"
+                  : performance.goal.toLocaleString("es-PE") + " %"}
+              </strong>
+            </div>
+            {summary.dailySalesGoal && (
+              <div>
+                <span>Meta diaria de ventas</span>
+                <strong>
+                  {summary.dailySalesGoal === "met" ? "Alcanzada" : "En curso"}
+                </strong>
+              </div>
+            )}
+          </div>
+          {summary.partial && summary.percent !== null && (
+            <p className="hint">Datos parciales para esta fecha.</p>
+          )}
+        </article>
+      )}
+      <h2>Diplomados por periodo</h2>
       <div className="row advisor-period-controls">
         <label>
           Desde

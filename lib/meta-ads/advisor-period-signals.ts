@@ -2,8 +2,10 @@ import { z } from "zod";
 import { db } from "../db";
 import { demand } from "../errors";
 import { personalAdvisorSheet } from "./advisors";
-import { localDay } from "./analytics";
+import { localDay, shiftDay } from "./analytics";
 import { isPerformanceManager } from "./performance-access";
+import { performanceMetaGoal } from "./advisor-performance";
+import { performanceRatio } from "./performance-metrics";
 import type { Actor } from "./service";
 
 const id = z.string().min(1).max(100);
@@ -51,13 +53,45 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   const { since, until, advisorId: requested } = range.parse(input);
   rangeCheck(since, until);
   const advisorId = await advisorFor(actor, requested);
-  const [current, notes] = await Promise.all([
+  const today = localDay("America/Lima");
+  const yesterday = shiftDay(today, -1);
+  const historical = since > yesterday || until < today;
+  const [current, notes, daily, goal, target] = await Promise.all([
     personalAdvisorSheet(actor, advisorId, since, until),
     db.metaAdvisorPeriodNote.findMany({
       where: { advisorId, day: { gte: since, lte: until } },
       orderBy: [{ day: "desc" }, { createdAt: "desc" }],
     }),
+    !requested && historical
+      ? personalAdvisorSheet(actor, advisorId, yesterday, today)
+      : null,
+    requested ? null : performanceMetaGoal(),
+    requested
+      ? null
+      : db.metaAdvisorTarget.findUnique({
+          where: { advisorId_basis: { advisorId, basis: "B" } },
+          select: { salesTarget: true },
+        }),
   ]);
+  const summary = (day: string) => {
+    const source = daily ?? current;
+    const row = source.rows[0]?.days[day];
+    const base = source.performanceMetaBase?.[day];
+    const sales = row?.na ? null : (row?.sales ?? null);
+    const partial = !!(row?.partial || base?.partial);
+    return {
+      percent: performanceRatio(sales, base?.value ?? null, 100),
+      partial,
+      dailySalesGoal:
+        target?.salesTarget != null &&
+        sales !== null &&
+        (sales >= target.salesTarget || !row?.partial)
+          ? sales >= target.salesTarget
+            ? ("met" as const)
+            : ("pending" as const)
+          : null,
+    };
+  };
   demand(
     (await advisorFor(actor, requested)) === advisorId,
     "El acceso al asesor cambió.",
@@ -66,6 +100,13 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   return {
     since,
     until,
+    performance: requested
+      ? null
+      : {
+          goal: goal?.percent ?? null,
+          today: summary(today),
+          yesterday: summary(yesterday),
+        },
     items: current.breakdown.map(
       ({ tableId, aliasId, country, tableName, alias, days }) => {
         const product = { tableId, aliasId, country };

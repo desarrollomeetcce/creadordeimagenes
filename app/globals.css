@@ -3167,3 +3167,49 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .advisor-period-badge[data-signal="critical"] { background:#c84d4d30; }
 .advisor-period-notes { margin:8px 0; padding:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .advisor-period-notes form { display:grid; gap:8px; }
+
+.performance-workspace-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.performance-workspace-nav a {
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  text-decoration: none;
+}
+.performance-workspace-nav a[aria-current="page"] {
+  background: var(--surface);
+  border-color: currentColor;
+  font-weight: 650;
+}
+.performance-configuration {
+  max-width: 720px;
+  display: grid;
+  gap: 12px;
+}
+.performance-configuration .table-scroll {
+  max-height: 55vh;
+}
+.performance-configuration thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.performance-configuration th,
+.performance-configuration td {
+  padding: 5px 10px;
+}
+.performance-configuration small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.performance-configuration input {
+  width: 110px;
+}
+.performance-configuration > button {
+  justify-self: start;
+}
