@@ -69,15 +69,16 @@ export function AdvisorOverallIllustration({
 }) {
   const color =
     stage === "goal" || stage === "near"
-      ? "#208965"
+      ? "#28a782"
       : stage === "decline"
-        ? "#bc7439"
+        ? "#db9060"
         : stage === "pending"
-          ? "#778299"
-          : "#7863b9";
+          ? "#8399ad"
+          : "#9176d4";
   return (
     <svg
       viewBox="0 0 70 70"
+      className="advisor-stage-illustration"
       aria-hidden="true"
       focusable="false"
       style={{ color }}
@@ -90,7 +91,7 @@ export function AdvisorOverallIllustration({
       <g
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.8"
+        strokeWidth="3.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
