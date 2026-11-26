@@ -153,7 +153,20 @@ export function SharedPulpoMenu({
         className="pulpo-module"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          {id === "performance" ? (
+          {id === "facebook" ? (
+            <>
+              <path
+                fill="#0866ff"
+                stroke="none"
+                d="M12 2C6.3 2 2 6.18 2 11.8c0 2.93 1.17 5.48 3.07 7.23.2.18.32.44.33.71l.05 1.79a.8.8 0 0 0 1.12.71l1.98-.87c.17-.08.36-.09.54-.04.92.26 1.89.39 2.91.39 5.7 0 10-4.18 10-9.8S17.7 2 12 2Z"
+              />
+              <path
+                fill="#fff"
+                stroke="none"
+                d="m5.95 14.67 2.94-4.66a1.5 1.5 0 0 1 2.17-.4l2.34 1.75a.6.6 0 0 0 .72 0l3.15-2.39c.42-.32.96.18.68.63l-2.94 4.66a1.5 1.5 0 0 1-2.17.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.15 2.39c-.42.32-.96-.18-.68-.63Z"
+              />
+            </>
+          ) : id === "performance" ? (
             <>
               <rect x="3" y="3" width="7" height="9" rx="1" />
               <rect x="14" y="3" width="7" height="5" rx="1" />
