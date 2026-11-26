@@ -454,3 +454,13 @@
   font-size: 12px;
   color: var(--danger, #d1495b);
 }
+
+.inventory-top-card-base {
+  flex:none;
+  display:grid;
+  justify-items:end;
+  line-height:1.05;
+  font-variant-numeric:tabular-nums;
+}
+.inventory-top-card-base > span { color:var(--muted); font-size:9px; }
+.inventory-top-card-base > strong { font-size:12px; }

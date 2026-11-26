@@ -31,16 +31,26 @@ export function inventoryCacSummary(input: {
     budget: number | null = null,
     spend: number | null = null,
     budgetPen: number | null = null,
-    spendPen: number | null = null;
+    spendPen: number | null = null,
+    metaBase: number | null = null;
   let salesPartial = false,
     budgetPartial = false,
     metaPartial = false,
     metaFxPending = false,
+    metaBasePartial = false,
     days = 0,
     first: string | null = null;
   for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000) {
     const day = new Date(at).toISOString().slice(0, 10),
       d = row.days[day];
+    const reportedBase = d?.sourceBase;
+    if (typeof reportedBase === "number" && Number.isFinite(reportedBase))
+      metaBase = (metaBase ?? 0) + reportedBase;
+    if (
+      row.campaigns > 0 &&
+      (reportedBase == null || (d?.campaigns ?? 0) < row.campaigns)
+    )
+      metaBasePartial = true;
     if (!d) {
       if (firstRecorded && day >= firstRecorded) {
         salesPartial = true;
@@ -136,6 +146,8 @@ export function inventoryCacSummary(input: {
     currency: row.currency,
     sales,
     salesPartial,
+    metaBase,
+    metaBasePartial: metaBase !== null && metaBasePartial,
     days,
     first,
     budget: amount(budget, budgetPen, budgetPartial),

@@ -5,12 +5,14 @@ export function InventoryTopSummary({
   title,
   children,
   action,
+  metric,
   onDetail,
   detailDisabled,
 }: {
   title: string;
   children: ReactNode;
   action: ReactNode;
+  metric?: ReactNode;
   onDetail: () => void;
   detailDisabled: boolean;
 }) {
@@ -28,6 +30,7 @@ export function InventoryTopSummary({
         >
           {title}
         </button>
+        {metric}
         {action}
       </div>
       <div id={id} hidden={!open} className="inventory-top-card-summary">

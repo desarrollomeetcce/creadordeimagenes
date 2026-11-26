@@ -405,6 +405,9 @@ export function InventoryTopBoard({
       end = date(p.activeUntil);
     const ongoing = p.activation === "ACTIVE" || p.activation === "MIXED";
     const status = p.cac?.meta.assessment.status ?? "PENDING";
+    const base = p.cac?.metaBase;
+    const basePartial = base != null && p.cac?.metaBasePartial;
+    const baseLabel = base == null ? "—" : base.toLocaleString("es-PE");
     return (
       <article
         key={item.id}
@@ -417,6 +420,24 @@ export function InventoryTopBoard({
       >
         <InventoryTopSummary
           title={item.name}
+          metric={
+            <span
+              className="inventory-top-card-base"
+              title={
+                base == null
+                  ? "Base de Meta sin datos en el periodo"
+                  : basePartial
+                    ? "Base de Meta con cobertura parcial"
+                    : "Base de Meta del periodo"
+              }
+            >
+              <span>Base de Meta</span>
+              <strong>
+                {baseLabel}
+                {basePartial ? "*" : ""}
+              </strong>
+            </span>
+          }
           detailDisabled={!p.targets[0]?.aliasId}
           onDetail={() => onDetail(column, item.name, p.targets[0].aliasId)}
           action={
@@ -481,6 +502,13 @@ export function InventoryTopBoard({
             </strong>
           </div>
           <dl>
+            <div>
+              <dt>Conversaciones de Meta del período</dt>
+              <dd>
+                {baseLabel}
+                {basePartial ? " · Parcial" : ""}
+              </dd>
+            </div>
             <div>
               <dt>Ventas del ciclo</dt>
               <dd>{p.sales == null ? "—" : p.sales.toLocaleString("es-PE")}</dd>

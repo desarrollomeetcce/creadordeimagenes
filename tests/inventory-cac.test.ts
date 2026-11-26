@@ -191,3 +191,23 @@ test("known Meta spend below zero-sales allowance is low spend, with no fabricat
   assert.equal(cacAssessment(0, null, false, undefined, true).status, "PENDING");
   assert.equal(cacAssessment(null, 10, false).status, "PENDING");
 });
+
+test("Top suma la base original de Meta dentro del periodo y conserva ceros y faltantes", () => {
+  const row = {
+    currency: "PEN", campaigns: 2,
+    days: {
+      "2026-10-29": { ...day(null, null), sourceBase: 99, campaigns: 2 },
+      "2026-10-30": { ...day(null, null), sourceBase: 12, base: 200, campaigns: 2 },
+      "2026-10-31": { ...day(null, null), sourceBase: 0, base: 50, campaigns: 1 },
+      "2026-11-01": { ...day(null, null), base: 80, campaigns: 0 },
+    },
+  } as unknown as EffectivenessRow;
+  const read = (since: string, until: string) =>
+    inventoryCacSummary({ row, since, until, rates: new Map() });
+
+  assert.equal(read("2026-10-30", "2026-10-31").metaBase, 12);
+  assert.equal(read("2026-10-30", "2026-10-31").metaBasePartial, true);
+  assert.equal(read("2026-10-30", "2026-10-30").metaBasePartial, false);
+  assert.equal(read("2026-10-31", "2026-10-31").metaBase, 0);
+  assert.equal(read("2026-11-01", "2026-11-01").metaBase, null);
+});

@@ -62,20 +62,20 @@ function PerformanceNavigation({
           Mi desempeño
         </a>
       )}
-      {!canViewInventory && onSelect && panel === "team" ? (
+      {canViewInventory ? (
+        <a
+          href="?view=inventory&panel=top"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Top<span className="sr-only"> (abre en otra pestaña)</span>
+        </a>
+      ) : onSelect && panel === "team" ? (
         <button type="button" onClick={() => onSelect("advisor")}>
           Diplomados
         </button>
       ) : (
-        <a
-          href={
-            canViewInventory
-              ? "?view=inventory&panel=top"
-              : "#diplomados-por-periodo"
-          }
-        >
-          Diplomados
-        </a>
+        <a href="#diplomados-por-periodo">Diplomados</a>
       )}
     </nav>
   );
