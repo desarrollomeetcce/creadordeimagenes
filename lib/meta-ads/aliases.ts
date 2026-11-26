@@ -932,7 +932,7 @@ export async function assignAliases(
   });
 }
 
-export async function aliasTables(actor: Actor) {
+export async function aliasTableDirectory(actor: Actor) {
   await metaEditorOnly(actor);
   const tables = await db.metaAliasTable.findMany({
     where: sharedTableWhere(actor),
@@ -956,7 +956,11 @@ export async function aliasTables(actor: Actor) {
       (a) => [a.id, a],
     ),
   );
-  const ids = [...aliases.keys()];
+  return tables.map((table) => ({ ...table, aliases: table.aliases.map((alias) => aliases.get(alias.id)!) }));
+}
+export async function aliasTables(actor: Actor) {
+  const tables = await aliasTableDirectory(actor);
+  const ids = tables.flatMap((table) => table.aliases.map((alias) => alias.id));
   const [stored, campaigns] = await Promise.all([
     db.metaEffectivenessRow.findMany({
       where: { aliasId: { in: ids }, legacy: false },
@@ -992,7 +996,6 @@ export async function aliasTables(actor: Actor) {
   return tables.map((table) => ({
     ...table,
     visibleAliasCount: counts.get(table.id)?.size ?? 0,
-    aliases: table.aliases.map((a) => aliases.get(a.id)!),
   }));
 }
 export async function createAliasTable(actor: Actor, name?: string) {

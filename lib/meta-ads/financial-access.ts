@@ -137,7 +137,7 @@ export async function financialScope(scope: string) {
   return { name: row.name, kind: "TABLE", config: {} };
 }
 export async function financialCapabilities(actor: Actor) {
-  const a = await financialAccess(actor);
+  const a = financialContext(actor)?.access ?? await financialAccess(actor);
   return {
     isOwner: a.isOwner,
     global: scopePermission(a, "ALL"),

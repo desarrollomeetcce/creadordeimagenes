@@ -47,10 +47,15 @@ type CatalogTable = {
   id: string;
   name: string;
   aliases: MetaAliasOption[];
-  visibleAliasCount: number;
+  visibleAliasCount?: number;
   aliasColumnName: string;
   defaultCountry: string;
   defaultCurrency: string;
+};
+type WorkbookAccess = {
+  isOwner: boolean;
+  global: "VIEW" | "EDIT" | null;
+  grants: { scope: string; permission: "VIEW" | "EDIT" }[];
 };
 export function ProductsCatalog({
   module = "sales",
@@ -75,11 +80,7 @@ export function ProductsCatalog({
   const warmFinancialView = useCallback(() => {
     void import("./meta-effectiveness").catch(() => {});
   }, []);
-  const [access, setAccess] = useState<{
-    isOwner: boolean;
-    global: "VIEW" | "EDIT" | null;
-    grants: { scope: string; permission: "VIEW" | "EDIT" }[];
-  } | null>(null);
+  const [access, setAccess] = useState<WorkbookAccess | null>(null);
   const [pendingSalesOpen, setPendingSalesOpen] = useState(false);
   const [sharingScope, setSharingScope] = useState<string | null>(null);
   const root = useRef<HTMLElement>(null);
@@ -92,60 +93,6 @@ export function ProductsCatalog({
       : access?.global || access?.grants.some((g) => g.scope === scope)
         ? "VIEW"
         : null;
-  useEffect(() => {
-    let live = true,
-      pending = false;
-    const update = () => {
-      if (document.visibilityState !== "visible" || pending) return;
-      pending = true;
-      void generalApi("meta-ads/effectiveness-access")
-        .then((a) => {
-          if (live) {
-            const signature = JSON.stringify([
-              a.isOwner,
-              a.global,
-              [...a.grants].sort((x, y) => x.scope.localeCompare(y.scope)),
-            ]);
-            const changed =
-              !!accessVersion.current && accessVersion.current !== signature;
-            if (accessVersion.current !== signature) setAccess(a);
-            accessVersion.current = signature;
-            if (changed)
-              void Promise.all([
-                api("meta-ads/alias-tables"),
-                api("meta-ads/workbook-sheets?mode=directory"),
-              ])
-                .then(([tables, sheets]) => {
-                  if (live) {
-                    setTables(tables);
-                    setSpecials(sheets);
-                  }
-                })
-                .catch(() => {
-                  if (live) {
-                    setTables([]);
-                    setSpecials([]);
-                  }
-                });
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          pending = false;
-        });
-    };
-    update();
-    window.addEventListener("focus", update);
-    const timer = setInterval(update, 30000);
-    const sharing = () => setSharingScope("ALL");
-    window.addEventListener("share-effectiveness", sharing);
-    return () => {
-      live = false;
-      clearInterval(timer);
-      window.removeEventListener("focus", update);
-      window.removeEventListener("share-effectiveness", sharing);
-    };
-  }, []);
   const userId = useContext(CurrentUserId),
     locationKey = `effectiveness-location:v2:${userId}:${module}`;
   const [restoredLocationKey, setRestoredLocationKey] = useState<string | null>(
@@ -364,51 +311,58 @@ export function ProductsCatalog({
       setBusy(false);
     }
   };
-  useEffect(() => {
-    let active = true;
-    void api("meta-ads/workbook-sheets?mode=directory")
-      .then((v) => {
-        if (active) {
-          setSpecials(v);
-          setSpecialsLoaded(true);
-        }
-      })
-      .catch((e) => {
-        if (active) setMessage(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-  const load = useCallback(async () => {
-    const [v, sheets]: [CatalogTable[], Special[]] = await Promise.all([
-      api("meta-ads/alias-tables"),
-      api("meta-ads/workbook-sheets?mode=directory"),
-    ]);
-    setTables(v);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const snapshot: { tables: CatalogTable[]; sheets: Special[]; access: WorkbookAccess } =
+      await api("meta-ads/workbook-sheets?mode=workspace", "GET", undefined, { signal });
+    if (signal?.aborted) return;
+    const { tables, sheets, access } = snapshot;
+    setTables(tables);
     setSpecials(sheets);
+    setAccess(access);
+    accessVersion.current = JSON.stringify([access.isOwner, access.global, [...access.grants].sort((a, b) => a.scope.localeCompare(b.scope))]);
+    setSelected((old) => tables.some((table) => table.id === old) ? old : (tables[0]?.id ?? ""));
+    setSpecialsLoaded(true);
   }, []);
   useEffect(() => {
-    let active = true;
-    void api("meta-ads/alias-tables")
-      .then((v: CatalogTable[]) => {
-        if (active) {
-          setTables(v);
-          setSelected((old) =>
-            v.some((t) => t.id === old) ? old : (v[0]?.id ?? ""),
-          );
+    const controller = new AbortController();
+    let pending = true;
+    void load(controller.signal).catch((error) => {
+      if (!controller.signal.aborted) setMessage(error.message);
+    }).finally(() => {
+      pending = false;
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    const update = async () => {
+      if (document.visibilityState !== "visible" || pending) return;
+      pending = true;
+      try {
+        const access = await generalApi("meta-ads/effectiveness-access", "GET", undefined, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        const signature = JSON.stringify([access.isOwner, access.global, [...access.grants].sort((a, b) => a.scope.localeCompare(b.scope))]);
+        if (accessVersion.current !== signature) {
+          setAccess(access);
+          await load(controller.signal);
         }
-      })
-      .catch((e) => {
-        if (active) setMessage(e.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
+      } catch (error) {
+        if (!controller.signal.aborted && [401,403].includes((error as { status?: number }).status ?? 0)) {
+          setAccess(null);
+          setTables([]);
+          setSpecials([]);
+          accessVersion.current = "";
+        }
+      } finally { pending = false; }
     };
-  }, []);
+    const timer = window.setInterval(update, 30000);
+    const sharing = () => setSharingScope("ALL");
+    window.addEventListener("focus", update);
+    window.addEventListener("share-effectiveness", sharing);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("share-effectiveness", sharing);
+    };
+  }, [load]);
   const menuId = useId(),
     menu = useRef<HTMLDivElement>(null);
   const [contextTable, setContextTable] = useState<{
@@ -486,12 +440,9 @@ export function ProductsCatalog({
       setBusy(false);
     }
   };
-  const deleted = async (id: string) => {
+  const deleted = async () => {
     try {
-      const v: CatalogTable[] = await api("meta-ads/alias-tables");
-      setTables(v);
-      if (selected === id || !v.some((t) => t.id === selected))
-        setSelected(v[0]?.id ?? "");
+      await load();
 
       setMessage("Tabla eliminada.");
     } catch {
@@ -820,7 +771,7 @@ export function ProductsCatalog({
                         : "before"
                       : undefined
                   }
-                  title={`${t.visibleAliasCount} diplomados presentes en esta hoja, incluidos los desactivados fijados; no cuenta retirados ni duplica países. Clic derecho para editar; arrastra para ordenar.`}
+                  title={t.visibleAliasCount === undefined ? t.name : `${t.visibleAliasCount} diplomados presentes en esta hoja, incluidos los desactivados fijados; no cuenta retirados ni duplica países. Clic derecho para editar; arrastra para ordenar.`}
                   onDragStart={(e) => {
                     dragged.current = t.id;
                     setDragging(t.id);
@@ -891,7 +842,7 @@ export function ProductsCatalog({
                     setMessage("");
                   }}
                 >
-                  {t.name} ({t.visibleAliasCount})
+                  {t.name}{t.visibleAliasCount === undefined ? "" : ` (${t.visibleAliasCount})`}
                 </button>
                 {tabEditor(t.id)}
               </span>

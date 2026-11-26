@@ -26,6 +26,13 @@ const view = <T extends { monthlyAIMicros: bigint | null }>(p: T) => ({
   ...p,
   monthlyAIMicros: p.monthlyAIMicros?.toString() ?? null,
 });
+export function planSelectorOptions() {
+  return db.membershipPlan.findMany({
+    where: { archivedAt: null },
+    select: { id: true, name: true, customUserId: true },
+    orderBy: { priceCents: "asc" },
+  });
+}
 export async function plansCatalog(internal = false) {
   return (
     await db.membershipPlan.findMany({

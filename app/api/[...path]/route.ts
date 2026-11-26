@@ -473,8 +473,10 @@ async function handle(
         return send(await plans.createCustomPlan(user, await body(req)), 201);
       if (parts.length === 2 && method === "DELETE")
         return send(await plans.archivePlan(user, parts[1]));
-      if (route === "plans" && method === "GET")
+      if (route === "plans" && method === "GET") {
+        if (req.nextUrl.searchParams.get("mode") === "selector") return send(await plans.planSelectorOptions());
         return send(await plans.plansCatalog(true));
+      }
       if (parts.length === 2 && method === "PUT")
         return send(await plans.updatePlan(user, parts[1], await body(req)));
     }

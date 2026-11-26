@@ -821,10 +821,18 @@ export async function metaRoutes(
       ).deleteWorkbookSheet(actor, parts[2], b),
     );
   }
-  if (path === "workbook-sheets" && method === "GET")
-    return send(
-      await (await import("./workbook-sheets")).workbookSheets(actor, z.enum(["directory"]).optional().parse(req.nextUrl.searchParams.get("mode")??undefined)==="directory"),
-    );
+  if (path === "workbook-sheets" && method === "GET") {
+    const mode = z.enum(["directory", "workspace"]).optional().parse(req.nextUrl.searchParams.get("mode") ?? undefined);
+    const { workbookSheets } = await import("./workbook-sheets");
+    if (mode === "workspace") {
+      const { aliasTableDirectory } = await import("./aliases");
+      const [tables, sheets, access] = await Promise.all([
+        aliasTableDirectory(actor), workbookSheets(actor, true), financialCapabilities(actor),
+      ]);
+      return send({ tables, sheets, access });
+    }
+    return send(await workbookSheets(actor, mode === "directory"));
+  }
   if (path === "workbook-sheets" && method === "POST") {
     ownerOnly(actor);
     const b = z

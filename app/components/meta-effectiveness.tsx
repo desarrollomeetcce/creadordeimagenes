@@ -426,12 +426,13 @@ export function MetaEffectiveness({
   }, [data, tableId, onPresenceChanged]);
   const catalogScope = useRef("");
   const [catalogRefresh,setCatalogRefresh] = useState(0);
+  const hasSheetData = data !== null;
   useEffect(() => {
     let alive = true, pending = false;
     const scope=JSON.stringify([tableId,evaluationStamp]);
     if(catalogScope.current!==scope){setCatalogStatus(null);catalogScope.current=scope;}
     setCatalogStatusError("");
-    if(!data)return;
+    if(!hasSheetData)return;
     const controller=new AbortController();
     const load=async()=>{
       if(pending || !alive || document.hidden)return;
@@ -447,7 +448,7 @@ export function MetaEffectiveness({
     const visible=()=>{if(!document.hidden)void load();};
     document.addEventListener("visibilitychange",visible);
     return()=>{alive=false;controller.abort();clearInterval(timer);document.removeEventListener("visibilitychange",visible);};
-  }, [tableId, data, evaluationStamp, catalogRefresh]);
+  }, [tableId, hasSheetData, evaluationStamp, catalogRefresh]);
   const [historyPeriod, setHistoryPeriod] = useState<null | {
     name: string;
     heading?: string;
