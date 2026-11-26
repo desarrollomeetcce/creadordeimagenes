@@ -9,10 +9,18 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { CostChoice } from "./cost-choice";
+import { SheetSearchSelect } from "./sheet-search-select";
 import { convertedCost } from "../../lib/cost-ledger";
 import { MetaDateRange } from "./meta-date-range";
 import { limaToday } from "./date-range";
 import "./fixed-costs.css";
+type SharePermission = "VIEW" | "EDIT";
+type ShareAccount = { name: string; email: string; role: string };
+type ShareMember = {
+  userId: string;
+  permission: SharePermission;
+  user: { name: string; email: string };
+};
 type Entry = {
   project: string;
   unit: string;
@@ -194,18 +202,36 @@ export function FixedCosts() {
     [rename, setRename] = useState(false),
     [share, setShare] = useState(false),
     [shareSheet, setShareSheet] = useState(""),
-    [members, setMembers] = useState<any[]>([]),
+    [members, setMembers] = useState<ShareMember[]>([]),
+    [shareAccounts, setShareAccounts] = useState<ShareAccount[]>([]),
     [email, setEmail] = useState(""),
-    [permission, setPermission] = useState("VIEW");
+    [permission, setPermission] = useState<SharePermission>("VIEW");
   const shareQuery = shareSheet ? "?" + new URLSearchParams({ sheet: shareSheet }) : "";
   useEffect(() => {
     if (!share) return;
     let active = true;
     void request("/sharing" + shareQuery)
-      .then((result) => { if (active) setMembers(result.members); })
+      .then((result) => {
+        if (!active) return;
+        setMembers(result.members);
+        setShareAccounts(result.accounts ?? []);
+      })
       .catch((cause) => { if (active) setError(cause.message); });
     return () => { active = false; };
   }, [share, shareQuery]);
+  function toggleSharing(sheetId: string) {
+    if (share && shareSheet === sheetId) {
+      setShare(false);
+      return;
+    }
+    setEmail("");
+    setPermission("VIEW");
+    setMembers([]);
+    setShareAccounts([]);
+    setShareSheet(sheetId);
+    setShare(true);
+  }
+  const selectedAccount = shareAccounts.find((account) => account.email === email);
   const lock = useRef(false),
     grid = useRef<HTMLDivElement>(null),
     epoch = useRef(0),
@@ -255,7 +281,11 @@ export function FixedCosts() {
     setRemove("");
     fn();
   };
-  async function mutate(fn: () => Promise<void>, message = "Guardado.") {
+  async function mutate(
+    fn: () => Promise<void>,
+    message = "Guardado.",
+    refreshGrid = true,
+  ) {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
@@ -264,7 +294,7 @@ export function FixedCosts() {
     try {
       await fn();
       setNotice(message);
-      setRevision((v) => v + 1);
+      if (refreshGrid) setRevision((v) => v + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo guardar.");
     } finally {
@@ -624,23 +654,26 @@ export function FixedCosts() {
           </select>
         </label>
         {data?.owner && (
-          <button
-            type="button"
-            aria-expanded={share && shareSheet === sheet}
-            disabled={busy}
-            onClick={() => {
-              if (share && shareSheet === sheet) {
-                setShare(false);
-                return;
-              }
-              setShareSheet(sheet);
-              setMembers([]);
-              setShare(true);
-
-            }}
-          >
-            {sheet ? "Compartir hoja" : "Compartir Costos fijos"}
-          </button>
+          <div className="fc-modes" role="group" aria-label="Compartir costos">
+            <button
+              type="button"
+              aria-expanded={share && !shareSheet}
+              disabled={busy}
+              onClick={() => toggleSharing("")}
+            >
+              Compartir libro
+            </button>
+            {sheet && (
+              <button
+                type="button"
+                aria-expanded={share && shareSheet === sheet}
+                disabled={busy}
+                onClick={() => toggleSharing(sheet)}
+              >
+                Compartir hoja
+              </button>
+            )}
+          </div>
         )}
       </header>
       <datalist id="fc-countries">
@@ -655,8 +688,8 @@ export function FixedCosts() {
       </datalist>
       {share && data?.owner && (
         <section className="fc-share">
-          <strong>{shareSheet ? data.sheets.find((s) => s.id === shareSheet)?.name : "Acceso a Costos fijos"}</strong>
-          <p className="hint">{shareSheet ? "Solo lectura de esta hoja." : "El permiso se aplica a todas las hojas de este módulo."}</p>
+          <strong>{shareSheet ? data.sheets.find((s) => s.id === shareSheet)?.name : "Compartir libro de Costos fijos"}</strong>
+          <p className="hint">{shareSheet ? "Solo lectura de esta hoja." : "El permiso cubre todas las hojas de gastos e ingresos, incluidas las que se creen después."}</p>
           <form
             className="row"
             onSubmit={(e) => {
@@ -664,30 +697,50 @@ export function FixedCosts() {
               void mutate(async () => {
                 await request("/sharing" + shareQuery, "POST", {
                   email: email.trim(),
-                  ...(shareSheet ? {} : { permission }),
+                  ...(shareSheet ? {} : { permission: selectedAccount?.role === "OBSERVER" ? "VIEW" : permission }),
                 });
                 setMembers((await request("/sharing" + shareQuery)).members);
                 setEmail("");
-              }, "Acceso actualizado.");
+              }, "Acceso actualizado.", false);
             }}
           >
-            <input
-              type="email"
-              aria-label="Correo para compartir"
-              placeholder="Correo de una cuenta aprobada"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            {!shareSheet && <select
-              aria-label="Permiso de costos"
-              value={permission}
-              onChange={(e) => setPermission(e.target.value)}
-            >
-              <option value="VIEW">Solo consultar</option>
-              <option value="EDIT">Consultar y editar</option>
-            </select>}
-            <button disabled={busy}>Dar acceso</button>
+            {shareSheet ? (
+              <input
+                type="email"
+                aria-label="Correo para compartir"
+                placeholder="Correo de una cuenta aprobada"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            ) : (
+              <SheetSearchSelect
+                label="Buscar persona por nombre o correo"
+                placeholder="Buscar persona"
+                value={email}
+                options={shareAccounts.map((account) => ({
+                  value: account.email,
+                  label: account.name + " · " + account.email,
+                }))}
+                onSelect={(accountEmail) => {
+                  setEmail(accountEmail);
+                  setPermission(members.find((member) => member.user.email === accountEmail)?.permission ?? "VIEW");
+                }}
+                disabled={busy}
+              />
+            )}
+            {!shareSheet && (
+              <select
+                aria-label="Permiso para el libro"
+                value={selectedAccount?.role === "OBSERVER" ? "VIEW" : permission}
+                disabled={busy || selectedAccount?.role === "OBSERVER"}
+                onChange={(e) => setPermission(e.target.value === "EDIT" ? "EDIT" : "VIEW")}
+              >
+                <option value="VIEW">Lector</option>
+                <option value="EDIT">Editor</option>
+              </select>
+            )}
+            <button disabled={busy || !email.trim()}>Dar acceso</button>
             <button type="button" onClick={() => setShare(false)}>
               Cerrar
             </button>
@@ -696,7 +749,7 @@ export function FixedCosts() {
             <div className="row" key={m.userId}>
               <span>
                 {m.user.name} · {m.user.email} ·{" "}
-                {m.permission === "EDIT" ? "Edición" : "Consulta"}
+                {m.permission === "EDIT" ? "Editor" : "Lector"}
               </span>
               <button
                 disabled={busy}
@@ -704,7 +757,7 @@ export function FixedCosts() {
                   void mutate(async () => {
                     await request("/sharing/" + m.userId + shareQuery, "DELETE");
                     setMembers((v) => v.filter((x) => x.userId !== m.userId));
-                  }, "Acceso retirado.")
+                  }, "Acceso retirado.", false)
                 }
               >
                 Retirar

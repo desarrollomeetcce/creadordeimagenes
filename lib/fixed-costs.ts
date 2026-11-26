@@ -233,16 +233,24 @@ export async function fixedCostRoutes(
           demand(false, "Operación no encontrada.", 404);
         }
 
-        if (method === "GET")
-          return send({
-            members: await tx.fixedCostGrant.findMany({
-              include: {
-                user: {
-                  select: { name: true, email: true, role: true, status: true },
-                },
+        if (method === "GET") {
+          const [members, accounts] = await Promise.all([
+            tx.fixedCostGrant.findMany({
+              orderBy: [{ user: { name: "asc" } }, { userId: "asc" }],
+              select: {
+                userId: true,
+                permission: true,
+                user: { select: { name: true, email: true } },
               },
             }),
-          });
+            tx.user.findMany({
+              where: { status: "APPROVED", archivedAt: null, role: { not: "OWNER" } },
+              select: { name: true, email: true, role: true },
+              orderBy: [{ name: "asc" }, { email: "asc" }],
+            }),
+          ]);
+          return send({ members, accounts });
+        }
         if (method === "POST") {
           const b = z
             .object({
