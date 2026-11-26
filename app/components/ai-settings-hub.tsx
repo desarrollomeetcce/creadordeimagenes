@@ -111,6 +111,9 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
             {name}
           </button>
         ))}
+        <a href="/api/pulpo/open-crm?module=bot-ai">
+          Bot de Mensajería
+        </a>
       </nav>
       {tab === "connections" ? (
         <UnifiedConnections />

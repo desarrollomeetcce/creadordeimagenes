@@ -34,7 +34,6 @@ export function SidebarAccount({
     ...(user.role === "OWNER"
       ? [["ai", "⚙", "Ajustes de IA"]]
       : []),
-    ...(ai && history ? [["usage", "↗", "Costos de IA"]] : []),
   ];
   const close = () => panel.current?.hidePopover();
   useEffect(() => {
@@ -113,6 +112,19 @@ export function SidebarAccount({
               <summary>⚙ Ajustes</summary>
               <nav aria-label="Ajustes">
                 {settings.map(([v, icon, label]) => item(v, icon, label))}
+              </nav>
+            </details>
+          )}
+          {(history || user.role === "OWNER") && (
+            <details open={view === "usage"}>
+              <summary>↗ Costos de IA</summary>
+              <nav aria-label="Costos de IA">
+                {history && item("usage", "↗", "Pulpo Generador")}
+                {user.role === "OWNER" && (
+                  <a className="sidebar-account-link" href="/api/pulpo/open-crm?module=bot-costs">
+                    <span>Bot de Mensajería</span>
+                  </a>
+                )}
               </nav>
             </details>
           )}

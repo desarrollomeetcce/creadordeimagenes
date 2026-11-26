@@ -8,6 +8,8 @@ export const crmDestinations = {
   "countries-prices": "/?section=Pa%C3%ADses%20y%20cuentas",
   "product-labels": "/?section=Productos",
   "funnel-labels": "/?section=Etiquetas",
+  "bot-costs": "/?section=Costos%20de%20IA",
+  "bot-ai": "/?section=Ajustes%20IA",
   contacts: "/?section=Contactos%20y%20CRM",
 } as const;
 

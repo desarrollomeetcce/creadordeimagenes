@@ -33,12 +33,20 @@ test("separates provisioning credentials from browser sign-in", () => {
 });
 test("accepts only signed, known workspace views on the normal sign-in path", () => {
   assert.equal(verifyPulpoAssertion(sign({ view: "products" }), key, 100)?.view, "products");
+  assert.equal(verifyPulpoAssertion(sign({ view: "usage" }), key, 100)?.view, "usage");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "advisor" }), key, 100)?.panel, "advisor");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "products" }), key, 100)?.panel, "products");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "private" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ view: "products", panel: "team" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ view: "https://example.com" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ page: "plans", view: "products" }), key, 100), null);
+});
+test("accepts only supported AI settings tabs in the signed AI view", () => {
+  for (const aiTab of ["connections", "posters", "courses"])
+    assert.equal(verifyPulpoAssertion(sign({ view: "ai", aiTab }), key, 100)?.aiTab, aiTab);
+  assert.equal(verifyPulpoAssertion(sign({ view: "ai", aiTab: "bot" }), key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign({ view: "products", aiTab: "courses" }), key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign({ view: "ai", embedded: true }), key, 100), null);
 });
 test("limits signed embeds to the three approved modules", () => {
   for (const view of ["metaads", "advisors", "products"])
