@@ -20,7 +20,7 @@ type Destination = {
   active?: boolean;
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
 };
-type Snapshot = { layout: Layout; modules?: Module[] };
+type Snapshot = { layout: Layout; modules?: Module[]; sync?: boolean };
 
 export function SharedPulpoMenu({
   endpoint,
@@ -39,6 +39,8 @@ export function SharedPulpoMenu({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const writing = useRef(false);
+  const revision = useRef(0);
   const dragged = useRef<Movable | null>(null);
   const storage = "pulpo-shared-menu:" + userId;
 
@@ -55,32 +57,59 @@ export function SharedPulpoMenu({
           setLayout(upgradeLayout(previous));
       }
     } catch {}
-    const load = () =>
-      void fetch(endpoint, { cache: "no-store", signal: controller.signal })
-        .then(async (response) => {
-          if (!response.ok) throw Error();
-          const snapshot: Snapshot = await response.json();
-          if (controller.signal.aborted) return;
-          setLayout(upgradeLayout(snapshot.layout));
+    let ready = false;
+    let shared = false;
+    let loading = false;
+    async function load(background: boolean) {
+      if (loading || writing.current || document.visibilityState === "hidden")
+        return;
+      if (background && !shared) return;
+      const layoutOnly = ready;
+      const current = revision.current;
+      loading = true;
+      try {
+        const response = await fetch(
+          layoutOnly ? endpoint + "?layout=1" : endpoint,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) throw Error();
+        const snapshot: Snapshot = await response.json();
+        if (controller.signal.aborted || current !== revision.current) return;
+        setLayout(upgradeLayout(snapshot.layout));
+        if (!layoutOnly) {
+          ready = true;
+          shared = snapshot.sync ?? Boolean(snapshot.modules?.length);
           setPeer(snapshot.modules ?? []);
           setServer(true);
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) setServer(false);
-        });
-    load();
-    const resume = (event: PageTransitionEvent) => {
-      if (event.persisted) load();
-    };
+        }
+      } catch {
+        if (!controller.signal.aborted && !ready) setServer(false);
+      } finally {
+        loading = false;
+      }
+    }
+
+    const resume = () => void load(false);
+    const interval = window.setInterval(() => void load(true), 8000);
+    resume();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
     window.addEventListener("pageshow", resume);
     return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("focus", resume);
       window.removeEventListener("pageshow", resume);
       controller.abort();
     };
   }, [endpoint, storage]);
 
   async function apply(move: Move) {
-    if (busy || server === null) return;
+    if (writing.current || server === null) return;
+    revision.current++;
     const next = changeLayout(layout, move);
     setLayout(next);
     setError("");
@@ -90,6 +119,7 @@ export function SharedPulpoMenu({
       } catch {}
       return;
     }
+    writing.current = true;
     setBusy(true);
     try {
       const response = await fetch(endpoint, {
@@ -106,6 +136,7 @@ export function SharedPulpoMenu({
       setLayout(layout);
       setError("No se pudo guardar el cambio. Inténtalo otra vez.");
     } finally {
+      writing.current = false;
       setBusy(false);
     }
   }

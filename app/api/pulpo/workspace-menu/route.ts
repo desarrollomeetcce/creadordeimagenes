@@ -11,7 +11,7 @@ const json = (data: unknown, status = 200) =>
     headers: { "Cache-Control": "private, no-store" },
   });
 
-async function messaging(move?: Move) {
+async function messaging(move?: Move, layoutOnly = false) {
   const user = await actor().catch(() => null);
   if (!user) return json({}, 401);
   const email = user.email.trim().toLowerCase();
@@ -29,14 +29,19 @@ async function messaging(move?: Move) {
         signal: AbortSignal.timeout(4000),
       },
     );
-    return response.ok ? json(await response.json()) : json({}, 403);
+    if (!response.ok) return json({}, 403);
+    const snapshot = await response.json();
+    return json(layoutOnly ? { layout: snapshot.layout } : snapshot);
   } catch {
     return json({}, 502);
   }
 }
 
-export async function GET() {
-  return messaging();
+export async function GET(request: Request) {
+  return messaging(
+    undefined,
+    new URL(request.url).searchParams.get("layout") === "1",
+  );
 }
 
 export async function POST(request: Request) {
