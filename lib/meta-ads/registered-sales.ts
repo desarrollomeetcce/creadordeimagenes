@@ -128,3 +128,16 @@ export function reconcilePortfolioSales(
   }
   return { total, partial };
 }
+
+
+export function salesForUnambiguousAssignment(
+  advisorId: string,
+  copies: readonly { advisorId: string | null; sales: number | null; blocked: boolean }[],
+) {
+  if (copies.some((copy) => copy.blocked ||
+    (copy.advisorId !== null && (copy.advisorId !== advisorId || copy.sales !== null)))) return null;
+  if (!copies.some((copy) => copy.advisorId === advisorId)) return null;
+  const recorded = new Set(copies.flatMap((copy) =>
+    copy.advisorId === null && copy.sales !== null ? [copy.sales] : []));
+  return recorded.size === 1 ? [...recorded][0] : null;
+}

@@ -1,4 +1,4 @@
-import { reconcilePortfolioSales } from "./registered-sales";
+import { reconcilePortfolioSales, salesForUnambiguousAssignment } from "./registered-sales";
 import { categoryKey } from "./category-paste";
 import { advisorEmploymentActive } from "./advisor-analysis-view";
 import { orderedAdvisors } from "./advisor-order-policy";
@@ -1053,6 +1053,19 @@ async function readAdvisorSheet(
       const assignedInventoryAliases = new Set(inventoryAliases.filter((alias) =>
         inventoryKeys.has(JSON.stringify([alias.inventorySheetId, categoryKey(alias.name)]))
       ).map((alias) => alias.id));
+      const reconcileAdvisor = personal && filters.advisorId && !filters.periodId
+        ? filters.advisorId : null;
+      const sourceAliases = reconcileAdvisor ? await tx.metaAlias.findMany({
+        where: { tableId: { in: tables.map((table) => table.id) }, inventorySheet: { archivedAt: null, kind: "INVENTORY" } },
+        select: { id: true, name: true, inventorySheetId: true },
+      }) : [];
+      const sourceGroups = new Map(sourceAliases.map((alias) =>
+        [alias.id, [alias.inventorySheetId, categoryKey(alias.name)]]));
+      const advisorSalesCopies = new Map<string, {
+        day: string;
+        rows: { advisorId: string | null; sales: number | null; blocked: boolean }[];
+        target?: { sales: number | null; na: boolean; partial: boolean };
+      }>();
       const portfolioAsOf = new Date();
       const scopedInventoryRows = new Map<string, {
         row: EffectivenessRow;
@@ -1271,6 +1284,23 @@ async function readAdvisorSheet(
                   },
                 ]
               : plan.portions;
+            const sourceGroup = sourceGroups.get(row.aliasId);
+            const copyKey = sourceGroup && JSON.stringify([...sourceGroup, row.country, day]);
+            const copy = copyKey
+              ? advisorSalesCopies.get(copyKey) ?? { day, rows: [] }
+              : undefined;
+            if (copy && copyKey) {
+              for (const portion of portions) {
+                if (!portion.advisorId && portion.sales === null && !portion.partial) continue;
+                copy.rows.push({
+                  advisorId: portion.advisorId,
+                  sales: portion.sales,
+                  blocked: portion.na || portion.partial || plan.status === "PENDING" ||
+                    !!c?.partialMetrics.includes("sales"),
+                });
+              }
+              advisorSalesCopies.set(copyKey, copy);
+            }
             for (const portion of portions) {
               if (!portion.advisorId || !personIds.has(portion.advisorId))
                 continue;
@@ -1316,6 +1346,8 @@ async function readAdvisorSheet(
                   partial:
                     portion.partial || !!c?.partialMetrics.includes("sales"),
                 };
+                if (copy && reconcileAdvisor === portion.advisorId && !copy.target)
+                  copy.target = sources.get(portion.advisorId)!.days[day];
               }
             }
           }
@@ -1343,6 +1375,21 @@ async function readAdvisorSheet(
             }
           }
           breakdown.push(...sources.values());
+        }
+      }
+      if (reconcileAdvisor) {
+        const totalsForAdvisor = totals.get(reconcileAdvisor);
+        for (const { day, rows, target } of advisorSalesCopies.values()) {
+          if (!target) continue;
+          const sales = salesForUnambiguousAssignment(reconcileAdvisor, rows);
+          const total = totalsForAdvisor?.get(day);
+          if (sales === null || !total) continue;
+          target.sales = sales;
+          total.sales = (total.sales ?? 0) + sales;
+          total.known++;
+          // Copies of the same diploma only represent one sale source for this day.
+          const copies = rows.filter((row) => row.advisorId === reconcileAdvisor).length;
+          total.expected -= Math.max(0, copies - 1);
         }
       }
       if (filters.periodId)
