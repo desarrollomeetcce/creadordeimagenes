@@ -9,3 +9,7 @@
 .pulpo-observation-day > time { color: var(--muted); font-weight: 650; font-size: 12px; }
 .pulpo-observation-day ul { list-style: none; margin: 4px 0 0; padding: 0; }
 .pulpo-observation-day li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 4px 0; }
+.pulpo-observation-scroll[data-expanded] { max-height: min(540px, 62vh); }
+.pulpo-observation-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-block: 8px; }
+.pulpo-observation-filters label { display: grid; gap: 3px; font-size: 12px; }
+.pulpo-observation-filters :is(input, select) { max-width: 100%; }

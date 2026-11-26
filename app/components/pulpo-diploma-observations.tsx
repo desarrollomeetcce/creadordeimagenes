@@ -54,7 +54,12 @@ function History({
   campaign?: string;
 }) {
   const [pages, setPages] = useState<Note[]>([]);
-  const [day, setDay] = useState("");
+  const [mode, setMode] = useState<"all" | "day" | "range">("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState({ day: "", until: "" });
+  const { day, until } = filter;
   const [offset, setOffset] = useState(0);
   const [next, setNext] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +73,7 @@ function History({
       ...(campaign ? { campaign } : {}),
       offset: String(offset),
       ...(day ? { day } : {}),
+      ...(until ? { until } : {}),
     });
     void (async () => {
       try {
@@ -90,7 +96,16 @@ function History({
       }
     })();
     return () => controller.abort();
-  }, [aliasId, tableId, country, campaign, offset, day]);
+  }, [aliasId, tableId, country, campaign, offset, day, until]);
+  function applyFilter(start: string, end = "") {
+    if (start === day && end === until) return;
+    setFilter({ day: start, until: end });
+    setOffset(0);
+    setPages([]);
+    setNext(null);
+    setError("");
+    setLoading(true);
+  }
   const dates = new Map<string, Note[]>();
   for (const note of pages) {
     const group = dates.get(note.day) ?? [];
@@ -102,25 +117,52 @@ function History({
     <section aria-label="Historial de observaciones">
       <div className="pulpo-observation-controls">
         <strong>{region}</strong>
-        <label>
-          Filtrar por fecha
-          <input type="date" value={day} onChange={(event) => {
-            setDay(event.target.value);
-            setOffset(0);
-            setPages([]);
-            setNext(null);
-            setError("");
-            setLoading(true);
-          }} />
-        </label>
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+          {expanded ? "Vista compacta" : "Ampliar lista"}
+        </button>
       </div>
+      <form className="pulpo-observation-filters" onSubmit={(event) => {
+        event.preventDefault();
+        if (from && (mode !== "range" || (to && from <= to)))
+          applyFilter(from, mode === "range" ? to : "");
+      }}>
+        <label>
+          Mostrar
+          <select value={mode} onChange={(event) => {
+            const nextMode = event.target.value;
+            if (nextMode === "all" || nextMode === "day" || nextMode === "range") {
+              setMode(nextMode);
+              if (nextMode === "all") applyFilter("");
+            }
+          }}>
+            <option value="all">Todas</option>
+            <option value="day">Un día</option>
+            <option value="range">Por período</option>
+          </select>
+        </label>
+        {mode !== "all" && (
+          <>
+            <label>
+              {mode === "range" ? "Desde" : "Fecha"}
+              <input type="date" required value={from} onChange={(event) => setFrom(event.target.value)} />
+            </label>
+            {mode === "range" && (
+              <label>
+                Hasta
+                <input type="date" required min={from || undefined} value={to} onChange={(event) => setTo(event.target.value)} />
+              </label>
+            )}
+            <button type="submit">Aplicar</button>
+          </>
+        )}
+      </form>
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Cargando observaciones…</p>}
       {!loading && !pages.length && !error && (
-        <p>{day ? "Sin observaciones para esta fecha." : "Aún no hay observaciones para este diplomado y país."}</p>
+        <p>{day ? "Sin observaciones para las fechas seleccionadas." : "Aún no hay observaciones para este diplomado y país."}</p>
       )}
       {pages.length > 0 && (
-        <div className="pulpo-observation-scroll" tabIndex={0} role="region" aria-label="Observaciones por fecha">
+        <div className="pulpo-observation-scroll" data-expanded={expanded || undefined} tabIndex={0} role="region" aria-label="Observaciones por fecha">
           {[...dates].map(([date, entries]) => (
             <div className="pulpo-observation-day" key={date}>
               <time dateTime={date}>{dateLabel.format(new Date(date + "T12:00:00Z"))}</time>

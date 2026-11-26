@@ -33,11 +33,13 @@ export async function GET(request: NextRequest) {
     offset = Number(q.get("offset") ?? 0);
   const campaign = q.get("campaign");
   const day = q.get("day");
+  const until = q.get("until");
   if (
     ![aliasId, tableId].every((id) => /^[\w:-]{1,200}$/.test(id)) ||
     !/^[A-Z]{2}$/.test(country) ||
     (campaign !== null && !/^\d{1,40}$/.test(campaign)) ||
     (day !== null && !performancePeriod(day, day)) ||
+    (until !== null && (!day || !performancePeriod(until, until) || day > until)) ||
     !Number.isSafeInteger(offset) ||
     offset < 0
   )
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
         country,
         offset,
         ...(day ? { day } : {}),
+        ...(until ? { until } : {}),
         email: viewer.email.trim().toLowerCase(),
         exp: Math.floor(Date.now() / 1000) + 30,
       }),
