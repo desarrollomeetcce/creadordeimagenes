@@ -1,3 +1,4 @@
+import { performancePeriod } from "./performance-period";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance", "projects", "library", "trash", "courses-ai", "fixed-costs", "ai", "usage", "account", "website", "visual-audit", "users", "statistics", "plans"] as const;
@@ -10,6 +11,7 @@ type Assertion = {
   exp: number;
   page: "home" | "plans";
   view?: WorkspaceView;
+  period?: { from: string; to: string };
   panel?: "team" | "advisor" | "products";
   aiTab?: "connections" | "posters" | "courses";
   embedded?: true;
@@ -35,6 +37,7 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
         (claims.page !== "home" && claims.page !== "plans") ||
         (claims.view !== undefined && (claims.page !== "home" || !workspaceViews.includes(claims.view))) ||
         (claims.panel !== undefined && (claims.view !== "performance" || !["team", "advisor", "products"].includes(claims.panel))) ||
+        (claims.period !== undefined && (claims.view !== "performance" || !performancePeriod(claims.period?.from, claims.period?.to))) ||
         (claims.aiTab !== undefined && (claims.view !== "ai" || !["connections", "posters", "courses"].includes(claims.aiTab))) ||
         (claims.embedded !== undefined && (claims.embedded !== true || claims.page !== "home" ||
           !["metaads", "advisors", "products"].includes(claims.view) || claims.panel !== undefined)) ||

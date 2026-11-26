@@ -6,7 +6,9 @@ export function availableGeneratorModules(user: {
   aiAccessEnabled?: boolean;
   advisorLinked?: boolean;
   metaAdsShared?: boolean;
-  effectivenessShared?: boolean;
+  salesShared?: boolean;
+  inventoryShared?: boolean;
+  advisorsShared?: boolean;
   fixedCostsShared?: boolean;
 }): Module[] {
   const owner = user.role === "OWNER";
@@ -15,8 +17,9 @@ export function availableGeneratorModules(user: {
   const result: Module[] = [];
   if (owner || restricted || user.advisorLinked) result.push("performance");
   if (owner || user.metaAdsShared) result.push("metaads");
-  if (owner || user.effectivenessShared)
-    result.push("products", "advisors", "inventory");
+  if (owner || user.salesShared) result.push("products");
+  if (owner || user.advisorsShared) result.push("advisors");
+  if (owner || user.inventoryShared) result.push("inventory");
   if (owner || user.fixedCostsShared) result.push("fixed-costs");
   if (!restricted && hasAiModuleAccess(user)) {
     result.push("projects", "library");

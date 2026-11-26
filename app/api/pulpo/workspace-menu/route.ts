@@ -1,3 +1,4 @@
+import { financialNavigationAccess } from "@/lib/meta-ads/financial-navigation-access";
 import { actor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { availableGeneratorModules } from "@/lib/pulpo-generator-modules";
@@ -70,7 +71,6 @@ export async function POST(request: Request) {
         advisorPortal: { select: { advisorId: true } },
         fixedCostGrant: { select: { userId: true } },
         metaWorkspaceGrant: { select: { userId: true } },
-        _count: { select: { effectivenessGrants: true } },
       },
     });
     if (!user) return json({}, 403);
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         advisorLinked: !!user.advisorPortal,
         fixedCostsShared: !!user.fixedCostGrant,
         metaAdsShared: !!user.metaWorkspaceGrant,
-        effectivenessShared: user._count.effectivenessGrants > 0,
+        ...await financialNavigationAccess(user.id, user.role),
       }),
     });
   }

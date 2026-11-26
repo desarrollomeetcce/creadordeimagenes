@@ -1,3 +1,4 @@
+import { categoryKey } from "./category-paste";
 import { advisorEmploymentActive } from "./advisor-analysis-view";
 import { orderedAdvisors } from "./advisor-order-policy";
 import { advisorOrderRevision } from "./advisor-order";
@@ -1015,6 +1016,23 @@ async function readAdvisorSheet(
         cutoffSales: number | null;
       }[] = [];
       const activityStarts = new Map<string, string>();
+      const inventoryAssignments = personal && filters.includeInventoryStatus && filters.advisorId
+        ? await tx.metaInventoryAdvisor.findMany({
+            where: { advisorId: filters.advisorId, item: { sheet: { archivedAt: null, kind: "INVENTORY" } } },
+            select: { item: { select: { name: true, sheetId: true } } },
+          })
+        : [];
+      const inventoryKeys = new Set(inventoryAssignments.map(({ item }) =>
+        JSON.stringify([item.sheetId, categoryKey(item.name)])));
+      const inventoryAliases = inventoryKeys.size
+        ? await tx.metaAlias.findMany({
+            where: { inventorySheetId: { in: [...new Set(inventoryAssignments.map(({ item }) => item.sheetId))] } },
+            select: { id: true, name: true, inventorySheetId: true },
+          })
+        : [];
+      const assignedInventoryAliases = new Set(inventoryAliases.filter((alias) =>
+        inventoryKeys.has(JSON.stringify([alias.inventorySheetId, categoryKey(alias.name)]))
+      ).map((alias) => alias.id));
       const portfolioAsOf = new Date();
       const scopedInventoryRows = new Map<string, {
         row: EffectivenessRow;
@@ -1262,7 +1280,8 @@ async function readAdvisorSheet(
           const advisorSource = filters.advisorId ? sources.get(filters.advisorId) : undefined;
           if (personal && filters.includeInventoryStatus && filters.advisorId) {
             const assigned = advisorAssignedAt(row.advisorId, changes, portfolioAsOf);
-            const current = assigned === filters.advisorId && (row.active || row.metaActive === true);
+            const current = (assigned === filters.advisorId || assignedInventoryAliases.has(row.aliasId)) &&
+              (row.active || row.metaActive === true);
             if (advisorSource || current) {
               scopedInventoryRows.set(
                 JSON.stringify([table.id, row.aliasId, row.country]),
@@ -1300,28 +1319,39 @@ async function readAdvisorSheet(
         basePartial: boolean;
         campaignActive: boolean;
         current: boolean;
+        lastStateChange: string | null;
+        catalogKey: [string, string] | null;
       }> = {};
       if (scopedInventoryRows.size) {
         const [aliases, rates] = await Promise.all([
           tx.metaAlias.findMany({
             where: { id: { in: [...new Set([...scopedInventoryRows.values()].map(({ row }) => row.aliasId))] } },
-            select: { id: true, inventorySheet: { select: { kind: true, archivedAt: true, config: true } } },
+            select: { id: true, name: true, inventorySheet: { select: { id: true, kind: true, archivedAt: true, config: true } } },
           }),
           tx.metaFxDay.findMany({
             where: { day: { gte: since, lte: until } },
             select: { day: true, rates: true },
           }),
         ]);
-        const rules = new Map(aliases.flatMap(({ id, inventorySheet }) => {
+        const catalogItems = await tx.metaInventoryItem.findMany({
+          where: { sheetId: { in: [...new Set(aliases.flatMap(({ inventorySheet }) => inventorySheet ? [inventorySheet.id] : []))] } },
+          select: { id: true, name: true, sheetId: true },
+        });
+        const catalogIds = new Map(catalogItems.map(({ id, sheetId, name }) =>
+          [JSON.stringify([sheetId, categoryKey(name)]), id]));
+        const rules = new Map(aliases.flatMap(({ id, name, inventorySheet }) => {
           if (inventorySheet?.kind !== "INVENTORY" || inventorySheet.archivedAt) return [];
           const config = inventorySheet.config as { inventoryActivation?: { cacRules?: unknown } } | null;
-          return [[id, readCacRules(config?.inventoryActivation?.cacRules)] as const];
+          return [[id, {
+            limits: readCacRules(config?.inventoryActivation?.cacRules),
+            catalogKey: [inventorySheet.id, catalogIds.get(JSON.stringify([inventorySheet.id, categoryKey(name)])) ?? id] as [string, string],
+          }] as const];
         }));
         const fx = new Map(rates.map((day) => [day.day, day.rates as FxRates]));
         for (const [key, { row, current, baseDays }] of scopedInventoryRows) {
-          const limits = rules.get(row.aliasId);
-          if (!limits) continue;
-          const input = { row, rates: fx, rules: limits, baseDays };
+          const policy = rules.get(row.aliasId);
+          if (!policy) continue;
+          const input = { row, rates: fx, rules: policy.limits, baseDays };
           const evaluationRange = filters.inventoryPeriods?.evaluation ?? { since, until };
           const baseRange = filters.inventoryPeriods?.base ?? evaluationRange;
           const evaluation = inventoryCacSummary({ ...input, ...evaluationRange });
@@ -1334,6 +1364,8 @@ async function readAdvisorSheet(
             basePartial: base.metaBasePartial,
             campaignActive: row.metaActive === true,
             current,
+            lastStateChange: row.lastStateChange,
+            catalogKey: policy.catalogKey,
           };
         }
       }

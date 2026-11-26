@@ -49,6 +49,12 @@ test("accepts only supported AI settings tabs in the signed AI view", () => {
   assert.equal(verifyPulpoAssertion(sign({ view: "products", aiTab: "courses" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ view: "ai", embedded: true }), key, 100), null);
 });
+test("retains a valid shared performance period and rejects invalid dates or views", () => {
+  const period = { from: "2026-11-01", to: "2026-11-26" };
+  assert.deepEqual(verifyPulpoAssertion(sign({ view: "performance", period }), key, 100)?.period, period);
+  assert.equal(verifyPulpoAssertion(sign({ view: "ai", period }), key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign({ view: "performance", period: { ...period, from: "2026-02-30" } }), key, 100), null);
+});
 test("limits signed embeds to the three approved modules", () => {
   for (const view of ["metaads", "advisors", "products"])
     assert.equal(verifyPulpoAssertion(sign({ embedded: true, view }), key, 100)?.view, view);

@@ -1,13 +1,15 @@
 "use client";
+import { setPerformancePeriod, usePerformancePeriod } from "./use-performance-period";
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { advisorPeriodSignals } from "../../lib/meta-ads/advisor-period-signals";
+import type { advisorPeriodSignals, advisorWhatsAppActivity } from "../../lib/meta-ads/advisor-period-signals";
 import { cacStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
 import { MetaDateRange } from "./meta-date-range";
 import { PerformanceMotivation } from "./performance-motivation";
 import { limaToday, shiftDay } from "./date-range";
 
 type Data = Awaited<ReturnType<typeof advisorPeriodSignals>>;
+type Activity = Awaited<ReturnType<typeof advisorWhatsAppActivity>>;
 type Item = Data["items"][number];
 type Period = { since: string; until: string };
 const regionNames = new Intl.DisplayNames(["es"], { type: "region" });
@@ -25,11 +27,14 @@ export function AdvisorPeriodSignals({
 }) {
   const today = limaToday();
   const [view, setView] = useState<"today" | "yesterday">("today");
-  const [since, setSince] = useState(today);
-  const [until, setUntil] = useState(today);
+  const period = usePerformancePeriod();
+  const since = period?.from ?? today;
+  const until = period?.to ?? today;
   const [day, setDay] = useState(today);
   const [data, setData] = useState<Data | null>(null);
   const [country, setCountry] = useState("");
+  const [activity, setActivity] = useState<{ key: string; data: Activity } | null>(null);
+  const activityKey = JSON.stringify([advisorId, since, until]);
   const [focus, setFocus] = useState("");
   const [reviewPeriods, setReviewPeriods] = useState<Record<string, Period>>(
     {},
@@ -64,6 +69,20 @@ export function AdvisorPeriodSignals({
       });
     return () => controller.abort();
   }, [advisorId, since, until, section, reload]);
+  useEffect(() => {
+    if (section !== "products") return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ since, until, section: "whatsapp", ...(advisorId ? { advisorId } : {}) });
+    void fetch(endpoint + "?" + query, { signal: controller.signal })
+      .then(async (response) => response.ok ? await response.json() as Activity : null)
+      .then((data) => {
+        if (!controller.signal.aborted) setActivity({ key: activityKey, data });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setActivity({ key: activityKey, data: null });
+      });
+    return () => controller.abort();
+  }, [activityKey, advisorId, since, until, section, reload]);
   const selected = data?.items.find((item) => item.key === focus);
   const review = reviewPeriods[focus] ?? data?.evaluation;
   const reviewSince = review?.since;
@@ -153,18 +172,47 @@ export function AdvisorPeriodSignals({
       groups.set(item.country, items);
     }
   }
-  const countries = [...groups.keys()].sort((a, b) =>
-    countryLabel(a).localeCompare(countryLabel(b), "es"),
-  );
-  const selectedCountry = groups.has(country) ? country : "";
-  const products = (selectedCountry ? [...(groups.get(selectedCountry) ?? [])] : [...groups.values()].flat()).sort(
-    (a, b) =>
-      Number(b.campaignActive === true) - Number(a.campaignActive === true) ||
+  const activityResult = activity?.key === activityKey ? activity : null;
+  const whatsapp = activityResult?.data?.items ?? [];
+  const countries = [...new Set([...groups.keys(), ...whatsapp.map((item) => item.country).filter(Boolean)])]
+    .sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), "es"));
+  const selectedCountry = countries.includes(country) ? country : "";
+  const ranked = (selectedCountry ? [...(groups.get(selectedCountry) ?? [])] : [...groups.values()].flat())
+    .sort((a, b) =>
+      Number(b.currentAssignment && b.campaignActive) - Number(a.currentAssignment && a.campaignActive) ||
+      (b.sales ?? -1) - (a.sales ?? -1) ||
+      (b.metaBase ?? -1) - (a.metaBase ?? -1) ||
       a.name.localeCompare(b.name, "es"),
-  );
+    );
+  const top = ranked.filter((item) => item.currentAssignment).slice(0, 10);
+  const topKeys = new Set(top.map((item) => item.key));
+  const products = [...top, ...ranked.filter((item) => !topKeys.has(item.key))];
+  const catalogMatches = new Map<string, string[]>();
+  for (const item of products) {
+    if (!item.catalogKey) continue;
+    const key = JSON.stringify([...item.catalogKey, item.country]);
+    const keys = catalogMatches.get(key) ?? [];
+    keys.push(item.key);
+    catalogMatches.set(key, keys);
+  }
+  const candidates = whatsapp.filter((item) => !selectedCountry || item.country === selectedCountry);
+  const possibleMatches = candidates.map((item) => ({
+    item,
+    keys: [...new Set(item.links.flatMap((link) =>
+      catalogMatches.get(JSON.stringify([...link, item.country])) ?? []))],
+  }));
+  const matchCounts = new Map<string, number>();
+  for (const { keys } of possibleMatches)
+    if (keys.length === 1) matchCounts.set(keys[0], (matchCounts.get(keys[0]) ?? 0) + 1);
+  const contactsByProduct = new Map<string, number>();
+  const additional = possibleMatches.filter(({ item, keys }) => {
+    if (keys.length !== 1 || matchCounts.get(keys[0]) !== 1) return true;
+    contactsByProduct.set(keys[0], item.contacts);
+    return false;
+  }).map(({ item }) => item);
+
   function setBasePeriod(from: string, to: string) {
-    setSince(from);
-    setUntil(to);
+    setPerformancePeriod(from, to);
     setFocus("");
     setError("");
   }
@@ -322,10 +370,10 @@ export function AdvisorPeriodSignals({
           </p>
           {error && <p role="alert">{error}</p>}
           {!valid && !error && <p role="status">Cargando diplomados…</p>}
-          {valid && !products.length && (
-            <p>No hay diplomados vigentes para este asesor.</p>
+          {valid && !products.length && !additional.length && (
+            <p>No hay diplomados vigentes ni actividad reciente para este asesor.</p>
           )}
-          {products.length > 0 && (
+          {(products.length > 0 || additional.length > 0) && (
             <table
               className="advisor-diploma-table"
               aria-label="Diplomados vigentes"
@@ -334,11 +382,13 @@ export function AdvisorPeriodSignals({
                 <tr>
                   <th scope="col">Diplomado</th>
                   <th scope="col">Base de Meta</th>
+                  <th scope="col">Ventas</th>
+                  <th scope="col">Contactos WhatsApp</th>
                   <th scope="col">Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map((item) => {
+                {products.map((item, index) => {
                   const open = focus === item.key;
                   const custom =
                     reviewPeriods[item.key] && reviewResults[item.key];
@@ -347,6 +397,11 @@ export function AdvisorPeriodSignals({
                     : item.cacStatus;
                   return (
                     <Fragment key={item.key}>
+                      {(index === 0 || index === top.length) && (
+                        <tr><th colSpan={5} scope="colgroup">
+                          {topKeys.has(item.key) ? "Top de diplomados vigentes" : "Otros diplomados y actividad reciente"}
+                        </th></tr>
+                      )}
                       <tr>
                         <th scope="row" data-cac-status={state}>
                           {item.name}
@@ -365,6 +420,8 @@ export function AdvisorPeriodSignals({
                           {item.metaBase?.toLocaleString("es-PE") ?? "—"}
                           {item.metaBasePartial && <small>Parcial</small>}
                         </td>
+                        <td className="advisor-diploma-base">{item.sales?.toLocaleString("es-PE") ?? "—"}</td>
+                        <td className="advisor-diploma-base">{contactsByProduct.get(item.key)?.toLocaleString("es-PE") ?? "—"}</td>
                         <td>
                           <button
                             type="button"
@@ -387,7 +444,7 @@ export function AdvisorPeriodSignals({
                       </tr>
                       {open && review && (
                         <tr>
-                          <td colSpan={3}>
+                          <td colSpan={5}>
                             <div className="advisor-period-notes">
                               <MetaDateRange
                                 from={review.since}
@@ -479,9 +536,27 @@ export function AdvisorPeriodSignals({
                     </Fragment>
                   );
                 })}
+                {additional.length > 0 && (
+                  <tr><th scope="colgroup" colSpan={5}>Otros ingresos de WhatsApp</th></tr>
+                )}
+                {additional.map((item) => (
+                  <tr key={item.id + ":" + item.country}>
+                    <th scope="row">
+                      {item.name}
+                      <small>{item.country ? countryLabel(item.country) : "Sin país confirmado"} · {item.folders.join(", ")}</small>
+                    </th>
+                    <td>—</td>
+                    <td>—</td>
+                    <td className="advisor-diploma-base">{item.contacts.toLocaleString("es-PE")}</td>
+                    <td>Etiqueta de producto</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
+          {!activityResult && <p role="status" className="hint">Cargando contactos de WhatsApp…</p>}
+          {activityResult && !activityResult.data && <p className="hint">Contactos de WhatsApp no disponibles para esta cuenta vinculada.</p>}
+          {activityResult?.data?.truncated && <p className="hint">WhatsApp muestra las 500 etiquetas con más actividad.</p>}
         </>
       )}
     </section>

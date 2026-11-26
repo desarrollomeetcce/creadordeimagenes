@@ -1,3 +1,4 @@
+import { pulpoDiplomaActivity } from "./pulpo-diploma-activity";
 import { z } from "zod";
 import { db } from "../db";
 import { demand } from "../errors";
@@ -57,6 +58,15 @@ export function periodSignal(
   const known = days.filter((d) => !d.partial && !d.na && d.sales !== null);
   if (known.some((d) => d.sales! > 0)) return "active" as const;
   return known.length >= 3 ? ("critical" as const) : ("insufficient" as const);
+}
+
+export async function advisorWhatsAppActivity(actor: Actor, input: unknown) {
+  const { since, until, advisorId: requested } = range.parse(input);
+  rangeCheck(since, until);
+  const advisorId = await advisorFor(actor, requested);
+  const activity = await pulpoDiplomaActivity(actor.id, advisorId, since, until);
+  demand((await advisorFor(actor, requested)) === advisorId, "El acceso al asesor cambió.", 403);
+  return activity;
 }
 
 export async function advisorPeriodSignals(actor: Actor, input: unknown) {
@@ -172,16 +182,14 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
             ),
           ).values(),
         )
-          .filter((row) => {
-            const key = same(row);
-            return (!product || key === product) &&
-              (section !== "products" || (current.inventoryStatus[key] ?? evaluated?.inventoryStatus[key])?.current === true);
-          })
+          .filter((row) => !product || same(row) === product)
           .map(({ tableId, aliasId, country, tableName, alias, days }) => {
             const identity = { tableId, aliasId, country };
             const key = same(identity);
             const entry = current.inventoryStatus[key];
             const status = (evaluated ?? current).inventoryStatus[key];
+            const changed = (entry ?? status)?.lastStateChange;
+            const changedDay = changed ? localDay("America/Lima", new Date(changed)) : null;
             const sales = Object.entries(days)
               .filter(
                 ([date, day]) =>
@@ -202,15 +210,17 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
               metaBasePartial: entry?.basePartial ?? false,
               campaignActive:
                 entry?.campaignActive ?? status?.campaignActive ?? false,
-              sales:
-                section === "detail" && sales.length
-                  ? sales.reduce((sum, value) => sum + value, 0)
-                  : null,
+              catalogKey: (entry ?? status)?.catalogKey ?? null,
+              currentAssignment: (entry ?? status)?.current === true,
+              recentlyChanged: !!changedDay && changedDay >= since && changedDay <= until,
+              sales: sales.length ? sales.reduce((sum, value) => sum + value, 0) : null,
               notes: notes
                 .filter((note) => same(note) === key)
                 .map(({ id, day, body }) => ({ id, day, body })),
             };
           })
+          .filter((item) => section !== "products" || item.currentAssignment ||
+            item.recentlyChanged || (item.metaBase ?? 0) > 0 || (item.sales ?? 0) > 0)
       : [],
   };
 }

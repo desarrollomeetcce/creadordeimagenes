@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceHeaderNavigation } from "./workspace-header-navigation";
 import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
 import { PasswordInput } from "./password-input";
@@ -95,25 +96,27 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
         </div>
         <a href="/?view=courses-ai">Ir a Cursos IA →</a>
       </header>
-      <nav className="ai-hub-tabs" aria-label="Secciones de Ajustes IA">
-        {[
-          ["connections", "Conexiones de contenido IA"],
-          ["posters", "Afiches"],
-          ["courses", "Cursos · texto, voz y video"],
-        ].map(([id, name]) => (
-          <button
-            type="button"
-            key={id}
-            aria-pressed={tab === id}
-            onClick={() => setTab(id)}
-          >
-            {name}
-          </button>
-        ))}
-        <a href="/api/pulpo/open-crm?module=bot-ai">
-          Bot de Mensajería
-        </a>
-      </nav>
+      <WorkspaceHeaderNavigation>
+        <nav className="ai-hub-tabs" aria-label="Secciones de Ajustes IA">
+          {[
+            ["connections", "Conexiones de contenido IA"],
+            ["posters", "Afiches"],
+            ["courses", "Cursos · texto, voz y video"],
+          ].map(([id, name]) => (
+            <button
+              type="button"
+              key={id}
+              aria-pressed={tab === id}
+              onClick={() => setTab(id)}
+            >
+              {name}
+            </button>
+          ))}
+          <a href="/api/pulpo/open-crm?module=bot-ai">
+            Bot de Mensajería
+          </a>
+        </nav>
+      </WorkspaceHeaderNavigation>
       {tab === null ? null : tab === "connections" ? (
         <UnifiedConnections />
       ) : tab === "posters" ? (

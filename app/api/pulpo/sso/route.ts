@@ -1,3 +1,4 @@
+import { withPerformancePeriod } from "@/lib/performance-period";
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../lib/db";
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
   const path = assertion.embedded ? "/pulpo-workspace?view=" + assertion.view
     : assertion.page === "plans" ? "/?view=website&tab=plans"
     : assertion.view ? "/?view=" + assertion.view + (assertion.panel ? "&panel=" + assertion.panel : "") + (assertion.aiTab ? "&aiTab=" + assertion.aiTab : "") : "/";
-  const response = NextResponse.redirect("https://generator.agenciamagneto.org" + path, { status: 303, headers });
+  const response = NextResponse.redirect("https://generator.agenciamagneto.org" + withPerformancePeriod(path, assertion.period ?? null), { status: 303, headers });
   if (admitted !== "existing") response.cookies.set("session", raw, {
     httpOnly: true, secure: true, sameSite: "strict", path: "/", expires,
   });

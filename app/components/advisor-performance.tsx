@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { setPerformancePeriod, usePerformancePeriod } from "./use-performance-period";
+import { withPerformancePeriod } from "../../lib/performance-period";
+import { WorkspaceHeaderNavigation } from "./workspace-header-navigation";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodSignals } from "./advisor-period-signals";
@@ -10,7 +12,7 @@ import { advisorGoalStatus } from "../../lib/meta-ads/advisor-motivation";
 import { PerformanceMotivation } from "./performance-motivation";
 import { MetaDailyChart } from "./meta-daily-chart";
 import { MetaDateRange } from "./meta-date-range";
-import { limaToday, shiftDay } from "./date-range";
+import { limaToday } from "./date-range";
 import { performanceRatio } from "../../lib/meta-ads/performance-metrics";
 import type { AdvisorPerformanceReport as Report } from "../../lib/meta-ads/advisor-performance";
 type Settings = {
@@ -36,45 +38,42 @@ function PerformanceNavigation({
   onSelect: (panel: PerformancePanel) => void;
   manager?: boolean;
 }) {
-  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setHeaderSlot(document.getElementById("performance-navigation-slot"));
-  }, []);
-  if (!headerSlot) return null;
-  return createPortal(
-    <nav className="performance-workspace-nav" aria-label="Seguimiento">
-      <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
-        Vista general
-      </a>
-      <button
-        type="button"
-        aria-pressed={panel === "advisor"}
-        onClick={() => onSelect("advisor")}
-      >
-        {manager ? "Desempeño del asesor" : "Mi desempeño"}
-      </button>
-      <button
-        type="button"
-        aria-pressed={panel === "products"}
-        onClick={() => onSelect("products")}
-      >
-        Productos
-      </button>
-      <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos">
-        Ingresos
-      </a>
-      {manager && (
+  const period = usePerformancePeriod();
+  return (
+    <WorkspaceHeaderNavigation>
+      <nav className="performance-workspace-nav" aria-label="Seguimiento">
+        <a href={withPerformancePeriod("https://pulpo.agenciamagneto.org/?section=Vista%20general", period)}>
+          Vista general
+        </a>
         <button
-          className="performance-settings-link"
           type="button"
-          aria-pressed={panel === "team"}
-          onClick={() => onSelect("team")}
+          aria-pressed={panel === "advisor"}
+          onClick={() => onSelect("advisor")}
         >
-          <span aria-hidden="true">⚙</span> Configuración de desempeño
+          {manager ? "Desempeño del asesor" : "Mi desempeño"}
         </button>
-      )}
-    </nav>,
-    headerSlot,
+        <button
+          type="button"
+          aria-pressed={panel === "products"}
+          onClick={() => onSelect("products")}
+        >
+          Productos
+        </button>
+        <a href={withPerformancePeriod("https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos", period)}>
+          Ingresos
+        </a>
+        {manager && (
+          <button
+            className="performance-settings-link"
+            type="button"
+            aria-pressed={panel === "team"}
+            onClick={() => onSelect("team")}
+          >
+            <span aria-hidden="true">⚙</span> Configuración de desempeño
+          </button>
+        )}
+      </nav>
+    </WorkspaceHeaderNavigation>
   );
 }
 
@@ -122,10 +121,11 @@ function ManagedAdvisorPerformance({
   const [accountsOpen, setAccountsOpen] = useState(false);
 
   const [panel, setPanel] = useState<PerformancePanel>(initialPanel ?? "team");
+  const period = usePerformancePeriod();
+  const since = period?.from ?? today;
+  const until = period?.to ?? today;
   const [settings, setSettings] = useState<Settings | null>(null),
     [advisorId, setAdvisorId] = useState(""),
-    [since, setSince] = useState(shiftDay(today, -14)),
-    [until, setUntil] = useState(today),
     [reload, setReload] = useState(0),
     [response, setResponse] = useState<{ key: string; data: Report } | null>(
       null,
@@ -408,10 +408,7 @@ function ManagedAdvisorPerformance({
                   from={since}
                   to={until}
                   maxDays={31}
-                  onChange={(a, b) => {
-                    setSince(a);
-                    setUntil(b);
-                  }}
+                  onChange={setPerformancePeriod}
                 />
                 <span className="hint">
                   El período cambia el histórico; Hoy y Ayer conservan sus

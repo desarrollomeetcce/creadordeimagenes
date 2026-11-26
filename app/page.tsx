@@ -2,6 +2,7 @@
 import { PulpoBrand } from "./components/pulpo-brand";
 import dynamic from "next/dynamic";
 import { isProviderVerified } from "../lib/provider-verification";
+import { WorkspaceHeaderNavigation } from "./components/workspace-header-navigation";
 import { ThemeToggle } from "./components/theme-toggle";
 import "./components/meta-header.css";
 import "./components/creative-workspace.css";
@@ -88,7 +89,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { salesShared?: boolean; inventoryShared?: boolean; advisorsShared?: boolean; messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -292,6 +293,8 @@ export default function Home() {
         const requested = params.get("view") === "users" && params.get("tab") === "plans"
           ? "website"
           : params.get("view") ?? defaultAccountView(user);
+        const localModules = availableGeneratorModules(user);
+        const allowedFinancialViews = financialViews.filter((module) => localModules.some((id) => id === module));
         const allowed = [
           "performance",
           "projects",
@@ -305,7 +308,7 @@ export default function Home() {
           "account",
           "plans",
           "collection",
-          ...(user.effectivenessShared?financialViews:[]),
+          ...allowedFinancialViews,
           ...(user.role==="OWNER"||user.fixedCostsShared?["fixed-costs"]:[]),
           ...(managesUsers(user.role) ? ["users"] : []),
           ...(user.role === "OWNER"
@@ -324,7 +327,7 @@ export default function Home() {
         ];
         const nextView =
           allowed.includes(requested) && (hasAiModuleAccess(user)||!['projects','library','presets','history','trash','jobs'].includes(requested)) &&
-          (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || (financialViews.includes(requested)&&user.effectivenessShared) || (requested==="fixed-costs"&&user.fixedCostsShared)) &&
+          (!["SUPERVISOR","ADVISOR"].includes(user.role) || ["performance","account"].includes(requested) || (requested==="metaads"&&user.metaAdsShared) || allowedFinancialViews.includes(requested) || (requested==="fixed-costs"&&user.fixedCostsShared)) &&
           (user.role !== "OBSERVER" ||
             [
               "projects",
@@ -335,11 +338,11 @@ export default function Home() {
               "plans",
               "collection",
               "performance",
-              ...(user.effectivenessShared?financialViews:[]),
+              ...allowedFinancialViews,
           ...(user.fixedCostsShared?["fixed-costs"]:[]),
             ].includes(requested))
             ? requested
-            : (!hasAiModuleAccess(user)?(user.effectivenessShared?'products':user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
+            : (!hasAiModuleAccess(user)?(allowedFinancialViews[0]?allowedFinancialViews[0]:user.metaAdsShared?'metaads':user.advisorLinked||['SUPERVISOR','ADVISOR'].includes(user.role)?'performance':'account'):(["SUPERVISOR","ADVISOR"].includes(user.role)?"performance":"projects"));
         if (active) setView(nextView);
         if (nextView === "collection") {
           const scope = params.get("scope"),
@@ -390,7 +393,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [location, user?.id, user?.role, user?.aiAccessEnabled, user?.effectivenessShared, user?.metaAdsShared, user?.fixedCostsShared]);
+  }, [location, user?.id, user?.role, user?.aiAccessEnabled, user?.effectivenessShared, user?.salesShared, user?.inventoryShared, user?.advisorsShared, user?.metaAdsShared, user?.fixedCostsShared]);
   const openProject = async (id: string) =>
     changeAddress({ view: "projects", project: id });
   const openCategory = async (id: string) =>
@@ -548,16 +551,20 @@ export default function Home() {
             void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
           }} />
   </>;
+  const hasHeaderNavigation =
+    ["performance", "ai", "users", "website", "mail", "payments"].includes(view) ||
+    (view === "account" && user.messagingLinked) ||
+    (view === "usage" && user.role === "OWNER");
   return (
     <CurrentUserId.Provider value={user.id}><CurrentRole.Provider value={user.role}>
       <div className={"shell"+(sidebarMini?" sidebar-mini":"")}>
         {smallNavigation?<><div className="mobile-nav-bar"><button type="button" aria-label="Abrir menú principal" aria-expanded={mobileMenuOpen} aria-controls="mobile-sidebar" onClick={()=>setMobileMenuOpen(true)}>☰ Menú</button></div><dialog id="mobile-sidebar" ref={sidebarDialog} className="sidebar sidebar-mobile-dialog" aria-label="Menú principal de la plataforma" onClose={()=>setMobileMenuOpen(false)} onCancel={()=>setMobileMenuOpen(false)} onClick={e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)setMobileMenuOpen(false)}}>{sidebarContent}</dialog></>:<aside className="sidebar">{sidebarContent}</aside>}
         <div className="workspace">
-          <header className={utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":view==="metaads"?"topbar meta-topbar":view==="performance"?"topbar performance-topbar":"topbar"}>
+          <header className={hasHeaderNavigation?"topbar shared-navigation-topbar":utilityViews.includes(view)?"topbar utility-topbar":financialViews.includes(view) ? "topbar effectiveness-topbar financial-module-topbar" : view==="courses-ai"?"topbar courses-topbar":view==="projects"?"topbar studio-topbar":view==="metaads"?"topbar meta-topbar":"topbar"}>
 
-            {view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit","campaign-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit","campaign-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=campaign-audit" hidden={user.role!=="OWNER"} aria-current={view==="campaign-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("campaign-audit")}}>Campañas</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : view==="fixed-costs" ? <h1 style={{fontSize:18,margin:0}}>Costos fijos</h1> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : view === "metaads" ? <><h1 className="sr-only">Meta Ads</h1><div id="meta-navigation-slot"/><div className="meta-topbar-actions"><span className="badge">Producción publicitaria</span><div id="meta-share-slot"/><ThemeToggle/></div></> : view === "performance" ? <div id="performance-navigation-slot" /> : <span className="muted">{titles[view]}</span>}
+            {hasHeaderNavigation ? <div id="workspace-navigation-slot" /> : view === "projects" ? <><span className="studio-topbar-brand">▦ Proyectos <strong>✦ Estudio creativo</strong><small>Un espacio. Todas tus posibilidades.</small></span><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/><a href="?view=library" target="_blank" rel="noopener noreferrer" title="Abrir Biblioteca">▧ Abrir Biblioteca ↗</a></> : utilityViews.includes(view)?<><div className="utility-title"><h1>{["history","visual-audit","campaign-audit"].includes(view)?"Auditoría":titles[view]}</h1>{["history","visual-audit","campaign-audit"].includes(view)&&<nav aria-label="Vistas de auditoría"><a href="?view=visual-audit" hidden={user.role!=="OWNER"} aria-current={view==="visual-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("visual-audit")}}>Visual</a><a href="?view=campaign-audit" hidden={user.role!=="OWNER"} aria-current={view==="campaign-audit"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("campaign-audit")}}>Campañas</a><a href="?view=history" aria-current={view==="history"?"page":undefined} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate("history")}}>Historial</a></nav>}</div><div className="utility-account-context"><RoleGuide compact name={user.name} role={user.role}/><VisualAuditNotice compact key={user.id}/></div></>: view === "courses-ai" ? <><h1>Cursos IA</h1><div className="courses-topbar-actions"><button type="button" onClick={()=>window.dispatchEvent(new Event("share-courses"))}>Compartir</button><a href="/?view=ai&aiTab=connections">Ajustes IA</a></div></> : view==="fixed-costs" ? <h1 style={{fontSize:18,margin:0}}>Costos fijos</h1> : financialViews.includes(view) ? <div className="effectiveness-topbar-title"><div className="effectiveness-title-line"><h1>{titles[view]}</h1>{user.role==="OWNER"&&<button type="button" className="effectiveness-share-button" onClick={()=>window.dispatchEvent(new Event("share-effectiveness"))}>Compartir</button>}</div></div> : view === "metaads" ? <><h1 className="sr-only">Meta Ads</h1><div id="meta-navigation-slot"/><div className="meta-topbar-actions"><span className="badge">Producción publicitaria</span><div id="meta-share-slot"/><ThemeToggle/></div></> : <span className="muted">{titles[view]}</span>}
             {view === "metaads" && <span className="sr-only">Rol: {user.role}</span>}
-            {view !== "fixed-costs" && view !== "metaads" && view !== "performance" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
+            {!hasHeaderNavigation && view !== "fixed-costs" && view !== "metaads" && !utilityViews.includes(view) && !financialViews.includes(view) && view !== "courses-ai" && view !== "ai" && view !== "projects" && <span className="badge">Producción publicitaria</span>}
 
           </header>
           <main className={financialViews.includes(view) ? "effectiveness-main" : view === "metaads" ? "meta-main" : view === "projects" ? "creative-projects-main" : ["library","jobs"].includes(view) ? "creative-library-main explorer-desktop-main" : utilityViews.includes(view)?"utility-main":undefined}>
@@ -601,10 +608,12 @@ export default function Home() {
             ) : view === "account" ? (
               <>
                 {user.messagingLinked && (
-                  <nav className="account-app-tabs" aria-label="Mi cuenta">
-                    <a className="button" href="/api/pulpo/open-crm?module=account">Pulpo Mensajería</a>
-                    <span className="button" aria-current="page">Pulpo Generador</span>
-                  </nav>
+                  <WorkspaceHeaderNavigation>
+                    <nav className="account-app-tabs" aria-label="Mi cuenta">
+                      <a className="button" href="/api/pulpo/open-crm?module=account">Pulpo Mensajería</a>
+                      <span className="button" aria-current="page">Pulpo Generador</span>
+                    </nav>
+                  </WorkspaceHeaderNavigation>
                 )}
                 <AccountSecurity onChanged={reloadUser} />
                 {user.role === "OWNER" && (
@@ -646,10 +655,12 @@ export default function Home() {
             ) : view === "usage" ? (
               <>
                 {user.role === "OWNER" && (
-                  <nav className="account-app-tabs" aria-label="Costos de IA">
-                    <a className="button" href="/api/pulpo/open-crm?module=bot-costs">Bot de Mensajería</a>
-                    <span className="button" aria-current="page">Pulpo Generador</span>
-                  </nav>
+                  <WorkspaceHeaderNavigation>
+                    <nav className="account-app-tabs" aria-label="Costos de IA">
+                      <a className="button" href="/api/pulpo/open-crm?module=bot-costs">Bot de Mensajería</a>
+                      <span className="button" aria-current="page">Pulpo Generador</span>
+                    </nav>
+                  </WorkspaceHeaderNavigation>
                 )}
                 <Usage />
               </>
@@ -1976,8 +1987,8 @@ function PagesSettings({ view, tab, navigate }: {
     : tab === "plans" || tab === "mail" || tab === "payments" ? tab : "page";
   return (
     <section className="stack">
-      <div className="site-editor-toolbar">
-        <nav aria-label="Páginas">
+      <WorkspaceHeaderNavigation>
+        <nav className="account-app-tabs" aria-label="Páginas">
           {[
             ["page", "Página"],
             ["plans", "Planes"],
@@ -1999,7 +2010,7 @@ function PagesSettings({ view, tab, navigate }: {
             </a>
           ))}
         </nav>
-      </div>
+      </WorkspaceHeaderNavigation>
       {current === "mail" ? <MailSettings /> : current === "payments" ? <PaymentSettings /> :
         <SiteEditor section={current} />}
     </section>

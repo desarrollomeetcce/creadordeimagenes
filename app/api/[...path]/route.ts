@@ -1,3 +1,4 @@
+import { financialNavigationAccess } from "@/lib/meta-ads/financial-navigation-access";
 import { linkedMessagingUser } from "@/lib/pulpo-sso";
 import { hasAiModuleAccess } from "@/lib/roles";
 import {libraryJobAccess} from "@/lib/library-access";
@@ -666,6 +667,7 @@ async function handle(
         role: user.role,
         aiAccessEnabled: user.aiAccessEnabled,
         messagingLinked: Boolean(linkedMessagingUser(user)),
+        ...await financialNavigationAccess(user.id, user.role),
         ...grants,
       });
     }

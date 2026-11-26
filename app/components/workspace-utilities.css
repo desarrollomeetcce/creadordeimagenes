@@ -58,13 +58,14 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
   font-size: 12px;
 }
 
-.workspace > .performance-topbar {
+.workspace > .topbar.shared-navigation-topbar {
+  align-items: flex-start;
   height: auto;
   min-height: 58px;
   padding-block: 8px;
 }
 
-#performance-navigation-slot {
+#workspace-navigation-slot {
   flex: 1;
   min-width: 0;
 }
@@ -73,4 +74,12 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
   .performance-workspace-nav > .performance-settings-link {
     margin-inline-start: 0;
   }
+}
+
+
+.workspace > .topbar.shared-navigation-topbar {
+  padding-inline-start: 20px;
+}
+#workspace-navigation-slot > nav {
+  margin: 0;
 }

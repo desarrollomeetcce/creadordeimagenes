@@ -258,7 +258,12 @@ export async function metaRoutes(
     );
   if (path === "my-performance/period-signals") {
     const signals = await import("./advisor-period-signals");
-    if (method === "GET") return send(await signals.advisorPeriodSignals(actor, Object.fromEntries(req.nextUrl.searchParams)));
+    if (method === "GET") {
+      const input = Object.fromEntries(req.nextUrl.searchParams);
+      return send(await (input.section === "whatsapp"
+        ? signals.advisorWhatsAppActivity(actor, input)
+        : signals.advisorPeriodSignals(actor, input)));
+    }
     if (method === "POST") return send(await signals.addAdvisorPeriodNote(actor, await body()), 201);
   }
   if (path === "my-performance" && method === "GET") {

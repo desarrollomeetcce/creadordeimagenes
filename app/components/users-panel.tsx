@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceHeaderNavigation } from "./workspace-header-navigation";
 import { RecoveryIssuer } from "./account-security";
 import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -138,10 +139,12 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
           </p>
         </div>
       </div>
-      <nav className="account-app-tabs" aria-label="Usuarios y accesos">
-        <a className="button" href="/api/pulpo/open-crm?module=users">Pulpo Mensajería</a>
-        <span className="button" aria-current="page">Pulpo Generador</span>
-      </nav>
+      <WorkspaceHeaderNavigation>
+        <nav className="account-app-tabs" aria-label="Usuarios y accesos">
+          <a className="button" href="/api/pulpo/open-crm?module=users">Pulpo Mensajería</a>
+          <span className="button" aria-current="page">Pulpo Generador</span>
+        </nav>
+      </WorkspaceHeaderNavigation>
       <div>
           <details className="panel roles-guide">
             <summary>Qué permite cada rol</summary>
