@@ -219,7 +219,10 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
               catalogKey: (entry ?? status)?.catalogKey ?? null,
               currentAssignment: (entry ?? status)?.current === true,
               recentlyChanged: !!changedDay && changedDay >= since && changedDay <= until,
-              sales: sales.length ? sales.reduce((sum, value) => sum + value, 0) : null,
+              sales: advisorId === "all" && entry
+                ? entry.recordedSales
+                : sales.length ? sales.reduce((sum, value) => sum + value, 0) : null,
+              salesPartial: entry?.portfolioSalesPartial ?? false,
               recordedSales: entry?.recordedSales ?? null,
               notes: notes
                 .filter((note) => same(note) === key)
@@ -227,7 +230,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
             };
           })
           .filter((item) => section !== "products" || item.currentAssignment ||
-            item.recentlyChanged || (item.metaBase ?? 0) > 0 || (item.sales ?? 0) > 0 || (item.recordedSales ?? 0) > 0)
+            item.recentlyChanged || (item.metaBase ?? 0) > 0 || item.salesPartial || (item.sales ?? 0) > 0 || (item.recordedSales ?? 0) > 0)
       : [],
   };
 }

@@ -1,3 +1,4 @@
+import { reconcilePortfolioSales } from "./registered-sales";
 import { categoryKey } from "./category-paste";
 import { advisorEmploymentActive } from "./advisor-analysis-view";
 import { orderedAdvisors } from "./advisor-order-policy";
@@ -1363,6 +1364,7 @@ async function readAdvisorSheet(
         lastStateChange: string | null;
         catalogKey: [string, string] | null;
         recordedSales: number | null;
+        portfolioSalesPartial: boolean;
       }> = {};
       if (scopedInventoryRows.size) {
         const [aliases, rates] = await Promise.all([
@@ -1389,6 +1391,21 @@ async function readAdvisorSheet(
             catalogKey: [inventorySheet.id, catalogIds.get(JSON.stringify([inventorySheet.id, categoryKey(name)])) ?? id] as [string, string],
           }] as const];
         }));
+        const portfolioByProduct = new Map<string, { day: string; sales: number | null; partial: boolean }[]>();
+        if (filters.ownerProducts) {
+          for (const { row } of scopedInventoryRows.values()) {
+            const policy = rules.get(row.aliasId);
+            if (!policy) continue;
+            const id = JSON.stringify([...policy.catalogKey, row.country]);
+            const entries = portfolioByProduct.get(id) ?? [];
+            for (const [day, cell] of Object.entries(row.days)) {
+              if (cell.sales !== null && !cell.na.includes("sales")) {
+                entries.push({ day, sales: cell.sales, partial: cell.partialMetrics.includes("sales") });
+              }
+            }
+            portfolioByProduct.set(id, entries);
+          }
+        }
         const fx = new Map(rates.map((day) => [day.day, day.rates as FxRates]));
         for (const [key, { row, current, baseDays }] of scopedInventoryRows) {
           const policy = rules.get(row.aliasId);
@@ -1406,8 +1423,12 @@ async function readAdvisorSheet(
                   ? (total ?? 0) + cell.sales
                   : total, null)
             : null;
+          const portfolio = filters.ownerProducts
+            ? reconcilePortfolioSales(portfolioByProduct.get(JSON.stringify([...policy.catalogKey, row.country])) ?? [], baseRange.since, baseRange.until)
+            : null;
           inventoryStatus[key] = {
-            recordedSales,
+            recordedSales: portfolio ? portfolio.total : recordedSales,
+            portfolioSalesPartial: portfolio?.partial ?? false,
             status: evaluation.meta.assessment.status,
             base: base.metaBase,
             basePartial: base.metaBasePartial,

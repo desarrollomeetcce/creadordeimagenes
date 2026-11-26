@@ -181,7 +181,18 @@ export function AdvisorPeriodSignals({
   const valid = data?.since === since && data.until === until;
   const groups = new Map<string, Data["items"]>();
   if (valid) {
+    const displayItems = new Map<string, Item>();
     for (const item of data.items) {
+      const key = advisorId === "all" && item.catalogKey
+        ? JSON.stringify([...item.catalogKey, item.country])
+        : item.key;
+      const prior = displayItems.get(key);
+      if (!prior || (!prior.campaignActive && item.campaignActive) ||
+          (prior.campaignActive === item.campaignActive && !prior.currentAssignment && item.currentAssignment)) {
+        displayItems.set(key, item);
+      }
+    }
+    for (const item of displayItems.values()) {
       const items = groups.get(item.country) ?? [];
       items.push(item);
       groups.set(item.country, items);
@@ -446,7 +457,8 @@ export function AdvisorPeriodSignals({
                           {item.metaBase !== null && item.metaBasePartial && <small>Parcial</small>}
                         </td>
                         <td className="advisor-diploma-base">
-                          {(item.sales ?? item.recordedSales)?.toLocaleString("es-PE") ?? "—"}
+                          {(item.sales ?? item.recordedSales)?.toLocaleString("es-PE") ?? (item.salesPartial ? "Por revisar" : "—")}
+                          {item.salesPartial && item.sales !== null && <small>Parcial</small>}
                           {item.sales === null && item.recordedSales !== null && <small>Total del diplomado</small>}
                         </td>
                         <td className="advisor-diploma-base">

@@ -104,3 +104,27 @@ export function registeredSalesSummary(
     ),
   };
 }
+
+
+/** Portfolio copies of the same diploma/country/day may repeat a sales cell. */
+export function reconcilePortfolioSales(
+  entries: Iterable<Pick<RegisteredSalesEntry, "day" | "sales" | "partial">>,
+  from: string,
+  to: string,
+) {
+  const byDay = new Map<string, { values: Set<number>; partial: boolean }>();
+  for (const entry of entries) {
+    if (entry.day < from || entry.day > to || entry.sales === null) continue;
+    const cell = byDay.get(entry.day) ?? { values: new Set<number>(), partial: false };
+    cell.values.add(entry.sales);
+    cell.partial ||= entry.partial;
+    byDay.set(entry.day, cell);
+  }
+  let total: number | null = null;
+  let partial = false;
+  for (const { values, partial: dayPartial } of byDay.values()) {
+    partial ||= dayPartial || values.size > 1;
+    if (values.size === 1) total = (total ?? 0) + [...values][0];
+  }
+  return { total, partial };
+}
