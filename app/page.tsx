@@ -551,6 +551,7 @@ export default function Home() {
             </a>
           </div>
           <SharedPulpoMenu key={user.id} userId={user.id} endpoint="/api/pulpo/workspace-menu"
+            roleMenuApi={user.role === "OWNER" ? { endpoint: "/api/users/role-menus", uppercase: true } : undefined}
             visibility={user.role === "OWNER" ? null : readMenuVisibility(user.menuVisibility ?? null) ?? null}
             expand={() => setSidebarMini(false)}
             resolve={(id, peer, fromSession, assigned) => {

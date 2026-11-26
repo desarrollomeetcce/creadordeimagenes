@@ -15,6 +15,7 @@ import {
   type Movable,
 } from "@/lib/pulpo-menu-model";
 import "./shared-pulpo-menu.css";
+import { MenuRoleShortcut, type MenuRoleApi, type MenuRoleTarget } from "./menu-role-shortcut";
 
 type Destination = {
   href: string;
@@ -38,12 +39,14 @@ async function messagingSession(grant: string, signal: AbortSignal): Promise<Sna
 export function SharedPulpoMenu({
   endpoint,
   userId,
+  roleMenuApi,
   visibility = null,
   resolve,
   expand,
 }: {
   endpoint: string;
   userId: string;
+  roleMenuApi?: MenuRoleApi;
   visibility?: Module[] | null;
   resolve: (id: Module, peer: Module[], fromSession: boolean, assigned: boolean) => Destination | null;
   expand: () => void;
@@ -52,6 +55,7 @@ export function SharedPulpoMenu({
   const [peer, setPeer] = useState<Module[]>([]);
   const [fromSession, setFromSession] = useState(false);
   const [server, setServer] = useState<boolean | null>(null);
+  const [roleTarget, setRoleTarget] = useState<MenuRoleTarget | null>(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -223,9 +227,20 @@ export function SharedPulpoMenu({
     if (visibility !== null && !visibility.includes(id)) return null;
     return resolve(id, peer, fromSession, visibility !== null);
   }
+  function roleButton(label: string, pages: readonly Module[]) {
+    if (!roleMenuApi || editing || !pages.length) return null;
+    return <button type="button" className="pulpo-menu-role-button" aria-haspopup="dialog"
+      aria-label={"Asignar visibilidad de " + label} title={"Asignar visibilidad de " + label}
+      onClick={() => setRoleTarget({ label, pages })}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
+      </svg>
+    </button>;
+  }
   const performance = destinationFor("performance");
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
+      {roleTarget && roleMenuApi && <MenuRoleShortcut target={roleTarget} api={roleMenuApi} onClose={() => setRoleTarget(null)} />}
       <div className="pulpo-menu-top">
         {editing && (
           <button
@@ -282,6 +297,7 @@ export function SharedPulpoMenu({
               drop(group);
             }}
           >
+            <div className="pulpo-menu-row pulpo-menu-band-row">
             <button
               type="button"
               className="pulpo-menu-band"
@@ -298,7 +314,12 @@ export function SharedPulpoMenu({
                 {collapsed ? "›" : "⌄"}
               </span>
             </button>
-            {!collapsed && pinned && link("performance", pinned)}
+              {roleButton(group, group === "CRM" ? ["performance", ...layout.order.CRM] : layout.order[group])}
+            </div>
+            {!collapsed && pinned && <div className="pulpo-menu-row">
+              {link("performance", pinned)}
+              {roleButton(modules.performance[0], ["performance"])}
+            </div>}
             {!collapsed &&
               visible.map(({ id, destination }, itemIndex) => (
                 <div
@@ -314,6 +335,7 @@ export function SharedPulpoMenu({
                   }}
                 >
                   {link(id, destination)}
+                  {roleButton(modules[id][0], [id])}
                   {editing && (
                     <details className="pulpo-menu-handle">
                       <summary

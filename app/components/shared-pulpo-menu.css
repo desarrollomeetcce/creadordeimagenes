@@ -183,3 +183,82 @@
   height: 19px;
   stroke-width: 2;
 }
+
+.pulpo-menu-row:has(> .pulpo-menu-role-button) {
+  align-items: center;
+}
+.pulpo-menu-band-row > .pulpo-menu-band {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pulpo-shared-menu .pulpo-menu-role-button {
+  display: grid;
+  flex: 0 0 25px;
+  place-items: center;
+  min-height: 24px;
+  margin-inline-start: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.pulpo-menu-role-button:hover,
+.pulpo-menu-role-button:focus-visible {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.pulpo-menu-role-button svg {
+  fill: currentColor;
+  width: 16px;
+  height: 16px;
+}
+:is(.sidebar-mini, .sidebar-collapsed) .pulpo-menu-role-button {
+  display: none;
+}
+.pulpo-role-dialog {
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text, var(--ink));
+  background: var(--panel, var(--surface));
+}
+.pulpo-role-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.pulpo-role-dialog form, .pulpo-role-dialog fieldset {
+  display: grid;
+  gap: 8px;
+}
+.pulpo-role-dialog h2, .pulpo-role-dialog p {
+  margin: 0;
+}
+.pulpo-role-dialog fieldset {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.pulpo-role-dialog .pulpo-role-choice {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 1rem 1fr auto;
+  gap: 8px;
+  padding: 3px;
+}
+.pulpo-role-choice input {
+  width: 1rem;
+  height: 1rem;
+}
+.pulpo-role-pages, .pulpo-role-choice small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pulpo-role-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
