@@ -74,11 +74,14 @@ export async function POST(request: Request) {
       },
     });
     if (!user) return json({}, 403);
+    const [sheetAccess] = user.fixedCostGrant ? [] : await db.$queryRaw<{ allowed: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM "FixedCostSheetGrant" WHERE "userId"=${user.id}) AS allowed
+    `;
     return json({
       modules: availableGeneratorModules({
         ...user,
         advisorLinked: !!user.advisorPortal,
-        fixedCostsShared: !!user.fixedCostGrant,
+        fixedCostsShared: !!user.fixedCostGrant || sheetAccess?.allowed === true,
         metaAdsShared: !!user.metaWorkspaceGrant,
         ...await financialNavigationAccess(user.id, user.role),
       }),

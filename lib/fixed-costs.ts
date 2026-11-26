@@ -156,8 +156,11 @@ async function access(
     current.role === "OWNER"
       ? null
       : await tx.fixedCostGrant.findUnique({ where: { userId: user.id } });
+  const sheetIds = current.role === "OWNER" || grant || mode !== "VIEW" ? null
+    : (await tx.$queryRaw<{ sheetId: string }[]>`SELECT "sheetId" FROM "FixedCostSheetGrant" WHERE "userId"=${user.id}`).map((row) => row.sheetId);
   demand(
     current.role === "OWNER" ||
+      (mode === "VIEW" && !!sheetIds?.length) ||
       (mode !== "OWNER" &&
         grant &&
         (mode === "VIEW" ||
@@ -167,6 +170,7 @@ async function access(
   );
   return {
     owner: current.role === "OWNER",
+    sheetIds,
     canEdit:
       current.role === "OWNER" ||
       (grant?.permission === "EDIT" && current.role !== "OBSERVER"),
@@ -193,6 +197,42 @@ export async function fixedCostRoutes(
         p[0] === "sharing" ? "OWNER" : method === "GET" ? "VIEW" : "EDIT",
       );
       if (p[0] === "sharing") {
+        const sheetId = req.nextUrl.searchParams.get("sheet");
+        if (sheetId) {
+          demand(await tx.fixedCostSheet.findUnique({ where: { id: sheetId }, select: { id: true } }), "Hoja no disponible.", 404);
+          if (method === "GET") {
+            const members = await tx.$queryRaw<{ userId: string; name: string; email: string }[]>`
+              SELECT u.id AS "userId",u.name,u.email
+              FROM "FixedCostSheetGrant" g JOIN "User" u ON u.id=g."userId"
+              WHERE g."sheetId"=${sheetId} ORDER BY u.name,u.id
+            `;
+            return send({ members: members.map(({ userId, name, email }) => ({ userId, permission: "VIEW", user: { name, email } })) });
+          }
+          if (method === "POST" || (method === "DELETE" && p[1])) {
+            const targetId = method === "POST"
+              ? (await tx.user.findFirst({
+                  where: {
+                    email: { equals: z.object({ email: z.email().max(200) }).parse(await body()).email, mode: "insensitive" },
+                    status: "APPROVED", archivedAt: null, role: { not: "OWNER" },
+                  },
+                  select: { id: true },
+                }))?.id
+              : p[1];
+            demand(targetId, "Selecciona una cuenta aprobada sin rol Owner.", 404);
+            if (method === "POST")
+              await tx.$executeRaw`INSERT INTO "FixedCostSheetGrant" ("userId","sheetId") VALUES (${targetId},${sheetId}) ON CONFLICT DO NOTHING`;
+            else
+              await tx.$executeRaw`DELETE FROM "FixedCostSheetGrant" WHERE "userId"=${targetId} AND "sheetId"=${sheetId}`;
+            await recordActivity(tx, { data: {
+              actorId: user.id,
+              action: method === "POST" ? "COSTOS_ACCESO_GUARDADO" : "COSTOS_ACCESO_RETIRADO",
+              resourceId: targetId, detail: { sheetId, permission: "VIEW" },
+            } });
+            return send({ ok: true });
+          }
+          demand(false, "Operación no encontrada.", 404);
+        }
+
         if (method === "GET")
           return send({
             members: await tx.fixedCostGrant.findMany({
@@ -294,9 +334,13 @@ export async function fixedCostRoutes(
         const entryType = z
           .enum(["EXPENSE", "INCOME"])
           .parse(q.get("entryType") ?? "EXPENSE");
+        const selectedSheet = q.get("sheet");
+        demand(!rights.sheetIds || !selectedSheet || rights.sheetIds.includes(selectedSheet),
+          "No tienes acceso a esta hoja.", 403);
+        const sheetScope = selectedSheet ?? (rights.sheetIds ? { in: rights.sheetIds } : undefined);
         const shared: Prisma.FixedCostEntryWhereInput = {
           date: { gte: from, lte: to },
-          ...(q.get("sheet") ? { sheetId: q.get("sheet")! } : {}),
+          sheetId: sheetScope,
           ...(q.get("country") ? { country: q.get("country")! } : {}),
           ...(q.get("category") ? { category: q.get("category")! } : {}),
           ...(q.get("project") ? { project: q.get("project")! } : {}),
@@ -311,7 +355,7 @@ export async function fixedCostRoutes(
         const where = { ...shared, entryType };
         const [sheets, rows, total, groups, facets, categories, options] =
           await Promise.all([
-            tx.fixedCostSheet.findMany({ orderBy: { createdAt: "asc" } }),
+            tx.fixedCostSheet.findMany({ where: rights.sheetIds ? { id: { in: rights.sheetIds } } : undefined, orderBy: { createdAt: "asc" } }),
             tx.fixedCostEntry.findMany({
               where,
               orderBy: [
@@ -332,16 +376,16 @@ export async function fixedCostRoutes(
               _count: true,
             }),
             tx.fixedCostEntry.findMany({
-              where: { date: { gte: from, lte: to } },
-              select: { country: true, category: true },
-              distinct: ["country", "category"],
+              where: { date: { gte: from, lte: to }, sheetId: rights.sheetIds ? { in: rights.sheetIds } : undefined },
+              select: { country: true, category: true, project: true, unit: true },
+              distinct: ["country", "category", "project", "unit"],
               take: 5000,
             }),
-            tx.fixedCostCategory.findMany({
+            rights.sheetIds ? [] : tx.fixedCostCategory.findMany({
               orderBy: { name: "asc" },
               take: 5000,
             }),
-            tx.fixedCostOption.findMany({
+            rights.sheetIds ? [] : tx.fixedCostOption.findMany({
               orderBy: { name: "asc" },
               take: 5000,
             }),
@@ -353,10 +397,10 @@ export async function fixedCostRoutes(
             (order.includes(b.name) ? order.indexOf(b.name) : 99),
         );
         return send({
-          projects: options
+          projects: rights.sheetIds ? [...new Set(facets.map((row) => row.project).filter(Boolean))].sort() : options
             .filter((o) => o.kind === "PROJECT")
             .map((o) => o.name),
-          units: options.filter((o) => o.kind === "UNIT").map((o) => o.name),
+          units: rights.sheetIds ? [...new Set(facets.map((row) => row.unit).filter(Boolean))].sort() : options.filter((o) => o.kind === "UNIT").map((o) => o.name),
           sheets,
           rows,
           total,

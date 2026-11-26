@@ -22,6 +22,7 @@ enum AccountStatus {
 model User {
   diplomaApiKeys DiplomaApiKey[]
   fixedCostGrant FixedCostGrant?
+  fixedCostSheetGrants FixedCostSheetGrant[]
   libraryFolderMemberships LibraryFolderMember[]
   aiAccessEnabled Boolean @default(true)
   archivedAt DateTime?
@@ -1664,6 +1665,7 @@ model FixedCostSheet {
   name String @unique
   createdAt DateTime @default(now())
   entries FixedCostEntry[]
+  grants FixedCostSheetGrant[]
 }
 model FixedCostEntry {
   project String @default("")
@@ -1698,6 +1700,16 @@ model FixedCostEntry {
   @@unique([seriesId,month])
   @@index([month,sheetId])
 }
+model FixedCostSheetGrant {
+  userId String
+  sheetId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sheet FixedCostSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@id([userId, sheetId])
+  @@index([sheetId])
+}
+
 model FixedCostGrant {
   userId String @id
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)

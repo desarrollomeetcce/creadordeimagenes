@@ -655,7 +655,7 @@ async function handle(
         advisorLinked: boolean;
       }[]>`
         SELECT
-          EXISTS (SELECT 1 FROM "FixedCostGrant" WHERE "userId" = ${user.id}) AS "fixedCostsShared",
+          (EXISTS (SELECT 1 FROM "FixedCostGrant" WHERE "userId" = ${user.id}) OR EXISTS (SELECT 1 FROM "FixedCostSheetGrant" WHERE "userId" = ${user.id})) AS "fixedCostsShared",
           EXISTS (SELECT 1 FROM "EffectivenessGrant" WHERE "userId" = ${user.id}) AS "effectivenessShared",
           EXISTS (SELECT 1 FROM "MetaWorkspaceGrant" WHERE "userId" = ${user.id}) AS "metaAdsShared",
           EXISTS (SELECT 1 FROM "MetaAdvisorPortal" WHERE "userId" = ${user.id}) AS "advisorLinked"
