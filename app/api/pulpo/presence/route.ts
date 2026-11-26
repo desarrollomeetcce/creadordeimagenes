@@ -50,7 +50,7 @@ export async function GET() {
     }[] };
     const byId = new Map(payload.users.map(({ id, ...value }) => [id, value]));
     const eligible = await db.user.findMany({
-      where: { archivedAt: null, status: "APPROVED", ...(viewer.role === "OWNER" ? {} : { role: { in: ["USER", "OBSERVER"] } }) },
+      where: { archivedAt: null, status: "APPROVED", ...(viewer.role === "OWNER" ? {} : { role: { in: viewer.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR"] : ["USER", "OBSERVER"] } }) },
       select: { id: true, email: true, pulpoUserId: true },
     });
     return Response.json({ users: eligible.flatMap((account) => {

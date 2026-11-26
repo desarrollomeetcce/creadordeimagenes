@@ -667,7 +667,7 @@ export default function Home() {
             ) : view === "visual-audit" && user.role === "OWNER" ? (
               <VisualAuditPanel />
             ) : view === "users" ? (
-              <UsersPanel isOwner={user.role === "OWNER"} />
+              <UsersPanel role={user.role} />
             ) : view === "history" ? (
               <History />
             ) : view === "usage" ? (

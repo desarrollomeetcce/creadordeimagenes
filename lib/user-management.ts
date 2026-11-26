@@ -5,11 +5,12 @@ import { z } from "zod";
 import { db } from "./db";
 import { demand } from "./errors";
 import { rateLimit } from "./auth";
-import { managesUsers, canManageAccount } from "./roles";
+import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
 import { issuePasswordReset } from "./accounts";
 
 const role = z.enum([
   "OWNER",
+  "SUPERADMIN",
   "ADMIN",
   "USER",
   "OBSERVER",
@@ -53,12 +54,13 @@ export async function userManagement(
                     ? { not: null }
                     : null,
               }
-            : { archivedAt: null, role: { in: ["USER", "OBSERVER"] } },
+            : { archivedAt: null, role: { in: actor.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR"] : ["USER", "OBSERVER"] } },
         select,
         orderBy: { name: "asc" },
       }),
     );
   if (parts.length === 1 && req.method === "POST") {
+    demand(canCreateUsers(actor.role), "Solo Owner y Superadministrador pueden crear usuarios.", 403);
     const b = z
       .object({
         name: z.string().trim().min(1).max(100),
@@ -73,7 +75,7 @@ export async function userManagement(
       .parse(await body());
     demand(
       canManageAccount(actor.role, b.role),
-      "Solo el OWNER puede crear Administradores u OWNER.",
+      "Solo el OWNER puede crear cuentas privilegiadas.",
       403,
     );
     await rateLimit(`account-create:${actor.id}`, 30);
@@ -84,7 +86,7 @@ export async function userManagement(
         where: { id: actor.id },
       });
       demand(
-        issuer.status === "APPROVED" && canManageAccount(issuer.role, b.role),
+        issuer.status === "APPROVED" && !issuer.archivedAt && canCreateUsers(issuer.role) && canManageAccount(issuer.role, b.role),
         "La autorización de tu cuenta cambió.",
         403,
       );

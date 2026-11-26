@@ -62,7 +62,7 @@ export async function issuePasswordReset(
 ) {
   demand(
     managesUsers(user.role),
-    "Solo OWNER o Administrador pueden recuperar cuentas autorizadas.",
+    "Solo Owner, Superadministrador o Administrador pueden recuperar cuentas autorizadas.",
     403,
   );
   const b = z

@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
+import { CurrentRole } from "./role-guide";
 import { PasswordInput } from "./password-input";
 import { matchesSearchWords } from "../../lib/search";
 import type { performanceSettings } from "../../lib/meta-ads/advisor-performance";
@@ -18,6 +19,7 @@ function AdvisorManagementRow({
   onChanged: () => Promise<void>;
   onDetail: (id: string) => void;
 }) {
+  const accountRole = useContext(CurrentRole);
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [access, setAccess] = useState(false),
@@ -107,7 +109,7 @@ function AdvisorManagementRow({
             />
             <button disabled={busy}>Guardar vínculo</button>
           </form>
-          {!person.portal?.userId && (
+          {accountRole === "OWNER" && !person.portal?.userId && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();

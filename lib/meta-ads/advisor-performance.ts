@@ -462,6 +462,7 @@ export async function saveAdvisorTargets(actor: Actor, input: unknown) {
   });
 }
 export async function createAdvisorAccess(actor: Actor, input: unknown) {
+  demand(actor.role === "OWNER", "Crea cuentas de asesor desde Usuarios y accesos o pide ayuda al propietario.", 403);
   await performanceManager(actor);
   const b = z
     .object({
@@ -480,6 +481,8 @@ export async function createAdvisorAccess(actor: Actor, input: unknown) {
   const passwordHash = await argon2.hash(b.password, { type: argon2.argon2id });
   return db.$transaction(async (tx) => {
     await performanceLock(tx, actor);
+    const creator = await tx.user.findUnique({ where: { id: actor.id }, select: { role: true } });
+    demand(creator?.role === "OWNER", "La autorización de tu cuenta cambió.", 403);
     const person = await tx.metaAdvisor.findFirst({
       where: { id: b.advisorId, sheet: { archivedAt: null } },
     });

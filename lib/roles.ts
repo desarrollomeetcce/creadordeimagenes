@@ -2,14 +2,16 @@ export const roleLabels: Record<string, string> = {
   OWNER: "OWNER",
   SUPERVISOR: "Supervisor",
   ADVISOR: "Asesor",
+  SUPERADMIN: "Superadministrador",
   ADMIN: "Administrador",
   USER: "Usuario",
   OBSERVER: "Observador",
 };
 export const roleDescriptions: Record<string, string> = {
   OWNER: "Control general de la plataforma, configuración y accesos elevados.",
+  SUPERADMIN: "Crea cuentas de Usuario, Observador y Asesor y gestiona sus accesos.",
   ADMIN:
-    "Gestiona usuarios básicos y los proyectos de su ámbito; no tiene acceso global automático.",
+    "Gestiona usuarios básicos existentes y los proyectos de su ámbito.",
   USER: "Crea y trabaja en proyectos propios o asignados, incluida la generación de imágenes.",
   OBSERVER:
     "Consulta y descarga contenido compartido; no edita ni genera imágenes.",
@@ -34,10 +36,14 @@ export const roleAbilities: Record<string, string[]> = {
     "Administrar exclusivamente claves de IA, modelos, presupuestos y mantenimiento.",
     "Consultar estadísticas globales de actividad, reservas y costes confirmados por usuario, proyecto, producto, subproducto y modelo.",
   ],
+  SUPERADMIN: [
+    "Crear y administrar cuentas de Usuarios, Observadores y Asesores.",
+    "Consultar y trabajar en los espacios habilitados para su cuenta.",
+  ],
   ADMIN: [
     "Ver los proyectos propios, asignados o habilitados por OWNER para todos los administradores; descargar sus afiches.",
     "Crear proyectos y compartir los propios; editar y generar en los asignados o habilitados para todos los administradores.",
-    "Crear y administrar cuentas de Usuarios y Observadores; generar enlaces de recuperación para ellas.",
+    "Administrar cuentas existentes de Usuarios y Observadores y generar enlaces de recuperación.",
     "Consultar todas las configuraciones guardadas y administrar las propias.",
     "Las claves de IA y la administración de cuentas OWNER/Administrador son exclusivas del OWNER.",
   ],
@@ -55,11 +61,15 @@ export const roleAbilities: Record<string, string[]> = {
   ],
 };
 export function managesUsers(role: string) {
-  return role === "OWNER" || role === "ADMIN";
+  return role === "OWNER" || role === "SUPERADMIN" || role === "ADMIN";
+}
+export function canCreateUsers(role: string) {
+  return role === "OWNER" || role === "SUPERADMIN";
 }
 export function canManageAccount(actor: string, target: string) {
   return (
     actor === "OWNER" ||
+    (actor === "SUPERADMIN" && ["USER", "OBSERVER", "ADVISOR"].includes(target)) ||
     (actor === "ADMIN" && ["USER", "OBSERVER"].includes(target))
   );
 }

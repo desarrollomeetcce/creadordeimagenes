@@ -4,7 +4,7 @@ import { RecoveryIssuer } from "./account-security";
 import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
-import { roleLabels, roleDescriptions, roleAbilities } from "../../lib/roles";
+import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers } from "../../lib/roles";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 type Presence = {
   desktop: boolean;
@@ -49,7 +49,8 @@ async function api(path: string, method = "GET", data?: unknown) {
   if (!r.ok) throw Error(b.error || "No se pudo guardar.");
   return b;
 }
-export function UsersPanel({ isOwner }: { isOwner: boolean }) {
+export function UsersPanel({ role }: { role: string }) {
+  const isOwner = role === "OWNER";
   const [users, setUsers] = useState<Account[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -111,8 +112,10 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
         .catch((e) => setMessage(e.message));
   }, [isOwner]);
   const roles = isOwner
-    ? ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR", "ADMIN", "OWNER"]
-    : ["USER", "OBSERVER"];
+    ? ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR", "ADMIN", "SUPERADMIN", "OWNER"]
+    : role === "SUPERADMIN"
+      ? ["USER", "OBSERVER", "ADVISOR"]
+      : ["USER", "OBSERVER"];
   const change = (id: string, data: Partial<Account>) =>
     setUsers((old) => old.map((u) => (u.id === id ? { ...u, ...data } : u)));
   async function run(fn: () => Promise<unknown>) {
@@ -208,6 +211,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                   "ADVISOR",
                   "SUPERVISOR",
                   "ADMIN",
+                  "SUPERADMIN",
                   "OWNER",
                 ].map((role) => (
                   <button
@@ -256,64 +260,66 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               </p>
             </div>
           </details>
-          <details className="panel">
-            <summary>Crear usuario o administrador</summary>
-            <form
-              className="inside stack"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const data = Object.fromEntries(new FormData(form));
-                void run(async () => {
-                  await api("users", "POST", data);
-                  form.reset();
-                  setCreateRole("USER");
-                });
-              }}
-            >
-              <label>
-                Nombre
-                <input name="name" required maxLength={100} />
-              </label>
-              <label>
-                Correo electrónico
-                <input name="email" type="email" required autoComplete="off" />
-              </label>
-              <label>
-                Contraseña inicial · mínimo 12 caracteres
-                <PasswordInput
-                  name="password"
-                  required
-                  minLength={12}
-                  maxLength={128}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label>
-                Rol
-                <select
-                  name="role"
-                  value={createRole}
-                  onChange={(e) => setCreateRole(e.target.value)}
-                >
-                  {roles.map((role) => (
-                    <option key={role} value={role}>
-                      {roleLabels[role]}
-                    </option>
-                  ))}
-                </select>
-                <small className="user-role-description">
-                  {roleDescriptions[createRole]}
-                </small>
-              </label>
-              <p className="hint">
-                La cuenta quedará aprobada. Entrega sus datos de acceso por un
-                canal privado; la contraseña no se mostrará después de
-                guardarse.
-              </p>
-              <button disabled={busy}>Crear cuenta</button>
-            </form>
-          </details>
+          {canCreateUsers(role) && (
+            <details className="panel">
+              <summary>Crear usuario</summary>
+              <form
+                className="inside stack"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const data = Object.fromEntries(new FormData(form));
+                  void run(async () => {
+                    await api("users", "POST", data);
+                    form.reset();
+                    setCreateRole("USER");
+                  });
+                }}
+              >
+                <label>
+                  Nombre
+                  <input name="name" required maxLength={100} />
+                </label>
+                <label>
+                  Correo electrónico
+                  <input name="email" type="email" required autoComplete="off" />
+                </label>
+                <label>
+                  Contraseña inicial · mínimo 12 caracteres
+                  <PasswordInput
+                    name="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  Rol
+                  <select
+                    name="role"
+                    value={createRole}
+                    onChange={(e) => setCreateRole(e.target.value)}
+                  >
+                    {roles.map((role) => (
+                      <option key={role} value={role}>
+                        {roleLabels[role]}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="user-role-description">
+                    {roleDescriptions[createRole]}
+                  </small>
+                </label>
+                <p className="hint">
+                  La cuenta quedará aprobada. Entrega sus datos de acceso por un
+                  canal privado; la contraseña no se mostrará después de
+                  guardarse.
+                </p>
+                <button disabled={busy}>Crear cuenta</button>
+              </form>
+            </details>
+          )}
 
           {message && (
             <p role="status" className="notice">
