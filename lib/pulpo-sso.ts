@@ -46,7 +46,7 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
   }
 }
 
-export function linkedGeneratorUser(links: string, assertion: Pick<Assertion, "sub" | "email">) {
+export function linkedGeneratorUser(links: string, assertion: Assertion) {
   try {
     const directory = JSON.parse(links);
     const link = Object.hasOwn(directory, assertion.sub) ? directory[assertion.sub] : null;
