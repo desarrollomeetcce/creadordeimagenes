@@ -1,6 +1,11 @@
 .pulpo-diploma-observations { margin-block: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; }
 .pulpo-diploma-observations summary { cursor: pointer; font-weight: 650; color: var(--accent); }
-.pulpo-diploma-observations ol { padding-inline-start: 20px; }
-.pulpo-diploma-observations li { margin-block: 10px; }
 .pulpo-diploma-observations li p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; }
 .pulpo-diploma-observations li small { color: var(--muted); }
+.pulpo-observation-controls { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px; margin-block: 10px; }
+.pulpo-observation-controls label { display: grid; gap: 3px; font-size: 12px; }
+.pulpo-observation-scroll { max-height: min(300px, 42vh); overflow: auto; overscroll-behavior: contain; margin-block: 8px; padding-inline: 2px 8px; }
+.pulpo-observation-day { margin-block-end: 10px; }
+.pulpo-observation-day > time { color: var(--muted); font-weight: 650; font-size: 12px; }
+.pulpo-observation-day ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.pulpo-observation-day li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 4px 0; }

@@ -8,6 +8,7 @@ import type {
   SheetInterval,
 } from "../../lib/meta-ads/inventory-sheet-activation";
 import { InventoryCacStatus as InventoryStatusLabel } from "./inventory-cac-status";
+import { PulpoDiplomaObservations } from "./pulpo-diploma-observations";
 import { EffectivenessHistory } from "./effectiveness-history";
 import { limaToday } from "./date-range";
 const money = (v: number | null | undefined) =>
@@ -252,6 +253,13 @@ export function InventoryDiplomaObservations({
           </div>
           {current && (
             <>
+              {current.country && current.targets[0] && !detail && (
+                <PulpoDiplomaObservations
+                  aliasId={current.targets[0].aliasId}
+                  tableId={current.tableId}
+                  country={current.country}
+                />
+              )}
               <div
                 className={
                   "inventory-observation-note " + (warnings ? "warning" : "")

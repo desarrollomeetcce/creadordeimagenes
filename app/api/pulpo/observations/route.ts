@@ -1,3 +1,4 @@
+import { performancePeriod } from "@/lib/performance-period";
 import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { actor } from "@/lib/auth";
@@ -31,10 +32,12 @@ export async function GET(request: NextRequest) {
   const country = q.get("country") ?? "",
     offset = Number(q.get("offset") ?? 0);
   const campaign = q.get("campaign");
+  const day = q.get("day");
   if (
     ![aliasId, tableId].every((id) => /^[\w:-]{1,200}$/.test(id)) ||
     !/^[A-Z]{2}$/.test(country) ||
     (campaign !== null && !/^\d{1,40}$/.test(campaign)) ||
+    (day !== null && !performancePeriod(day, day)) ||
     !Number.isSafeInteger(offset) ||
     offset < 0
   )
@@ -82,9 +85,7 @@ export async function GET(request: NextRequest) {
         const item = (await catalog(tx, alias.inventorySheetId)).find(
           (row) => categoryKey(row.name) === categoryKey(alias.name),
         );
-        return item?.sheets?.some((sheet) => sheet.id === tableId)
-          ? { list: alias.inventorySheetId, item: item.id }
-          : null;
+        return item ? { list: alias.inventorySheetId, item: item.id } : null;
       },
       { timeout: 10000 },
     );
@@ -96,6 +97,7 @@ export async function GET(request: NextRequest) {
         ...external,
         country,
         offset,
+        ...(day ? { day } : {}),
         email: viewer.email.trim().toLowerCase(),
         exp: Math.floor(Date.now() / 1000) + 30,
       }),

@@ -54,6 +54,7 @@ function History({
   campaign?: string;
 }) {
   const [pages, setPages] = useState<Note[]>([]);
+  const [day, setDay] = useState("");
   const [offset, setOffset] = useState(0);
   const [next, setNext] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,7 @@ function History({
       country,
       ...(campaign ? { campaign } : {}),
       offset: String(offset),
+      ...(day ? { day } : {}),
     });
     void (async () => {
       try {
@@ -88,46 +90,59 @@ function History({
       }
     })();
     return () => controller.abort();
-  }, [aliasId, tableId, country, campaign, offset]);
+  }, [aliasId, tableId, country, campaign, offset, day]);
+  const dates = new Map<string, Note[]>();
+  for (const note of pages) {
+    const group = dates.get(note.day) ?? [];
+    group.push(note);
+    dates.set(note.day, group);
+  }
+  const region = new Intl.DisplayNames("es", { type: "region" }).of(country);
   return (
     <section aria-label="Historial de observaciones">
+      <div className="pulpo-observation-controls">
+        <strong>{region}</strong>
+        <label>
+          Filtrar por fecha
+          <input type="date" value={day} onChange={(event) => {
+            setDay(event.target.value);
+            setOffset(0);
+            setPages([]);
+            setNext(null);
+            setError("");
+            setLoading(true);
+          }} />
+        </label>
+      </div>
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Cargando observaciones…</p>}
       {!loading && !pages.length && !error && (
-        <p>
-          Aún no hay observaciones de Mensajería para este diplomado y país.
-        </p>
+        <p>{day ? "Sin observaciones para esta fecha." : "Aún no hay observaciones para este diplomado y país."}</p>
       )}
       {pages.length > 0 && (
-        <ol>
-          {pages.map((note) => (
-            <li key={note.id}>
-              <strong>{note.author}</strong>
-              {" · "}
-              <time dateTime={note.day}>
-                {dateLabel.format(new Date(note.day + "T12:00:00Z"))}
-              </time>
-              {note.recordedAt && (
-                <small>
-                  {" · Registrado el "}
-                  {dateLabel.format(new Date(note.recordedAt))}
-                </small>
-              )}
-              <p>{note.body}</p>
-            </li>
+        <div className="pulpo-observation-scroll" tabIndex={0} role="region" aria-label="Observaciones por fecha">
+          {[...dates].map(([date, entries]) => (
+            <div className="pulpo-observation-day" key={date}>
+              <time dateTime={date}>{dateLabel.format(new Date(date + "T12:00:00Z"))}</time>
+              <ul>
+                {entries.map((note) => (
+                  <li key={note.id}>
+                    <strong>{note.author}</strong>
+                    {note.recordedAt && <small> · Registrado el {dateLabel.format(new Date(note.recordedAt))}</small>}
+                    <p>{note.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ol>
+        </div>
       )}
       {next !== null && (
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => {
-            setLoading(true);
-            setError("");
-            setOffset(next);
-          }}
-        >
+        <button type="button" disabled={loading} onClick={() => {
+          setLoading(true);
+          setError("");
+          setOffset(next);
+        }}>
           Ver anteriores
         </button>
       )}
