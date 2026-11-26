@@ -182,7 +182,9 @@ export function UsersPanel({ role }: { role: string }) {
         <div>
           <h1>Usuarios y accesos</h1>
           <p className="hint">
-            Una fila por persona. Guarda rol, estado y plan con un solo botón.
+            {isOwner
+              ? "Usa la pestaña Pulpo Mensajería para habilitar ambas aplicaciones y verificar el vínculo de cada usuario."
+              : "Una fila por persona. Guarda rol, estado y plan con un solo botón."}
           </p>
         </div>
       </div>
