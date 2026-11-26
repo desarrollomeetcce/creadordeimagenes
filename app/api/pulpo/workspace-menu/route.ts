@@ -13,6 +13,38 @@ const json = (data: unknown, status = 200) =>
     headers: { "Cache-Control": "private, no-store" },
   });
 
+const messagingOrigin = "https://pulpo.agenciamagneto.org";
+const sessionCors = {
+  "Access-Control-Allow-Origin": messagingOrigin,
+  "Access-Control-Allow-Credentials": "true",
+  "Cache-Control": "private, no-store",
+  Vary: "Origin",
+};
+
+export function OPTIONS(request: Request) {
+  if (request.headers.get("origin") !== messagingOrigin) return new Response(null, { status: 403 });
+  return new Response(null, { status: 204, headers: {
+    ...sessionCors, "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": "Authorization",
+  } });
+}
+
+const menuAccount = {
+  id: true, role: true, aiAccessEnabled: true,
+  advisorPortal: { select: { advisorId: true } },
+  metaWorkspaceGrant: { select: { userId: true } },
+} as const;
+
+async function authorizedModules(user: { id: string; role: string; aiAccessEnabled: boolean; advisorPortal: unknown; metaWorkspaceGrant: unknown }) {
+  const [fixedCostsShared, financialAccess] = await Promise.all([
+    fixedCostNavigationAccess(user.id, user.role),
+    financialNavigationAccess(user.id, user.role),
+  ]);
+  return availableGeneratorModules({
+    ...user, advisorLinked: Boolean(user.advisorPortal), metaAdsShared: Boolean(user.metaWorkspaceGrant),
+    fixedCostsShared, ...financialAccess,
+  });
+}
+
 async function messaging(move?: Move, layoutOnly = false) {
   const user = await actor().catch(() => null);
   if (!user) return json({}, 401);
@@ -49,6 +81,21 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const authorization = request.headers.get("authorization");
   if (authorization) {
+    if (request.headers.get("origin") === messagingOrigin) {
+      const grant = verifyMenu("session-access", authorization);
+      const user = grant && await actor().catch(() => null);
+      const linked = user && linkedMessagingUser(user);
+      const expected = grant && linkedGeneratorUser(process.env.PULPO_GENERATOR_LINKS || "", grant);
+      if (!grant || !user || user.email.trim().toLowerCase() !== grant.email ||
+          (linked && linked !== grant.sub) || (expected && expected !== user.id))
+        return Response.json({}, { status: 403, headers: sessionCors });
+      const account = await db.user.findFirst({
+        where: { id: user.id, email: user.email, pulpoUserId: user.pulpoUserId, status: "APPROVED", archivedAt: null },
+        select: menuAccount,
+      });
+      if (!account) return Response.json({}, { status: 403, headers: sessionCors });
+      return Response.json({ modules: await authorizedModules(account) }, { headers: sessionCors });
+    }
     const grant = verifyMenu("access", authorization);
     if (!grant) return json({}, 403);
     const linked = linkedGeneratorUser(
@@ -65,28 +112,10 @@ export async function POST(request: Request) {
           ...(linked ? [{ id: linked, pulpoUserId: null }] : []),
         ],
       },
-      select: {
-        id: true,
-        role: true,
-        aiAccessEnabled: true,
-        advisorPortal: { select: { advisorId: true } },
-        metaWorkspaceGrant: { select: { userId: true } },
-      },
+      select: menuAccount,
     });
     if (!user) return json({}, 403);
-    const [fixedCostsShared, financialAccess] = await Promise.all([
-      fixedCostNavigationAccess(user.id, user.role),
-      financialNavigationAccess(user.id, user.role),
-    ]);
-    return json({
-      modules: availableGeneratorModules({
-        ...user,
-        advisorLinked: !!user.advisorPortal,
-        fixedCostsShared,
-        metaAdsShared: !!user.metaWorkspaceGrant,
-        ...financialAccess,
-      }),
-    });
+    return json({ modules: await authorizedModules(user) });
   }
   if (request.headers.get("origin") !== new URL(request.url).origin)
     return json({}, 403);

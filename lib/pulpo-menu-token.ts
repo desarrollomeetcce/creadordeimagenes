@@ -9,7 +9,7 @@ type Grant = {
   module?: string;
   nonce?: string;
 };
-type Audience = "preferences" | "access" | "open-crm";
+type Audience = "preferences" | "access" | "open-crm" | "session-access";
 function key() {
   const value = process.env.PULPO_GENERATOR_SSO_KEY;
   return value && /^[a-f\d]{64}$/i.test(value)
