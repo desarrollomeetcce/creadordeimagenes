@@ -76,7 +76,6 @@ export async function performanceSettings(actor: Actor) {
       where: {
         status: "APPROVED",
         archivedAt: null,
-        role: { in: ["ADVISOR", "USER", "OBSERVER"] },
       },
       select: {
         id: true,
@@ -117,7 +116,6 @@ export async function savePortalLink(actor: Actor, input: unknown) {
             id: b.userId,
             status: "APPROVED",
             archivedAt: null,
-            role: { in: ["ADVISOR", "USER", "OBSERVER"] },
           },
         }),
         "Selecciona una cuenta aprobada.",

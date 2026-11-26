@@ -63,12 +63,16 @@ export function SharedPulpoMenu({
     } catch {}
     let ready = false;
     let shared = false;
+    let peerCheckedAt = 0;
     let loading = false;
     async function load(background: boolean) {
       if (loading || writing.current || document.visibilityState === "hidden")
         return;
-      if (background && !shared) return;
-      const layoutOnly = ready;
+      const elapsed = Date.now() - peerCheckedAt;
+      const checkPeer = !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
+      if (background && !shared && !checkPeer) return;
+      const layoutOnly = !checkPeer;
+      if (checkPeer) peerCheckedAt = Date.now();
       const current = revision.current;
       loading = true;
       try {
@@ -79,7 +83,13 @@ export function SharedPulpoMenu({
             signal: controller.signal,
           },
         );
-        if (!response.ok) throw Error();
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            setPeer([]);
+            shared = false;
+          }
+          throw Error();
+        }
         const snapshot: Snapshot = await response.json();
         if (controller.signal.aborted || current !== revision.current) return;
         setLayout(upgradeLayout(snapshot.layout));

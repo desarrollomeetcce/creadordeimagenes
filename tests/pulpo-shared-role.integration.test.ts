@@ -53,7 +53,32 @@ test("requires a linked Owner to reconcile roles and preserves module grants", a
     const person = await db.metaAdvisor.create({ data: { name: "Asesora de prueba", sheetId: sheet.id } });
     const actor = { id: issuer.id, role: issuer.role };
     assert((await performanceSettings(actor)).accounts.some((candidate) => candidate.id === account.id));
-    assert.equal((await savePortalLink(actor, { advisorId: person.id, userId: account.id, revision: 0 })).userId, account.id);
+    const initialLink = await savePortalLink(actor, { advisorId: person.id, userId: account.id, revision: 0 });
+    assert.equal(initialLink.userId, account.id);
+
+    // An advisor record describes a person; linking it must not change their account role.
+    for (const role of ["OWNER", "SUPERADMIN", "ADMIN", "SUPERVISOR", "ADVISOR", "USER", "OBSERVER"] as const) {
+      const candidate = await db.user.create({ data: {
+        email: randomUUID() + "@example.test", name: role, passwordHash: "fixture",
+        role, status: "APPROVED",
+      } });
+      const advisorRecord = await db.metaAdvisor.create({ data: { name: role, sheetId: sheet.id } });
+      assert((await performanceSettings(actor)).accounts.some((entry) => entry.id === candidate.id), role);
+      const saved = await savePortalLink(actor, { advisorId: advisorRecord.id, userId: candidate.id, revision: 0 });
+      assert.equal(saved.userId, candidate.id);
+      assert.equal((await db.user.findUniqueOrThrow({ where: { id: candidate.id } })).role, role);
+      await assert.rejects(savePortalLink(actor, { advisorId: person.id, userId: candidate.id, revision: initialLink.revision }), /otro asesor/);
+      await assert.rejects(savePortalLink(actor, { advisorId: advisorRecord.id, userId: null, revision: saved.revision + 1 }), /vínculo cambió/);
+    }
+    for (const status of ["PENDING", "REJECTED", "SUSPENDED"] as const) {
+      const unavailable = await db.user.create({ data: {
+        email: randomUUID() + "@example.test", name: status, passwordHash: "fixture",
+        role: "ADMIN", status,
+      } });
+      assert(!(await performanceSettings(actor)).accounts.some((entry) => entry.id === unavailable.id));
+      await assert.rejects(savePortalLink(actor, { advisorId: person.id, userId: unavailable.id, revision: initialLink.revision }), /cuenta aprobada/);
+    }
+    await assert.rejects(performanceSettings({ id: account.id, role: "ADVISOR" }), /Solo OWNER o Supervisor/);
   } finally {
     await db.$disconnect();
   }
