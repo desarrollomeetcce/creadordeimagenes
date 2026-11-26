@@ -1,3 +1,4 @@
+import { reconcilePortfolioSales } from "./registered-sales";
 import { pulpoDiplomaActivity } from "./pulpo-diploma-activity";
 import { z } from "zod";
 import { db } from "../db";
@@ -143,6 +144,19 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
         )
       : null,
   ]);
+  const productSales = new Map<string, { day: string; sales: number | null; partial: boolean }[]>();
+  if (section === "products" && advisorId !== "all") {
+    for (const row of current.breakdown) {
+      const catalog = current.inventoryStatus[same(row)]?.catalogKey;
+      if (!catalog) continue;
+      const key = JSON.stringify([...catalog, row.country]);
+      const entries = productSales.get(key) ?? [];
+      for (const [day, value] of Object.entries(row.days)) {
+        if (!value.na && value.sales !== null) entries.push({ day, sales: value.sales, partial: value.partial });
+      }
+      productSales.set(key, entries);
+    }
+  }
   const summary = (day: string) => {
     const source = daily ?? current;
     const row = source.rows[0]?.days[day];
@@ -194,6 +208,10 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
             const key = same(identity);
             const entry = current.inventoryStatus[key];
             const status = (evaluated ?? current).inventoryStatus[key];
+            const catalogKey = (entry ?? status)?.catalogKey ?? null;
+            const matched = section === "products" && advisorId !== "all" && catalogKey
+              ? reconcilePortfolioSales(productSales.get(JSON.stringify([...catalogKey, country])) ?? [], since, until)
+              : null;
             const changed = (entry ?? status)?.lastStateChange;
             const changedDay = changed ? localDay("America/Lima", new Date(changed)) : null;
             const sales = Object.entries(days)
@@ -216,14 +234,15 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
               metaBasePartial: entry?.basePartial ?? false,
               campaignActive:
                 entry?.campaignActive ?? status?.campaignActive ?? false,
-              catalogKey: (entry ?? status)?.catalogKey ?? null,
+              catalogKey,
               currentAssignment: (entry ?? status)?.current === true,
               recentlyChanged: !!changedDay && changedDay >= since && changedDay <= until,
               sales: advisorId === "all" && entry
                 ? entry.recordedSales
+                : matched ? matched.total
                 : sales.length ? sales.reduce((sum, value) => sum + value, 0) : null,
-              salesPartial: entry?.portfolioSalesPartial ?? false,
-              recordedSales: entry?.recordedSales ?? null,
+              salesPartial: matched?.partial ?? entry?.portfolioSalesPartial ?? false,
+              recordedSales: matched?.partial ? null : entry?.recordedSales ?? null,
               notes: notes
                 .filter((note) => same(note) === key)
                 .map(({ id, day, body }) => ({ id, day, body })),

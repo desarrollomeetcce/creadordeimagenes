@@ -184,7 +184,7 @@ export function AdvisorPeriodSignals({
   if (valid) {
     const displayItems = new Map<string, Item>();
     for (const item of data.items) {
-      const key = advisorId === "all" && item.catalogKey
+      const key = section === "products" && item.catalogKey
         ? JSON.stringify([...item.catalogKey, item.country])
         : item.key;
       const prior = displayItems.get(key);
