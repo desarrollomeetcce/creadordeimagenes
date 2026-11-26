@@ -3,10 +3,11 @@ import { db } from "../db";
 import { demand } from "../errors";
 import { personalAdvisorSheet } from "./advisors";
 import { localDay, shiftDay } from "./analytics";
-import { isPerformanceManager } from "./performance-access";
+import { isPerformanceManager, performanceManager } from "./performance-access";
 import { performanceMetaGoal } from "./advisor-performance";
 import { advisorGoalStatus } from "./advisor-motivation";
 import { performanceRatio } from "./performance-metrics";
+import { cacWindow } from "./inventory-cac-policy";
 import type { Actor } from "./service";
 
 const id = z.string().min(1).max(100);
@@ -15,6 +16,14 @@ const range = z.object({
   until: z.string().date(),
   advisorId: id.optional(),
 });
+const productKey = z.tuple([id, id, z.string().length(2)]);
+function parseProductKey(value: string) {
+  try {
+    return productKey.safeParse(JSON.parse(value)).data;
+  } catch {
+    return undefined;
+  }
+}
 const same = (r: { aliasId: string; tableId: string; country: string }) =>
   JSON.stringify([r.tableId, r.aliasId, r.country]);
 function rangeCheck(since: string, until: string) {
@@ -56,9 +65,11 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
     until,
     advisorId: requested,
     section,
+    product,
   } = range
     .extend({
-      section: z.enum(["summary", "products"]).optional(),
+      section: z.enum(["summary", "products", "detail"]).optional(),
+      product: z.string().max(360).optional(),
     })
     .parse(input);
   rangeCheck(since, until);
@@ -68,18 +79,31 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   const comparisonSince = shiftDay(today, -2);
   const historical = since > comparisonSince || until < today;
   const includeProducts = section !== "summary";
-  const includeSummary = !requested && section !== "products";
-  const [current, notes, daily, goal, target] = await Promise.all([
+  const includeSummary =
+    !requested && (section === undefined || section === "summary");
+  const keys = product ? parseProductKey(product) : undefined;
+  demand(section !== "detail" || keys, "Elige un diplomado válido.");
+  const selected = keys
+    ? { tableId: keys[0], aliasId: keys[1], country: keys[2] }
+    : undefined;
+  const base = { since, until };
+  const evaluation = section === "products" ? cacWindow(today) : base;
+  const start = since < evaluation.since ? since : evaluation.since;
+  const end = until > evaluation.until ? until : evaluation.until;
+  const separate = Date.parse(end) - Date.parse(start) >= 44 * 86400000;
+  const [current, notes, daily, goal, target, evaluated] = await Promise.all([
     personalAdvisorSheet(
       actor,
       advisorId,
-      includeProducts ? since : comparisonSince,
-      includeProducts ? until : today,
+      includeProducts ? (separate ? since : start) : comparisonSince,
+      includeProducts ? (separate ? until : end) : today,
       includeProducts,
+      includeProducts && !separate ? { base, evaluation } : undefined,
+      section === "detail" ? selected : undefined,
     ),
-    includeProducts
+    includeProducts && section !== "products"
       ? db.metaAdvisorPeriodNote.findMany({
-          where: { advisorId, day: { gte: since, lte: until } },
+          where: { advisorId, day: { gte: since, lte: until }, ...selected },
           orderBy: [{ day: "desc" }, { createdAt: "desc" }],
         })
       : [],
@@ -92,6 +116,15 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
           where: { advisorId_basis: { advisorId, basis: "B" } },
           select: { salesTarget: true },
         })
+      : null,
+    separate
+      ? personalAdvisorSheet(
+          actor,
+          advisorId,
+          evaluation.since,
+          evaluation.until,
+          true,
+        )
       : null,
   ]);
   const summary = (day: string) => {
@@ -120,6 +153,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   return {
     since,
     until,
+    evaluation,
     performance: includeSummary
       ? {
           advisorName: current.rows[0]?.name ?? null,
@@ -131,33 +165,54 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
         }
       : null,
     items: includeProducts
-      ? current.breakdown.map(
-          ({ tableId, aliasId, country, tableName, alias, days }) => {
-            const product = { tableId, aliasId, country };
-            const evaluation = current.inventoryStatus[same(product)];
+      ? Array.from(
+          new Map(
+            [...(evaluated?.breakdown ?? []), ...current.breakdown].map(
+              (row) => [same(row), row],
+            ),
+          ).values(),
+        )
+          .filter((row) => !product || same(row) === product)
+          .map(({ tableId, aliasId, country, tableName, alias, days }) => {
+            const identity = { tableId, aliasId, country };
+            const key = same(identity);
+            const entry = current.inventoryStatus[key];
+            const status = (evaluated ?? current).inventoryStatus[key];
+            const sales = Object.entries(days)
+              .filter(
+                ([date, day]) =>
+                  date >= since &&
+                  date <= until &&
+                  !day.na &&
+                  day.sales !== null,
+              )
+              .map(([, day]) => day.sales!);
             return {
-              ...product,
-              key: same(product),
+              ...identity,
+              key,
               table: tableName,
               name: alias,
               signal: periodSignal(Object.values(days)),
-              cacStatus: evaluation?.status ?? "PENDING",
-              metaBase: evaluation?.base ?? null,
-              metaBasePartial: evaluation?.basePartial ?? false,
-              campaignActive: evaluation?.campaignActive ?? false,
+              cacStatus: status?.status ?? "PENDING",
+              metaBase: entry?.base ?? null,
+              metaBasePartial: entry?.basePartial ?? false,
+              campaignActive:
+                entry?.campaignActive ?? status?.campaignActive ?? false,
+              sales:
+                section === "detail" && sales.length
+                  ? sales.reduce((sum, value) => sum + value, 0)
+                  : null,
               notes: notes
-                .filter((note) => same(note) === same(product))
+                .filter((note) => same(note) === key)
                 .map(({ id, day, body }) => ({ id, day, body })),
             };
-          },
-        )
+          })
       : [],
   };
 }
 
 export async function addAdvisorPeriodNote(actor: Actor, input: unknown) {
   const note = range
-    .omit({ advisorId: true })
     .extend({
       id: z.string().uuid(),
       aliasId: id,
@@ -173,12 +228,15 @@ export async function addAdvisorPeriodNote(actor: Actor, input: unknown) {
     note.day >= note.since && note.day <= note.until,
     "El comentario debe estar dentro del periodo elegido.",
   );
-  const advisorId = await advisorFor(actor);
+  const advisorId = await advisorFor(actor, note.advisorId);
   const scoped = await personalAdvisorSheet(
     actor,
     advisorId,
     note.since,
     note.until,
+    false,
+    undefined,
+    { tableId: note.tableId, aliasId: note.aliasId, country: note.country },
   );
   demand(
     scoped.breakdown.some(
@@ -188,11 +246,20 @@ export async function addAdvisorPeriodNote(actor: Actor, input: unknown) {
     403,
   );
   return db.$transaction(async (tx) => {
-    const link = await tx.metaAdvisorPortal.findFirst({
-      where: { userId: actor.id, advisorId },
-    });
-    demand(link, "El acceso al asesor cambió.", 403);
-    const { since: _since, until: _until, ...data } = note;
+    if (note.advisorId) {
+      await performanceManager(actor, tx);
+    } else {
+      const link = await tx.metaAdvisorPortal.findFirst({
+        where: { userId: actor.id, advisorId },
+      });
+      demand(link, "El acceso al asesor cambió.", 403);
+    }
+    const {
+      since: _since,
+      until: _until,
+      advisorId: _requested,
+      ...data
+    } = note;
     const saved = await tx.metaAdvisorPeriodNote.upsert({
       where: { id: note.id },
       update: {},

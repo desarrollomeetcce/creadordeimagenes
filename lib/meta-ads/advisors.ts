@@ -764,9 +764,13 @@ export async function personalAdvisorSheet(
   since: string,
   until: string,
   includeInventoryStatus = false,
+  inventoryPeriods?: { base: { since: string; until: string }; evaluation: { since: string; until: string } },
+  product?: { tableId: string; aliasId: string; country: string },
 ) {
   return readAdvisorSheet(
-    actor, "all", since, until, { advisorId, includeInventoryStatus }, true,
+    actor, product?.tableId ?? "all", since, until,
+    { advisorId, includeInventoryStatus, inventoryPeriods, aliasId: product?.aliasId, country: product?.country },
+    true,
   );
 }
 async function readAdvisorSheet(
@@ -781,6 +785,7 @@ async function readAdvisorSheet(
     advisorListId?: string;
     periodId?: string;
     includeInventoryStatus?: boolean;
+    inventoryPeriods?: Parameters<typeof personalAdvisorSheet>[5];
   } = {},
   personal = false,
   managed = false,
@@ -1292,11 +1297,17 @@ async function readAdvisorSheet(
         for (const [key, { row, baseDays }] of scopedInventoryRows) {
           const limits = rules.get(row.aliasId);
           if (!limits) continue;
-          const evaluation = inventoryCacSummary({ row, since, until, rates: fx, rules: limits, baseDays });
+          const input = { row, rates: fx, rules: limits, baseDays };
+          const evaluationRange = filters.inventoryPeriods?.evaluation ?? { since, until };
+          const baseRange = filters.inventoryPeriods?.base ?? evaluationRange;
+          const evaluation = inventoryCacSummary({ ...input, ...evaluationRange });
+          const base = baseRange.since === evaluationRange.since && baseRange.until === evaluationRange.until
+            ? evaluation
+            : inventoryCacSummary({ ...input, ...baseRange });
           inventoryStatus[key] = {
             status: evaluation.meta.assessment.status,
-            base: evaluation.metaBase,
-            basePartial: evaluation.metaBasePartial,
+            base: base.metaBase,
+            basePartial: base.metaBasePartial,
             campaignActive: row.metaActive === true,
           };
         }

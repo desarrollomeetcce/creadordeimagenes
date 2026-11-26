@@ -10,7 +10,7 @@ type Assertion = {
   exp: number;
   page: "home" | "plans";
   view?: WorkspaceView;
-  panel?: "team" | "advisor";
+  panel?: "team" | "advisor" | "products";
   provision?: true;
   name?: string;
 };
@@ -32,7 +32,7 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
         !Number.isSafeInteger(claims.exp) || claims.exp <= now || claims.exp > now + 35 ||
         (claims.page !== "home" && claims.page !== "plans") ||
         (claims.view !== undefined && (claims.page !== "home" || !workspaceViews.includes(claims.view))) ||
-        (claims.panel !== undefined && (claims.view !== "performance" || !["team", "advisor"].includes(claims.panel))) ||
+        (claims.panel !== undefined && (claims.view !== "performance" || !["team", "advisor", "products"].includes(claims.panel))) ||
         (claims.provision !== undefined && (
           claims.provision !== true || typeof claims.name !== "string" ||
           !claims.name.trim() || claims.name.length > 100

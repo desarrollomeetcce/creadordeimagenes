@@ -27,6 +27,7 @@ test("validates a short Pulpo assertion and rejects another audience, key or des
 test("accepts only signed, known workspace views on the normal sign-in path", () => {
   assert.equal(verifyPulpoAssertion(sign({ view: "products" }), key, 100)?.view, "products");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "advisor" }), key, 100)?.panel, "advisor");
+  assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "products" }), key, 100)?.panel, "products");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "private" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ view: "products", panel: "team" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ view: "https://example.com" }), key, 100), null);

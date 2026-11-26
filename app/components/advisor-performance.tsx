@@ -63,6 +63,9 @@ function PerformanceNavigation({
       >
         Productos
       </button>
+      <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos">
+        Ingresos
+      </a>
     </nav>
   );
 }

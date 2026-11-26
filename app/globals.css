@@ -3336,3 +3336,16 @@ nav.performance-workspace-nav {
   border-radius: 50%;
   background: #fff;
 }
+
+.advisor-base-period { gap: 6px; }
+.advisor-base-period button[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); }
+.advisor-diploma-table { width: 100%; margin-top: 12px; border-collapse: separate; border-spacing: 0; }
+.advisor-diploma-table th, .advisor-diploma-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.advisor-diploma-table thead { background: var(--soft); }
+.advisor-diploma-table th[scope="row"] { border-left: 3px solid var(--advisor-signal, transparent); overflow-wrap: anywhere; }
+.advisor-diploma-table small { display: block; color: var(--muted); }
+.advisor-diploma-table .advisor-diploma-base { font-variant-numeric: tabular-nums; }
+.advisor-diploma-table .advisor-period-badge { cursor: pointer; white-space: normal; text-align: left; }
+@media (max-width: 540px) {
+  .advisor-diploma-table th, .advisor-diploma-table td { padding: 7px 5px; }
+}
