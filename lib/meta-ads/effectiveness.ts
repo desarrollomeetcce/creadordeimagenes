@@ -82,6 +82,7 @@ export type EffectivenessRow = {
   campaigns: number;
   timezones: string[];
   active: boolean;
+  metaActive?: boolean;
   stateRevision: number;
   lastStateChange: string | null;
   advisorReviews?: { advisorId: string; name: string; createdAt: string }[];
@@ -429,6 +430,7 @@ async function readEffectiveness(
           select: {
             aliasId: true,
             aliasCountry: true,
+            effectiveStatus: true,
             account: { select: { currency: true, timezone: true } },
             daily: {
               where: {
@@ -695,6 +697,7 @@ async function readEffectiveness(
     if (hidden.has(key(c.aliasId!, c.aliasCountry!))) continue;
     const r = get(c.aliasId!, c.aliasCountry!);
     r.campaigns++;
+    if (c.effectiveStatus === "ACTIVE") r.metaActive = true;
     if (!r.timezones.includes(c.account.timezone))
       r.timezones.push(c.account.timezone);
     for (const d of c.daily) {

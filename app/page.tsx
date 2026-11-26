@@ -487,7 +487,7 @@ export default function Home() {
     inventory: "Inventario",
     advisors: "Asesores",
     "courses-ai": "Cursos IA",
-    performance: "Mi desempeño",
+    performance: "Desempeño",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
     mail: "Ajustes de correo",
@@ -525,7 +525,7 @@ export default function Home() {
             </a>
           </div>
           <SidebarNavigation userId={user.id} view={view} navigate={navigate} items={[
-            ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role)||user.advisorLinked?[["performance","◎","Mi desempeño"]]:[]),
+            ...(["OWNER","SUPERVISOR","ADVISOR"].includes(user.role)||user.advisorLinked?[["performance","◎","Desempeño"]]:[]),
             ["projects","▦","Proyectos"],["library","▧","Biblioteca"],["metaads","▥","Meta Ads"],
             ...(user.role==="OWNER"||user.effectivenessShared?[["inventory","▤","Inventario"],["advisors","♙","Asesores"],["products","▥","Ventas"]]:[]),
             ...(user.role==="OWNER"||user.fixedCostsShared?[["fixed-costs","▦","Costos fijos"]]:[]),
@@ -597,7 +597,7 @@ export default function Home() {
                 )}
               </>
             ) : view === "performance" ? (
-              <AdvisorPerformance canViewInventory={user.role==="OWNER"||!!user.effectivenessShared} owner={["OWNER","SUPERVISOR"].includes(user.role)} initialPanel={new URLSearchParams(location).get("panel")==="advisor"?"advisor":"team"} />
+              <AdvisorPerformance owner={["OWNER","SUPERVISOR"].includes(user.role)} initialPanel={new URLSearchParams(location).get("panel")==="products"?"products":new URLSearchParams(location).get("panel")==="advisor"?"advisor":"team"} />
             ) : financialViews.includes(view) && (user.role === "OWNER"||user.effectivenessShared) ? (
               <ProductsCatalog key={view} initialTop={view==="inventory"&&new URLSearchParams(location).get("panel")==="top"} module={view==="inventory"?"inventory":view==="advisors"?"advisors":"sales"} initialAdvisorPeriod={view==="products"?salesAdvisorPeriod:null} onSalesPeriod={period=>{navigate("products");setSalesAdvisorPeriod(period)}} />
             ) : view === "fixed-costs" && (user.role==="OWNER"||user.fixedCostsShared) ? (

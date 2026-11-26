@@ -51,29 +51,48 @@ export function periodSignal(
 }
 
 export async function advisorPeriodSignals(actor: Actor, input: unknown) {
-  const { since, until, advisorId: requested } = range.parse(input);
+  const {
+    since,
+    until,
+    advisorId: requested,
+    section,
+  } = range
+    .extend({
+      section: z.enum(["summary", "products"]).optional(),
+    })
+    .parse(input);
   rangeCheck(since, until);
   const advisorId = await advisorFor(actor, requested);
   const today = localDay("America/Lima");
   const yesterday = shiftDay(today, -1);
   const comparisonSince = shiftDay(today, -2);
   const historical = since > comparisonSince || until < today;
+  const includeProducts = section !== "summary";
+  const includeSummary = !requested && section !== "products";
   const [current, notes, daily, goal, target] = await Promise.all([
-    personalAdvisorSheet(actor, advisorId, since, until, true),
-    db.metaAdvisorPeriodNote.findMany({
-      where: { advisorId, day: { gte: since, lte: until } },
-      orderBy: [{ day: "desc" }, { createdAt: "desc" }],
-    }),
-    !requested && historical
+    personalAdvisorSheet(
+      actor,
+      advisorId,
+      includeProducts ? since : comparisonSince,
+      includeProducts ? until : today,
+      includeProducts,
+    ),
+    includeProducts
+      ? db.metaAdvisorPeriodNote.findMany({
+          where: { advisorId, day: { gte: since, lte: until } },
+          orderBy: [{ day: "desc" }, { createdAt: "desc" }],
+        })
+      : [],
+    includeProducts && includeSummary && historical
       ? personalAdvisorSheet(actor, advisorId, comparisonSince, today)
       : null,
-    requested ? null : performanceMetaGoal(),
-    requested
-      ? null
-      : db.metaAdvisorTarget.findUnique({
+    includeSummary ? performanceMetaGoal() : null,
+    includeSummary
+      ? db.metaAdvisorTarget.findUnique({
           where: { advisorId_basis: { advisorId, basis: "B" } },
           select: { salesTarget: true },
-        }),
+        })
+      : null,
   ]);
   const summary = (day: string) => {
     const source = daily ?? current;
@@ -101,32 +120,38 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   return {
     since,
     until,
-    performance: requested
-      ? null
-      : {
+    performance: includeSummary
+      ? {
           advisorName: current.rows[0]?.name ?? null,
           goal: goal?.percent ?? null,
           salesTarget: target?.salesTarget ?? null,
           today: summary(today),
           yesterday: summary(yesterday),
           dayBeforeYesterday: summary(comparisonSince),
-        },
-    items: current.breakdown.map(
-      ({ tableId, aliasId, country, tableName, alias, days }) => {
-        const product = { tableId, aliasId, country };
-        return {
-          ...product,
-          key: same(product),
-          table: tableName,
-          name: alias,
-          signal: periodSignal(Object.values(days)),
-          cacStatus: current.inventoryStatus[same(product)] ?? "PENDING",
-          notes: notes
-            .filter((note) => same(note) === same(product))
-            .map(({ id, day, body }) => ({ id, day, body })),
-        };
-      },
-    ),
+        }
+      : null,
+    items: includeProducts
+      ? current.breakdown.map(
+          ({ tableId, aliasId, country, tableName, alias, days }) => {
+            const product = { tableId, aliasId, country };
+            const evaluation = current.inventoryStatus[same(product)];
+            return {
+              ...product,
+              key: same(product),
+              table: tableName,
+              name: alias,
+              signal: periodSignal(Object.values(days)),
+              cacStatus: evaluation?.status ?? "PENDING",
+              metaBase: evaluation?.base ?? null,
+              metaBasePartial: evaluation?.basePartial ?? false,
+              campaignActive: evaluation?.campaignActive ?? false,
+              notes: notes
+                .filter((note) => same(note) === same(product))
+                .map(({ id, day, body }) => ({ id, day, body })),
+            };
+          },
+        )
+      : [],
   };
 }
 

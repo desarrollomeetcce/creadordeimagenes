@@ -210,4 +210,11 @@ test("Top suma la base original de Meta dentro del periodo y conserva ceros y fa
   assert.equal(read("2026-10-30", "2026-10-30").metaBasePartial, false);
   assert.equal(read("2026-10-31", "2026-10-31").metaBase, 0);
   assert.equal(read("2026-11-01", "2026-11-01").metaBase, null);
+  const scoped = inventoryCacSummary({
+    row, since: "2026-10-30", until: "2026-10-31", rates: new Map(),
+    baseDays: new Set(["2026-10-31"]),
+  });
+  assert.equal(scoped.metaBase, 0);
+  assert.equal(scoped.meta.assessment.status, read("2026-10-30", "2026-10-31").meta.assessment.status);
+
 });

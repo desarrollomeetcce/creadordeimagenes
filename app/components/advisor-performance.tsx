@@ -24,59 +24,45 @@ type Settings = {
 const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
-type PerformancePanel = "team" | "advisor";
+type PerformancePanel = "team" | "advisor" | "products";
 
 function PerformanceNavigation({
   panel,
   onSelect,
-  canViewInventory,
+  manager,
 }: {
-  canViewInventory: boolean;
-  panel?: PerformancePanel;
-  onSelect?: (panel: PerformancePanel) => void;
+  panel: PerformancePanel;
+  onSelect: (panel: PerformancePanel) => void;
+  manager?: boolean;
 }) {
   return (
     <nav className="performance-workspace-nav" aria-label="Seguimiento">
       <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
         Desempeño
       </a>
-      {onSelect ? (
-        <>
-          <button
-            type="button"
-            aria-pressed={panel === "team"}
-            onClick={() => onSelect("team")}
-          >
-            Configuración de desempeño
-          </button>
-          <button
-            type="button"
-            aria-pressed={panel === "advisor"}
-            onClick={() => onSelect("advisor")}
-          >
-            Desempeño del asesor
-          </button>
-        </>
-      ) : (
-        <a href="?view=performance" aria-current="page">
-          Mi desempeño
-        </a>
-      )}
-      {canViewInventory ? (
-        <a
-          href="?view=inventory&panel=top"
-          target="_blank"
-          rel="noopener noreferrer"
+      {manager && (
+        <button
+          type="button"
+          aria-pressed={panel === "team"}
+          onClick={() => onSelect("team")}
         >
-          Top<span className="sr-only"> (abre en otra pestaña)</span>
-        </a>
-      ) : onSelect && panel === "team" ? (
-        <button type="button" onClick={() => onSelect("advisor")}>
-          Diplomados
+          Configuración de desempeño
         </button>
-      ) : (
-        <a href="#diplomados-por-periodo">Diplomados</a>
       )}
+      <button
+        type="button"
+        aria-pressed={panel === "advisor"}
+        onClick={() => onSelect("advisor")}
+      >
+        {manager ? "Desempeño del asesor" : "Mi desempeño"}
+      </button>
+      <button
+        type="button"
+        aria-pressed={panel === "products"}
+        onClick={() => onSelect("products")}
+      >
+        Productos
+      </button>
     </nav>
   );
 }
@@ -84,22 +70,32 @@ function PerformanceNavigation({
 export function AdvisorPerformance({
   owner,
   initialPanel,
-  canViewInventory = false,
 }: {
-  canViewInventory?: boolean;
   owner: boolean;
   initialPanel?: PerformancePanel;
 }) {
   return owner ? (
-    <ManagedAdvisorPerformance
-      owner
-      initialPanel={initialPanel}
-      canViewInventory={canViewInventory}
-    />
+    <ManagedAdvisorPerformance owner initialPanel={initialPanel} />
   ) : (
-    <section className="advisor-performance" aria-label="Mi desempeño">
-      <PerformanceNavigation canViewInventory={canViewInventory} />
-      <AdvisorPeriodSignals />
+    <PersonalAdvisorPerformance initialPanel={initialPanel} />
+  );
+}
+
+function PersonalAdvisorPerformance({
+  initialPanel,
+}: {
+  initialPanel?: PerformancePanel;
+}) {
+  const [panel, setPanel] = useState<PerformancePanel>(
+    initialPanel === "products" ? "products" : "advisor",
+  );
+  return (
+    <section className="advisor-performance" aria-label="Desempeño">
+      <PerformanceNavigation panel={panel} onSelect={setPanel} />
+      <AdvisorPeriodSignals
+        key={panel}
+        section={panel === "products" ? "products" : "summary"}
+      />
     </section>
   );
 }
@@ -107,9 +103,7 @@ export function AdvisorPerformance({
 function ManagedAdvisorPerformance({
   owner,
   initialPanel,
-  canViewInventory,
 }: {
-  canViewInventory: boolean;
   owner: boolean;
   initialPanel?: PerformancePanel;
 }) {
@@ -132,7 +126,7 @@ function ManagedAdvisorPerformance({
     new URLSearchParams({ since, until, ...(owner ? { advisorId } : {}) });
   const current = response?.key === query ? response.data : null;
   useEffect(() => {
-    if (!owner || panel !== "advisor") return;
+    if (!owner || panel === "team" || settings) return;
     let active = true;
     api("meta-ads/my-performance/settings")
       .then((s: Settings) => {
@@ -147,7 +141,7 @@ function ManagedAdvisorPerformance({
     return () => {
       active = false;
     };
-  }, [owner, panel]);
+  }, [owner, panel, settings]);
   useEffect(() => {
     if (owner && (!advisorId || panel !== "advisor")) return;
     let active = true,
@@ -183,23 +177,26 @@ function ManagedAdvisorPerformance({
     };
   }, [query, reload, owner, advisorId, panel]);
   const card = view === "today" ? current?.metaToday : current?.metaYesterday;
-  const positive =
-    current?.products.filter((s) =>
-      Object.values(s.days).some(
-        (d) => !d.na && d.sales !== null && d.sales > 0,
-      ),
-    ) ?? [];
   return (
     <section className="advisor-performance" aria-label="Mi desempeño">
       <PerformanceNavigation
         panel={panel}
-        onSelect={setPanel}
-        canViewInventory={canViewInventory}
+        onSelect={(next) => {
+          if (next !== panel) {
+            setError("");
+            setPanel(next);
+          }
+        }}
+        manager
       />
       <header className="performance-heading">
         <div>
           <h1>
-            {panel === "team" ? "Metas diarias" : "Desempeño de asesores"}
+            {panel === "team"
+              ? "Metas diarias"
+              : panel === "products"
+                ? "Productos"
+                : "Desempeño de asesores"}
           </h1>
         </div>
         <button type="button" onClick={() => setReload((n) => n + 1)}>
@@ -226,8 +223,8 @@ function ManagedAdvisorPerformance({
           </details>
         </>
       )}
-      <div hidden={owner && panel !== "advisor"}>
-        {owner && panel === "advisor" && (
+      <div hidden={owner && panel === "team"}>
+        {owner && panel !== "team" && (
           <div className="performance-owner-picker">
             <SheetSearchSelect
               label="Asesor que deseas visualizar"
@@ -241,10 +238,12 @@ function ManagedAdvisorPerformance({
                 setAdvisorId(id);
               }}
             />
-            <span className="hint">
-              Vista del asesor: sus propias ventas y bases de todas las hojas y
-              países.
-            </span>
+            {panel === "advisor" && (
+              <span className="hint">
+                Vista del asesor: sus propias ventas y bases de todas las hojas
+                y países.
+              </span>
+            )}
           </div>
         )}
         {error && (
@@ -254,9 +253,21 @@ function ManagedAdvisorPerformance({
         )}
         {owner && settings && !settings.people.length ? (
           <p>No hay asesores. Regístralos primero en Efectividad.</p>
-        ) : !current && !error ? (
-          <p role="status">Cargando desempeño…</p>
+        ) : !error && (panel === "products" ? !settings : !current) ? (
+          <p role="status">
+            {panel === "products"
+              ? "Cargando asesores…"
+              : "Cargando desempeño…"}
+          </p>
         ) : null}
+        {panel === "products" && advisorId && (
+          <AdvisorPeriodSignals
+            key={advisorId}
+            advisorId={advisorId}
+            section="products"
+            reload={reload}
+          />
+        )}
         {current && (!owner || panel === "advisor") && (
           <>
             <h2>{current.person.name}</h2>
@@ -379,9 +390,6 @@ function ManagedAdvisorPerformance({
                 </div>
               </article>
             )}
-            {advisorId && (
-              <AdvisorPeriodSignals key={advisorId} advisorId={advisorId} />
-            )}
             <details className="performance-history" open>
               <summary>Mi evolución e histórico diario</summary>
               <div className="row">
@@ -498,55 +506,6 @@ function ManagedAdvisorPerformance({
                 * Cobertura parcial · — sin dato. Las ventas respetan el reparto
                 registrado por asesor.
               </p>
-            </details>
-            <details className="performance-history">
-              <summary>Ventas registradas por diplomado</summary>
-              {!positive.length ? (
-                <p>No hay ventas positivas registradas en este período.</p>
-              ) : (
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Diplomado / producto</th>
-                        <th>Hoja · país</th>
-                        <th>Ventas</th>
-                        <th>Fechas y cantidades</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {positive.map((s, i) => (
-                        <tr key={i}>
-                          <th>{s.product}</th>
-                          <td>
-                            {s.sheet} · {s.country}
-                          </td>
-                          <td>
-                            {fmt(
-                              Object.values(s.days).reduce(
-                                (n, d) => n + (!d.na ? (d.sales ?? 0) : 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-                          <td>
-                            {Object.entries(s.days)
-                              .filter(
-                                ([, d]) =>
-                                  !d.na && d.sales !== null && d.sales > 0,
-                              )
-                              .map(
-                                ([day, d]) =>
-                                  `${day}: ${fmt(d.sales)}${d.partial ? " *" : ""}`,
-                              )
-                              .join(" · ")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </details>
           </>
         )}

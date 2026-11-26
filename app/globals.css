@@ -3315,3 +3315,24 @@ nav.performance-workspace-nav {
 @media (max-width:520px) {
   .performance-overview-row .advisor-goals { grid-template-columns:minmax(0,1fr); }
 }
+
+
+.advisor-campaign-active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 23px;
+  height: 13px;
+  padding-right: 3px;
+  border-radius: 10px;
+  background: #1689cc;
+  vertical-align: middle;
+}
+
+.advisor-campaign-active::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}

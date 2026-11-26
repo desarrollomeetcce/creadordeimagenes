@@ -1009,7 +1009,10 @@ async function readAdvisorSheet(
         cutoffSales: number | null;
       }[] = [];
       const activityStarts = new Map<string, string>();
-      const scopedInventoryRows = new Map<string, EffectivenessRow>();
+      const scopedInventoryRows = new Map<string, {
+        row: EffectivenessRow;
+        baseDays: Set<string>;
+      }>();
       for (const table of tables) {
         const sheet = managed
             ? await performanceEffectivenessSource(
@@ -1248,7 +1251,7 @@ async function readAdvisorSheet(
               filters.advisorId && sources.has(filters.advisorId)) {
             scopedInventoryRows.set(
               JSON.stringify([table.id, row.aliasId, row.country]),
-              row,
+              { row, baseDays: new Set(Object.keys(sources.get(filters.advisorId)!.days)) },
             );
           }
         }
@@ -1263,11 +1266,16 @@ async function readAdvisorSheet(
           "Selecciona una asignación válida con hoja, inventario, país y asesor.",
           404,
         );
-      const inventoryStatus: Record<string, CacStatus> = {};
+      const inventoryStatus: Record<string, {
+        status: CacStatus;
+        base: number | null;
+        basePartial: boolean;
+        campaignActive: boolean;
+      }> = {};
       if (scopedInventoryRows.size) {
         const [aliases, rates] = await Promise.all([
           tx.metaAlias.findMany({
-            where: { id: { in: [...new Set([...scopedInventoryRows.values()].map(({ aliasId }) => aliasId))] } },
+            where: { id: { in: [...new Set([...scopedInventoryRows.values()].map(({ row }) => row.aliasId))] } },
             select: { id: true, inventorySheet: { select: { kind: true, archivedAt: true, config: true } } },
           }),
           tx.metaFxDay.findMany({
@@ -1281,10 +1289,16 @@ async function readAdvisorSheet(
           return [[id, readCacRules(config?.inventoryActivation?.cacRules)] as const];
         }));
         const fx = new Map(rates.map((day) => [day.day, day.rates as FxRates]));
-        for (const [key, row] of scopedInventoryRows) {
+        for (const [key, { row, baseDays }] of scopedInventoryRows) {
           const limits = rules.get(row.aliasId);
-          if (limits) inventoryStatus[key] =
-            inventoryCacSummary({ row, since, until, rates: fx, rules: limits }).meta.assessment.status;
+          if (!limits) continue;
+          const evaluation = inventoryCacSummary({ row, since, until, rates: fx, rules: limits, baseDays });
+          inventoryStatus[key] = {
+            status: evaluation.meta.assessment.status,
+            base: evaluation.metaBase,
+            basePartial: evaluation.metaBasePartial,
+            campaignActive: row.metaActive === true,
+          };
         }
       }
       const financialRates = !personal && !managed && financialRows.some(r=>r.currency && r.currency!=="PEN") ? await tx.metaFxDay.findMany({where:{day:{gte:since,lte:until}},select:{day:true,rates:true}}) : [];

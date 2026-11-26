@@ -12,7 +12,15 @@ const regionNames = new Intl.DisplayNames(["es"], { type: "region" });
 const countryLabel = (country: string) =>
   /^[A-Z]{2}$/.test(country) ? (regionNames.of(country) ?? country) : country;
 
-export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
+export function AdvisorPeriodSignals({
+  advisorId,
+  section,
+  reload = 0,
+}: {
+  advisorId?: string;
+  section: "summary" | "products";
+  reload?: number;
+}) {
   const today = limaToday();
   const [view, setView] = useState<"today" | "yesterday">("today");
   const [since, setSince] = useState(shiftDay(today, -6));
@@ -33,6 +41,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
     const query = new URLSearchParams({
       since,
       until,
+      section,
       ...(advisorId ? { advisorId } : {}),
     });
     void fetch(endpoint + "?" + query, { signal: controller.signal })
@@ -45,7 +54,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
         if (!controller.signal.aborted) setError(cause.message);
       });
     return () => controller.abort();
-  }, [advisorId, since, until, refresh]);
+  }, [advisorId, since, until, refresh, section, reload]);
   const selected = data?.items.find((item) => item.key === focus);
   async function submit() {
     if (!selected || busy) return;
@@ -92,16 +101,18 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
   const countries = [...groups.keys()].sort((a, b) =>
     countryLabel(a).localeCompare(countryLabel(b), "es"),
   );
-  const selectedCountry = groups.has(country) ? country : "";
-  const visibleCountries = selectedCountry ? [selectedCountry] : countries;
-  const performance = data?.performance;
+  const selectedCountry = groups.has(country) ? country : (countries[0] ?? "");
+  const visibleCountries = selectedCountry ? [selectedCountry] : [];
+  const performance = section === "summary" ? data?.performance : null;
   const summary = performance?.[view];
   return (
     <section
       className="advisor-period-signals"
-      aria-label="Diplomados por periodo"
+      aria-label={
+        section === "summary" ? "Mi desempeño" : "Productos por periodo"
+      }
     >
-      {!advisorId && (
+      {!advisorId && section === "summary" && (
         <header>
           <h1>
             {performance?.advisorName
@@ -168,163 +179,194 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
           )}
         </article>
       )}
-      <h2 id="diplomados-por-periodo">Diplomados por periodo</h2>
-      <div className="row advisor-period-controls">
-        <MetaDateRange
-          from={since}
-          to={until}
-          maxDays={31}
-          triggerAriaLabel="Periodo de evaluación de diplomados"
-          applyLabel="Evaluar periodo"
-          onChange={(from, to) => {
-            setSince(from);
-            setUntil(to);
-            setDay(to);
-            setFocus("");
-            setBody("");
-            setStatus("");
-            setError("");
-            requestId.current = "";
-          }}
-        />
-        {countries.length > 0 && (
-          <label>
-            País
-            <select
-              value={selectedCountry}
-              disabled={busy}
-              onChange={(event) => setCountry(event.target.value)}
-            >
-              <option value="">Todos los países</option>
-              {countries.map((code) => (
-                <option key={code} value={code}>
-                  {countryLabel(code)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-      <p className="hint">
-        Evaluación de Inventario con gasto de Meta y ventas registradas en las
-        fechas elegidas.
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {!valid && !error && <p role="status">Cargando diplomados…</p>}
-      {valid && !data?.items.length && (
-        <p>No hay diplomados con datos en este periodo.</p>
-      )}
-      {visibleCountries.length > 0 && (
+      {section === "summary" ? (
+        error ? (
+          <p role="alert">{error}</p>
+        ) : !summary ? (
+          <p role="status">Cargando desempeño…</p>
+        ) : null
+      ) : (
         <>
-          <div
-            className="advisor-period-legend"
-            aria-label="Estados de los diplomados"
-          >
-            {Object.entries(cacStatusNames).map(([signal, caption]) => (
-              <span
-                key={signal}
-                className="advisor-period-badge"
-                data-cac-status={signal}
-              >
-                {caption}
-              </span>
-            ))}
+          <h2>
+            {advisorId ? "Diplomados por periodo" : "Productos por periodo"}
+          </h2>
+          <div className="row advisor-period-controls">
+            <MetaDateRange
+              from={since}
+              to={until}
+              maxDays={31}
+              triggerAriaLabel="Periodo de evaluación de diplomados"
+              applyLabel="Evaluar periodo"
+              onChange={(from, to) => {
+                setSince(from);
+                setUntil(to);
+                setDay(to);
+                setFocus("");
+                setBody("");
+                setStatus("");
+                setError("");
+                requestId.current = "";
+              }}
+            />
+            {countries.length > 0 && (
+              <label>
+                País
+                <select
+                  value={selectedCountry}
+                  disabled={busy}
+                  onChange={(event) => setCountry(event.target.value)}
+                >
+                  {countries.map((code) => (
+                    <option key={code} value={code}>
+                      {countryLabel(code)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
-          {visibleCountries.map((code) => (
-            <section
-              className="advisor-country-group"
-              key={code}
-              aria-label={countryLabel(code)}
-            >
-              <h3>{countryLabel(code)}</h3>
-              <ul>
-                {groups.get(code)?.map((item) => (
-                  <li key={item.key} data-cac-status={item.cacStatus}>
-                    <button
-                      type="button"
-                      className="advisor-period-item"
-                      aria-expanded={focus === item.key}
-                      onClick={() => {
-                        setFocus(focus === item.key ? "" : item.key);
-                        setBody("");
-                        requestId.current = "";
-                        setStatus("");
-                        setDay(until);
-                      }}
-                    >
-                      <span>
-                        <strong>{item.name}</strong>
-                        <small>{item.table}</small>
-                      </span>
-                      <span
-                        className="advisor-period-badge"
-                        data-cac-status={item.cacStatus}
-                      >
-                        {cacStatusNames[item.cacStatus]}
-                      </span>
-                    </button>
-                    {focus === item.key && (
-                      <div className="advisor-period-notes">
-                        {!advisorId && (
-                          <form
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void submit();
-                            }}
-                          >
-                            <label>
-                              Día de la observación
-                              <input
-                                type="date"
-                                value={day}
-                                min={since}
-                                max={until}
-                                disabled={busy}
-                                onChange={(event) => {
-                                  setDay(event.target.value);
-                                  requestId.current = "";
-                                }}
-                                required
-                              />
-                            </label>
-                            <label>
-                              Observación
-                              <textarea
-                                value={body}
-                                maxLength={2000}
-                                disabled={busy}
-                                onChange={(event) => {
-                                  setBody(event.target.value);
-                                  requestId.current = "";
-                                }}
-                                required
-                              />
-                            </label>
-                            <button
-                              type="submit"
-                              disabled={busy || !body.trim()}
-                            >
-                              Guardar observación
-                            </button>
-                            {status && <p role="status">{status}</p>}
-                          </form>
-                        )}
-                        {item.notes.map((note) => (
-                          <p key={note.id}>
-                            <time dateTime={note.day}>{note.day}</time> ·{" "}
-                            {note.body}
-                          </p>
-                        ))}
-                        {advisorId && !item.notes.length && (
-                          <p>Sin observaciones en el periodo.</p>
-                        )}
-                      </div>
-                    )}
-                  </li>
+          <p className="hint">
+            Base de Meta en días asignados al asesor. El estado usa gasto de
+            Meta y ventas registradas en las fechas elegidas.
+          </p>
+          <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos" target="_blank" rel="noopener noreferrer">
+            Ingresos de Mensajería
+          </a>
+          {error && <p role="alert">{error}</p>}
+          {!valid && !error && <p role="status">Cargando diplomados…</p>}
+          {valid && !data?.items.length && (
+            <p>No hay diplomados con datos en este periodo.</p>
+          )}
+          {visibleCountries.length > 0 && (
+            <>
+              <div
+                className="advisor-period-legend"
+                aria-label="Estados de los diplomados"
+              >
+                {Object.entries(cacStatusNames).map(([signal, caption]) => (
+                  <span
+                    key={signal}
+                    className="advisor-period-badge"
+                    data-cac-status={signal}
+                  >
+                    {caption}
+                  </span>
                 ))}
-              </ul>
-            </section>
-          ))}
+              </div>
+              {visibleCountries.map((code) => (
+                <section
+                  className="advisor-country-group"
+                  key={code}
+                  aria-label={countryLabel(code)}
+                >
+                  <h3>{countryLabel(code)}</h3>
+                  <ul>
+                    {groups.get(code)?.sort((a, b) => Number(b.campaignActive === true) - Number(a.campaignActive === true)).map((item) => (
+                      <li key={item.key} data-cac-status={item.cacStatus}>
+                        <button
+                          type="button"
+                          className="advisor-period-item"
+                          aria-expanded={focus === item.key}
+                          onClick={() => {
+                            setFocus(focus === item.key ? "" : item.key);
+                            setBody("");
+                            requestId.current = "";
+                            setStatus("");
+                            setDay(until);
+                          }}
+                        >
+                          <span>
+                            <strong>{item.name}</strong>
+                            {item.campaignActive && (
+                              <small>
+                                <span aria-hidden="true" className="advisor-campaign-active" />{" "}
+                                Campaña activa en Meta
+                              </small>
+                            )}
+                            <small>{item.table}</small>
+                            <small
+                              title={
+                                item.metaBasePartial
+                                  ? "Cobertura parcial de Meta"
+                                  : undefined
+                              }
+                            >
+                              Base de Meta:{" "}
+                              {item.metaBase?.toLocaleString("es-PE") ?? "—"}
+                              {item.metaBasePartial ? " · Parcial" : ""}
+                            </small>
+                          </span>
+                          <span
+                            className="advisor-period-badge"
+                            data-cac-status={item.cacStatus}
+                          >
+                            {cacStatusNames[item.cacStatus]}
+                          </span>
+                        </button>
+                        {focus === item.key && (
+                          <div className="advisor-period-notes">
+                            {!advisorId && (
+                              <form
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void submit();
+                                }}
+                              >
+                                <label>
+                                  Día de la observación
+                                  <input
+                                    type="date"
+                                    value={day}
+                                    min={since}
+                                    max={until}
+                                    disabled={busy}
+                                    onChange={(event) => {
+                                      setDay(event.target.value);
+                                      requestId.current = "";
+                                    }}
+                                    required
+                                  />
+                                </label>
+                                <label>
+                                  Observación
+                                  <textarea
+                                    value={body}
+                                    maxLength={2000}
+                                    disabled={busy}
+                                    onChange={(event) => {
+                                      setBody(event.target.value);
+                                      requestId.current = "";
+                                    }}
+                                    required
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  disabled={busy || !body.trim()}
+                                >
+                                  Guardar observación
+                                </button>
+                                {status && <p role="status">{status}</p>}
+                              </form>
+                            )}
+                            {item.notes.map((note) => (
+                              <p key={note.id}>
+                                <time dateTime={note.day}>{note.day}</time> ·{" "}
+                                {note.body}
+                              </p>
+                            ))}
+                            {advisorId && !item.notes.length && (
+                              <p>Sin observaciones en el periodo.</p>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </>
+          )}
         </>
       )}
     </section>

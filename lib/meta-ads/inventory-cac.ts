@@ -13,6 +13,7 @@ export function inventoryCacSummary(input: {
   until: string;
   rates: Map<string, FxRates>;
   rules?: CacRules;
+  baseDays?: ReadonlySet<string>;
 }) {
   const { row, since, until } = input,
     rules = input.rules ?? defaultCacRules();
@@ -43,14 +44,16 @@ export function inventoryCacSummary(input: {
   for (let at = Date.parse(since); at <= Date.parse(until); at += 86400000) {
     const day = new Date(at).toISOString().slice(0, 10),
       d = row.days[day];
-    const reportedBase = d?.sourceBase;
-    if (typeof reportedBase === "number" && Number.isFinite(reportedBase))
-      metaBase = (metaBase ?? 0) + reportedBase;
-    if (
-      row.campaigns > 0 &&
-      (reportedBase == null || (d?.campaigns ?? 0) < row.campaigns)
-    )
-      metaBasePartial = true;
+    if (!input.baseDays || input.baseDays.has(day)) {
+      const reportedBase = d?.sourceBase;
+      if (typeof reportedBase === "number" && Number.isFinite(reportedBase))
+        metaBase = (metaBase ?? 0) + reportedBase;
+      if (
+        row.campaigns > 0 &&
+        (reportedBase == null || (d?.campaigns ?? 0) < row.campaigns)
+      )
+        metaBasePartial = true;
+    }
     if (!d) {
       if (firstRecorded && day >= firstRecorded) {
         salesPartial = true;
