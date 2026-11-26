@@ -1,26 +1,43 @@
-.pulpo-shared-menu {
-  display: grid;
+/* A scrollable stack. Rows keep their own height even when few modules are visible. */
+.sidebar nav.pulpo-shared-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 5px;
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
 }
+.pulpo-shared-menu > * {
+  flex: 0 0 auto;
+}
+.pulpo-menu-top,
+.pulpo-menu-row {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
 .pulpo-shared-menu .pulpo-module {
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   box-sizing: border-box;
   padding: 6px 8px;
-  min-height: 33px;
+  min-height: 32px;
   color: inherit;
   text-decoration: none;
-  border-radius: 7px;
+  border-radius: 5px;
+  font-size: 13px;
+  line-height: 1.2;
 }
-.pulpo-module svg {
-  flex: 0 0 17px;
-  width: 17px;
-  height: 17px;
+.pulpo-module svg,
+.pulpo-menu-edit svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -30,7 +47,7 @@
 .pulpo-module[aria-current="page"] {
   background: color-mix(
     in srgb,
-    var(--pulpo-section, #a891f5) 20%,
+    var(--pulpo-section, #a891f5) 14%,
     transparent
   );
   box-shadow: inset 2px 0 var(--pulpo-section, #a891f5);
@@ -47,32 +64,63 @@
 .pulpo-menu-group[data-color="3"] {
   --pulpo-section: #e4b66b;
 }
-.pulpo-menu-band,
-.pulpo-menu-edit {
+.pulpo-shared-menu .pulpo-menu-band,
+.pulpo-shared-menu .pulpo-menu-edit {
   display: flex;
-  gap: 7px;
   align-items: center;
-  width: 100%;
-  font-size: 11px;
-  padding: 5px 8px;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  min-height: 26px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 4px;
   color: inherit;
   background: transparent;
 }
-.pulpo-menu-band {
+.pulpo-shared-menu .pulpo-menu-edit {
+  flex: 0 0 27px;
+  justify-content: center;
+  margin-top: 3px;
+  padding: 4px;
+}
+.pulpo-menu-edit:hover,
+.pulpo-menu-edit[aria-pressed="true"] {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.pulpo-shared-menu .pulpo-menu-band {
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  border-inline-start: 2px solid var(--pulpo-section);
+  background: color-mix(in srgb, var(--pulpo-section) 15%, transparent);
+  font-size: 11px;
   font-weight: 700;
-  border-inline-start-color: var(--pulpo-section);
-  background: color-mix(in srgb, var(--pulpo-section) 18%, transparent);
+  line-height: 1;
 }
 .pulpo-menu-band:disabled {
   opacity: 1;
 }
 .pulpo-group-chevron {
-  color: inherit;
   font-size: 14px;
   line-height: 1;
+}
+.pulpo-menu-handle {
+  flex: 0 0 auto;
+}
+.pulpo-menu-handle summary {
+  padding: 5px 7px;
+  list-style: none;
+  cursor: grab;
+}
+.pulpo-menu-handle summary:active {
+  cursor: grabbing;
+}
+.pulpo-menu-handle summary::-webkit-details-marker {
+  display: none;
+}
+.pulpo-menu-row:has(.pulpo-menu-handle[open]) {
+  flex-wrap: wrap;
+}
+.pulpo-menu-handle[open] {
+  flex: 1 1 100%;
 }
 .pulpo-menu-move {
   display: flex;
@@ -88,23 +136,19 @@
   flex: 1;
   min-width: 0;
 }
-.pulpo-menu-row[draggable="true"] {
-  cursor: grab;
+:is(.sidebar-mini, .sidebar-collapsed) .pulpo-menu-top {
+  flex-wrap: wrap;
 }
-.sidebar-mini
-  .pulpo-shared-menu
-  :is(.pulpo-module, .pulpo-menu-band, .pulpo-menu-edit),
-.sidebar-collapsed
+:is(.sidebar-mini, .sidebar-collapsed)
   .pulpo-shared-menu
   :is(.pulpo-module, .pulpo-menu-band, .pulpo-menu-edit) {
   justify-content: center;
   padding-inline: 3px;
 }
-.sidebar-mini .pulpo-module span,
-.sidebar-collapsed .pulpo-module span,
-.sidebar-mini .pulpo-menu-band span:last-child,
-.sidebar-collapsed .pulpo-menu-band span:last-child,
-.sidebar-mini .pulpo-menu-edit span:last-child,
-.sidebar-collapsed .pulpo-menu-edit span:last-child {
+:is(.sidebar-mini, .sidebar-collapsed) .pulpo-menu-top > * {
+  flex-basis: 100%;
+}
+:is(.sidebar-mini, .sidebar-collapsed)
+  :is(.pulpo-module span, .pulpo-group-name) {
   display: none;
 }

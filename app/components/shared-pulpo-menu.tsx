@@ -137,22 +137,31 @@ export function SharedPulpoMenu({
   const performance = resolve("performance", peer);
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
-      {performance && link("performance", performance)}
-      <button
-        type="button"
-        className="pulpo-menu-edit"
-        aria-label={editing ? "Listo" : "Ordenar menú"}
-        title={editing ? "Listo" : "Ordenar menú"}
-        aria-pressed={editing}
-        disabled={server === null}
-        onClick={() => {
-          if (!editing) expand();
-          setEditing(!editing);
-        }}
-      >
-        <span aria-hidden="true">{editing ? "✓" : "↕"}</span>{" "}
-        <span>{editing ? "Listo" : "Ordenar menú"}</span>
-      </button>
+      <div className="pulpo-menu-top">
+        {performance && link("performance", performance)}
+        <button
+          type="button"
+          className="pulpo-menu-edit"
+          aria-label={editing ? "Listo" : "Ordenar menú"}
+          title={editing ? "Listo" : "Ordenar menú"}
+          aria-pressed={editing}
+          disabled={server === null}
+          onClick={() => {
+            if (!editing) expand();
+            setEditing(!editing);
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d={
+                editing
+                  ? "m5 12 4 4L19 6"
+                  : "M8 19V5m-3 3 3-3 3 3m5-3v14m-3-3 3 3 3-3"
+              }
+            />
+          </svg>
+        </button>
+      </div>
       {error && <p role="alert">{error}</p>}
       {groups.map((group, index) => {
         const visible = layout.order[group].flatMap((id) => {
@@ -185,24 +194,16 @@ export function SharedPulpoMenu({
                 void apply({ kind: "toggle", group, collapsed: !collapsed })
               }
             >
+              <span className="pulpo-group-name">{group}</span>
               <span aria-hidden="true" className="pulpo-group-chevron">
                 {collapsed ? "›" : "⌄"}
               </span>
-              <span>{group}</span>
             </button>
             {!collapsed &&
               visible.map(({ id, destination }, itemIndex) => (
                 <div
                   key={id}
                   className="pulpo-menu-row"
-                  draggable={editing && !busy}
-                  onDragStart={(event) => {
-                    dragged.current = id;
-                    event.dataTransfer.setData("text/plain", id);
-                  }}
-                  onDragEnd={() => {
-                    dragged.current = null;
-                  }}
                   onDragOver={(event) => {
                     if (editing && dragged.current) event.preventDefault();
                   }}
@@ -214,54 +215,71 @@ export function SharedPulpoMenu({
                 >
                   {link(id, destination)}
                   {editing && (
-                    <div className="pulpo-menu-move">
-                      <button
-                        type="button"
-                        aria-label={`Subir ${modules[id][0]}`}
-                        disabled={busy || !itemIndex}
-                        onClick={() =>
-                          void apply({
-                            kind: "move",
-                            id,
-                            group,
-                            before: visible[itemIndex - 1]?.id,
-                          })
-                        }
+                    <details className="pulpo-menu-handle">
+                      <summary
+                        aria-label={`Mover ${modules[id][0]}`}
+                        title={`Arrastrar ${modules[id][0]}`}
+                        draggable={!busy}
+                        onDragStart={(event) => {
+                          dragged.current = id;
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", id);
+                        }}
+                        onDragEnd={() => {
+                          dragged.current = null;
+                        }}
                       >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Bajar ${modules[id][0]}`}
-                        disabled={busy || itemIndex === visible.length - 1}
-                        onClick={() =>
-                          void apply({
-                            kind: "move",
-                            id,
-                            group,
-                            before: visible[itemIndex + 2]?.id,
-                          })
-                        }
-                      >
-                        ↓
-                      </button>
-                      <select
-                        aria-label={`Grupo de ${modules[id][0]}`}
-                        value={group}
-                        disabled={busy}
-                        onChange={(event) =>
-                          void apply({
-                            kind: "move",
-                            id,
-                            group: event.target.value as Group,
-                          })
-                        }
-                      >
-                        {groups.map((target) => (
-                          <option key={target}>{target}</option>
-                        ))}
-                      </select>
-                    </div>
+                        <span aria-hidden="true">⠿</span>
+                      </summary>
+                      <div className="pulpo-menu-move">
+                        <button
+                          type="button"
+                          aria-label={`Subir ${modules[id][0]}`}
+                          disabled={busy || !itemIndex}
+                          onClick={() =>
+                            void apply({
+                              kind: "move",
+                              id,
+                              group,
+                              before: visible[itemIndex - 1]?.id,
+                            })
+                          }
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Bajar ${modules[id][0]}`}
+                          disabled={busy || itemIndex === visible.length - 1}
+                          onClick={() =>
+                            void apply({
+                              kind: "move",
+                              id,
+                              group,
+                              before: visible[itemIndex + 2]?.id,
+                            })
+                          }
+                        >
+                          ↓
+                        </button>
+                        <select
+                          aria-label={`Grupo de ${modules[id][0]}`}
+                          value={group}
+                          disabled={busy}
+                          onChange={(event) =>
+                            void apply({
+                              kind: "move",
+                              id,
+                              group: event.target.value as Group,
+                            })
+                          }
+                        >
+                          {groups.map((target) => (
+                            <option key={target}>{target}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </details>
                   )}
                 </div>
               ))}
