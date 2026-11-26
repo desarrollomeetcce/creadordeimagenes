@@ -6,6 +6,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
 import { roleLabels, roleDescriptions, roleAbilities } from "../../lib/roles";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
+type Presence = {
+  desktop: boolean;
+  mobile: boolean;
+  generatorDesktop: boolean;
+  generatorMobile: boolean;
+};
+
+function presenceLabel(presence: Presence | undefined) {
+  if (!presence) return "Sin datos de conexión";
+  const messaging = presence.desktop || presence.mobile;
+  const generator = presence.generatorDesktop || presence.generatorMobile;
+  if (messaging && generator) return "Conectado en Mensajería y Generador";
+  if (messaging) return "Conectado en Mensajería";
+  if (generator) return "Conectado en Generador";
+  return "Desconectado";
+}
+
 type Account = {
   id: string;
   name: string;
@@ -52,6 +69,33 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
     } | null>(null);
   const originals = useRef(new Map<string, Account>()),
     pending = useRef(false);
+  const [presence, setPresence] = useState<Record<string, Presence>>({});
+  useEffect(() => {
+    if (archived) return;
+    const controller = new AbortController();
+    let pending = false;
+    const refreshPresence = async () => {
+      if (pending || document.visibilityState !== "visible") return;
+      pending = true;
+      try {
+        const response = await fetch("/api/pulpo/presence", { signal: controller.signal, cache: "no-store" });
+        const data: { users: (Presence & { id: string })[] } = response.ok ? await response.json() : { users: [] };
+        if (!controller.signal.aborted) setPresence(Object.fromEntries(data.users.map(({ id, ...value }) => [id, value])));
+      } catch {
+        if (!controller.signal.aborted) setPresence({});
+      } finally {
+        pending = false;
+      }
+    };
+    void refreshPresence();
+    const timer = window.setInterval(refreshPresence, 30_000);
+    document.addEventListener("visibilitychange", refreshPresence);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshPresence);
+    };
+  }, [archived]);
   const refresh = useCallback(async () => {
     const rows = await api("users" + (archived ? "?archived=true" : ""));
     originals.current = new Map(rows.map((u: Account) => [u.id, u]));
@@ -335,6 +379,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
                     <tr key={u.id} data-user-row={u.id}>
                       <th scope="row">
                         <strong>{u.name}</strong>
+                        {!archived && u.status === "APPROVED" && <small className="hint">{presenceLabel(presence[u.id])}</small>}
                         <small title={u.email}>{u.email}</small>
                         {isOwner && (
                           <button

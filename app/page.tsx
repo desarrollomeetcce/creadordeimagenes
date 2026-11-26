@@ -272,6 +272,24 @@ export default function Home() {
     document.addEventListener("visibilitychange", check);
     return () => { active = false; window.removeEventListener("focus", check); document.removeEventListener("visibilitychange", check); };
   }, [user?.id]);
+  useEffect(() => {
+    if (!user?.id || !user.messagingLinked) return;
+    const controller = new AbortController();
+    let lastPulse = 0;
+    const pulse = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastPulse < 55_000) return;
+      lastPulse = Date.now();
+      void fetch("/api/pulpo/presence", { method: "POST", signal: controller.signal }).catch(() => {});
+    };
+    pulse();
+    const timer = window.setInterval(pulse, 60_000);
+    document.addEventListener("visibilitychange", pulse);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", pulse);
+    };
+  }, [user?.id, user?.messagingLinked]);
   const changeAddress = (values: Record<string, string>) => {
     const search = "?" + new URLSearchParams(values).toString();
     if (window.location.search !== search)
