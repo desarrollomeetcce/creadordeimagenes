@@ -183,3 +183,8 @@
   height: 19px;
   stroke-width: 2;
 }
+.pulpo-menu-access-notice {
+  margin: 4px 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

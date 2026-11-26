@@ -54,8 +54,9 @@ async function messaging(move?: Move, layoutOnly = false) {
   const id = linkedMessagingUser(user);
   const token = id && signMenu("preferences", id, email, move);
   const fallback = (status: number) => {
-    const sessionGrant = !layoutOnly && !move && signMenu("messaging-session-access", user.id, email, undefined, undefined, id ?? undefined);
-    return sessionGrant ? json({ sessionGrant }) : json({}, status);
+    if (layoutOnly || move) return json({}, status);
+    const sessionGrant = signMenu("messaging-session-access", user.id, email, undefined, undefined, id ?? undefined);
+    return sessionGrant ? json({ sessionGrant }) : json({ peerStatus: "unconfigured" });
   };
   if (!token) return fallback(403);
   try {

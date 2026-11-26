@@ -21,7 +21,7 @@ type Destination = {
   active?: boolean;
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
 };
-type Snapshot = { layout?: Layout; modules?: Module[]; sync?: boolean; sessionGrant?: string };
+type Snapshot = { layout?: Layout; modules?: Module[]; sync?: boolean; sessionGrant?: string; peerStatus?: "unconfigured" };
 
 async function messagingSession(grant: string, signal: AbortSignal): Promise<Snapshot | null> {
   try {
@@ -53,6 +53,7 @@ export function SharedPulpoMenu({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [accessNotice, setAccessNotice] = useState("");
   const writing = useRef(false);
   const refreshAccess = useRef<() => void>(() => {});
   const revision = useRef(0);
@@ -117,9 +118,17 @@ export function SharedPulpoMenu({
           setPeer(session?.modules ?? snapshot.modules ?? []);
           setFromSession(session !== null);
           setServer(Boolean(snapshot.layout));
+          if (snapshot.peerStatus === "unconfigured") {
+            setAccessNotice(force ? "La conexión con Mensajería todavía no está configurada." : "");
+          } else if (force && !snapshot.layout && !session) {
+            setAccessNotice("No se pudo verificar Mensajería. Abre ambos sistemas con el mismo correo y vuelve a actualizar.");
+          } else {
+            setAccessNotice("");
+          }
         }
       } catch {
         if (!controller.signal.aborted && !ready) setServer(false);
+        if (!controller.signal.aborted && force) setAccessNotice("No se pudo actualizar el acceso a Mensajería.");
       } finally {
         loading = false;
       }
@@ -260,6 +269,7 @@ export function SharedPulpoMenu({
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
+      {accessNotice && <p className="pulpo-menu-access-notice" role="status">{accessNotice}</p>}
       {groups.map((group) => {
         const visible = layout.order[group].flatMap((id) => {
           const destination = resolve(id, peer, fromSession);

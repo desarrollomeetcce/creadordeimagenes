@@ -31,7 +31,10 @@ services:
   web:
     image: afiches-app:local
     restart: unless-stopped
-    environment: *runtime
+    environment:
+      <<: *runtime
+      PULPO_GENERATOR_SSO_KEY: ${PULPO_GENERATOR_SSO_KEY:-}
+      PULPO_GENERATOR_LINKS: ${PULPO_GENERATOR_LINKS:-}
     ports:
       - 127.0.0.1:3000:3000
     volumes:
