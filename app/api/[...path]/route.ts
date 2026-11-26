@@ -1,3 +1,4 @@
+import { fixedCostNavigationAccess } from "@/lib/fixed-cost-navigation-access";
 import { financialNavigationAccess } from "@/lib/meta-ads/financial-navigation-access";
 import { linkedMessagingUser } from "@/lib/pulpo-sso";
 import { hasAiModuleAccess } from "@/lib/roles";
@@ -648,18 +649,20 @@ async function handle(
         return send(await saveBrand(user, project.id, await body(req)));
     }
     if (route === "auth/me" && method === "GET") {
-      const [grants] = await db.$queryRaw<{
-        fixedCostsShared: boolean;
-        effectivenessShared: boolean;
-        metaAdsShared: boolean;
-        advisorLinked: boolean;
-      }[]>`
-        SELECT
-          (EXISTS (SELECT 1 FROM "FixedCostGrant" WHERE "userId" = ${user.id}) OR EXISTS (SELECT 1 FROM "FixedCostSheetGrant" WHERE "userId" = ${user.id})) AS "fixedCostsShared",
-          EXISTS (SELECT 1 FROM "EffectivenessGrant" WHERE "userId" = ${user.id}) AS "effectivenessShared",
-          EXISTS (SELECT 1 FROM "MetaWorkspaceGrant" WHERE "userId" = ${user.id}) AS "metaAdsShared",
-          EXISTS (SELECT 1 FROM "MetaAdvisorPortal" WHERE "userId" = ${user.id}) AS "advisorLinked"
-      `;
+      const [[grants], fixedCostsShared, financialAccess] = await Promise.all([
+        db.$queryRaw<{
+          effectivenessShared: boolean;
+          metaAdsShared: boolean;
+          advisorLinked: boolean;
+        }[]>`
+          SELECT
+            EXISTS (SELECT 1 FROM "EffectivenessGrant" WHERE "userId" = ${user.id}) AS "effectivenessShared",
+            EXISTS (SELECT 1 FROM "MetaWorkspaceGrant" WHERE "userId" = ${user.id}) AS "metaAdsShared",
+            EXISTS (SELECT 1 FROM "MetaAdvisorPortal" WHERE "userId" = ${user.id}) AS "advisorLinked"
+        `,
+        fixedCostNavigationAccess(user.id, user.role),
+        financialNavigationAccess(user.id, user.role),
+      ]);
       return send({
         id: user.id,
         name: user.name,
@@ -667,7 +670,8 @@ async function handle(
         role: user.role,
         aiAccessEnabled: user.aiAccessEnabled,
         messagingLinked: Boolean(linkedMessagingUser(user)),
-        ...await financialNavigationAccess(user.id, user.role),
+        fixedCostsShared,
+        ...financialAccess,
         ...grants,
       });
     }

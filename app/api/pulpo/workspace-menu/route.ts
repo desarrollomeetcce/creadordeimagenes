@@ -1,3 +1,4 @@
+import { fixedCostNavigationAccess } from "@/lib/fixed-cost-navigation-access";
 import { financialNavigationAccess } from "@/lib/meta-ads/financial-navigation-access";
 import { actor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -69,21 +70,21 @@ export async function POST(request: Request) {
         role: true,
         aiAccessEnabled: true,
         advisorPortal: { select: { advisorId: true } },
-        fixedCostGrant: { select: { userId: true } },
         metaWorkspaceGrant: { select: { userId: true } },
       },
     });
     if (!user) return json({}, 403);
-    const [sheetAccess] = user.fixedCostGrant ? [] : await db.$queryRaw<{ allowed: boolean }[]>`
-      SELECT EXISTS (SELECT 1 FROM "FixedCostSheetGrant" WHERE "userId"=${user.id}) AS allowed
-    `;
+    const [fixedCostsShared, financialAccess] = await Promise.all([
+      fixedCostNavigationAccess(user.id, user.role),
+      financialNavigationAccess(user.id, user.role),
+    ]);
     return json({
       modules: availableGeneratorModules({
         ...user,
         advisorLinked: !!user.advisorPortal,
-        fixedCostsShared: !!user.fixedCostGrant || sheetAccess?.allowed === true,
+        fixedCostsShared,
         metaAdsShared: !!user.metaWorkspaceGrant,
-        ...await financialNavigationAccess(user.id, user.role),
+        ...financialAccess,
       }),
     });
   }
