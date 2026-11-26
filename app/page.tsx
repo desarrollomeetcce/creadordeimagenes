@@ -269,8 +269,10 @@ export default function Home() {
       finally { pending = false; }
     };
     window.addEventListener("focus", check);
+    const refreshAccess = () => { lastAt = 0; void check(); };
+    window.addEventListener("pulpo-access-refresh", refreshAccess);
     document.addEventListener("visibilitychange", check);
-    return () => { active = false; window.removeEventListener("focus", check); document.removeEventListener("visibilitychange", check); };
+    return () => { active = false; window.removeEventListener("focus", check); window.removeEventListener("pulpo-access-refresh", refreshAccess); document.removeEventListener("visibilitychange", check); };
   }, [user?.id]);
   useEffect(() => {
     if (!user?.id || !user.messagingLinked) return;

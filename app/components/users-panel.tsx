@@ -4,7 +4,7 @@ import { RecoveryIssuer } from "./account-security";
 import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
-import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers } from "../../lib/roles";
+import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers, canManageAccount } from "../../lib/roles";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 type Presence = {
   desktop: boolean;
@@ -12,6 +12,15 @@ type Presence = {
   generatorDesktop: boolean;
   generatorMobile: boolean;
 };
+
+function syncMessage(state: string) {
+  if (state === "linked") return "Cuenta vinculada con Mensajería.";
+  if (state === "role-conflict") return "Cuenta vinculada. El Owner debe confirmar el rol compartido en Mensajería.";
+  if (state === "verify") return "Cuenta guardada en Generador. El Owner debe verificar la vinculación con Mensajería; no se han sustituido cuentas existentes.";
+  if (state === "role-denied") return "Cuenta guardada en Generador. La vinculación requiere autorización vigente en ambas aplicaciones.";
+  if (state === "unconfigured") return "Cuenta guardada en Generador. Falta la conexión compartida con Mensajería.";
+  return "Cuenta guardada en Generador; vinculación con Mensajería pendiente. Puedes reintentar desde su fila.";
+}
 
 function presenceLabel(presence: Presence | undefined) {
   if (!presence) return "Sin datos de conexión";
@@ -125,9 +134,9 @@ export function UsersPanel({ role }: { role: string }) {
     setBusy(true);
     setMessage("");
     try {
-      await fn();
+      const notice = await fn();
       await refresh();
-      setMessage("Cambios guardados.");
+      setMessage(typeof notice === "string" ? notice : "Cambios guardados.");
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -142,6 +151,16 @@ export function UsersPanel({ role }: { role: string }) {
     setMessage("");
     const old = originals.current.get(u.id)!;
     try {
+      if (u.sharedRole && u.role !== old.role) {
+        if (u.status !== old.status || u.planId !== old.planId || u.planValidUntil !== old.planValidUntil || u.aiAccessEnabled !== old.aiAccessEnabled)
+          throw Error("Guarda los cambios de estado o plan por separado del rol compartido.");
+        const result = await api("users/" + u.id + "/shared-role", "POST", { role: u.role, expectedRole: old.role });
+        if (result.closesOwnSession) { window.location.reload(); return; }
+        await refresh();
+        setMessage("Rol actualizado en Mensajería y Generador.");
+        window.dispatchEvent(new Event("pulpo-access-refresh"));
+        return;
+      }
       const result = await api("users/" + u.id, "PATCH", {
         role: u.role,
         status: u.status,
@@ -273,9 +292,10 @@ export function UsersPanel({ role }: { role: string }) {
                   const form = e.currentTarget;
                   const data = Object.fromEntries(new FormData(form));
                   void run(async () => {
-                    await api("users", "POST", data);
+                    const created = await api("users", "POST", data);
                     form.reset();
                     setCreateRole("USER");
+                    return syncMessage(created.messagingSync?.state);
                   });
                 }}
               >
@@ -406,9 +426,9 @@ export function UsersPanel({ role }: { role: string }) {
                         <select
                           data-user-role={u.role}
                           aria-label={"Rol de " + u.name}
-                          title={u.sharedRole ? "Rol administrado en Pulpo Mensajería" : roleDescriptions[u.role]}
+                          title={u.sharedRole ? "Guardar confirma el rol en Mensajería y Generador" : roleDescriptions[u.role]}
                           value={u.role}
-                          disabled={u.sharedRole || busy || archived}
+                          disabled={(u.sharedRole && !isOwner) || busy || archived}
                           onChange={(e) =>
                             change(u.id, { role: e.target.value })
                           }
@@ -542,6 +562,13 @@ export function UsersPanel({ role }: { role: string }) {
                             </button>
                           ) : (
                             <>
+                              {canCreateUsers(role) && canManageAccount(role, u.role) && u.status === "APPROVED" && (
+                                <button type="button" disabled={busy}
+                                  aria-label={"Sincronizar a " + u.name + " con Mensajería"}
+                                  onClick={() => void run(async () => syncMessage((await api("users/" + u.id + "/messaging", "POST", {})).state))}>
+                                  Sincronizar Mensajería
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="primary"

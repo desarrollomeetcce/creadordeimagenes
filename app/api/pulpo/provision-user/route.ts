@@ -20,11 +20,12 @@ export async function POST(request: Request) {
   const links = process.env.PULPO_GENERATOR_LINKS || "";
   const result = await db.$transaction(async (tx) => {
     const sync = grant.roleSync;
-    if (sync) {
+    if (sync || grant.identitySync) {
       // Serialize with local role changes and preserve the last active Owner.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(728291)`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
     }
+    if (Date.now() >= grant.exp * 1000) return { state: "role-denied" };
     async function resolveAccount(identity: { sub: string; email: string }) {
       const legacyId = linkedGeneratorUser(links, identity);
       return tx.user.findFirst({
@@ -42,6 +43,28 @@ export async function POST(request: Request) {
     }
 
     let target = await resolveAccount(grant);
+    if (!target && grant.identitySync) {
+      const identity = grant.identitySync;
+      const existing = await tx.user.findFirst({ where: {
+        email: { equals: grant.email, mode: "insensitive" }, status: "APPROVED", archivedAt: null,
+      }, select: { id: true, pulpoUserId: true } });
+      if (existing && !existing.pulpoUserId) {
+        const issuer = await resolveAccount({ sub: identity.issuerId, email: identity.issuerEmail });
+        if (issuer?.role !== "OWNER" || Date.now() >= grant.exp * 1000) return { state: "role-denied" };
+        const prefix = "pulpo-identity-sync:";
+        await tx.rateLimit.deleteMany({ where: { key: { startsWith: prefix }, expiresAt: { lt: new Date() } } });
+        const receipt = await tx.rateLimit.createMany({ data: [{
+          key: prefix + grant.nonce, count: 1, expiresAt: new Date(grant.exp * 1000),
+        }], skipDuplicates: true });
+        if (!receipt.count) return { state: "verify" };
+        await tx.user.updateMany({ where: { id: existing.id, pulpoUserId: null }, data: { pulpoUserId: grant.sub } });
+        await recordActivity(tx, { data: {
+          actorId: issuer.id, action: "IDENTIDAD_PULPO_VINCULADA", resourceId: existing.id,
+          detail: { pulpoUserId: grant.sub },
+        } });
+        target = await resolveAccount(grant);
+      }
+    }
     if (!target && !sync) {
       const occupied = await tx.user.findFirst({
         where: { OR: [
@@ -51,7 +74,11 @@ export async function POST(request: Request) {
         select: { id: true },
       });
       if (occupied || linkedGeneratorUser(links, grant)) return { state: "verify" };
-      await createManagedGeneratorUser(tx, { ...grant, name: grant.name!.trim() });
+      const confirmedOwner = grant.identitySync && await resolveAccount({
+        sub: grant.identitySync.issuerId, email: grant.identitySync.issuerEmail,
+      });
+      await createManagedGeneratorUser(tx, { ...grant, name: grant.name!.trim() },
+        confirmedOwner?.role === "OWNER" ? grant.sharedRole : undefined);
       target = await resolveAccount(grant);
     }
     if (!target) return { state: "verify" };

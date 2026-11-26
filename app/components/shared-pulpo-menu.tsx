@@ -40,6 +40,7 @@ export function SharedPulpoMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const writing = useRef(false);
+  const refreshAccess = useRef<() => void>(() => {});
   const revision = useRef(0);
   const dragged = useRef<Movable | null>(null);
   const storage = "pulpo-shared-menu:" + userId;
@@ -65,11 +66,11 @@ export function SharedPulpoMenu({
     let shared = false;
     let peerCheckedAt = 0;
     let loading = false;
-    async function load(background: boolean) {
+    async function load(background: boolean, force = false) {
       if (loading || writing.current || document.visibilityState === "hidden")
         return;
       const elapsed = Date.now() - peerCheckedAt;
-      const checkPeer = !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
+      const checkPeer = force || !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
       if (background && !shared && !checkPeer) return;
       const layoutOnly = !checkPeer;
       if (checkPeer) peerCheckedAt = Date.now();
@@ -107,6 +108,7 @@ export function SharedPulpoMenu({
     }
 
     const resume = () => void load(false);
+    refreshAccess.current = () => { void load(false, true); window.dispatchEvent(new Event("pulpo-access-refresh")); };
     const interval = window.setInterval(() => void load(true), 8000);
     resume();
     document.addEventListener("visibilitychange", resume);
@@ -201,6 +203,10 @@ export function SharedPulpoMenu({
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
       <div className="pulpo-menu-top">
+        <button type="button" className="pulpo-menu-edit" title="Actualizar accesos" aria-label="Actualizar accesos"
+          disabled={busy} onClick={() => refreshAccess.current()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-1l2 3 M4 15l2 3a7 7 0 0 0 12-1" /></svg>
+        </button>
         {editing && (
           <button
             type="button"

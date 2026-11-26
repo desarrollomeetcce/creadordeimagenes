@@ -4,6 +4,8 @@ import { test } from "node:test";
 import { POST } from "../app/api/pulpo/provision-user/route";
 import { db } from "../lib/db";
 import { performanceSettings, savePortalLink } from "../lib/meta-ads/advisor-performance";
+import { syncMessagingUser, syncMessagingRole } from "../lib/pulpo-messaging-users";
+import { verifyDirectory } from "../lib/pulpo-directory-token";
 
 test("requires a linked Owner to reconcile roles and preserves module grants", async () => {
   assert.match(process.env.DATABASE_URL ?? "", /127\.0\.0\.1:5432\/generator_shared_role_qa_\d+$/);
@@ -16,9 +18,9 @@ test("requires a linked Owner to reconcile roles and preserves module grants", a
   const create = (account: typeof owner, role: "OWNER" | "USER") => db.user.create({
     data: { pulpoUserId: account.sub, email: account.email, name: "Fixture", passwordHash: "fixture", role, status: "APPROVED" },
   });
-  const send = async (account: typeof owner, sharedRole: string, roleSync?: { issuerId: string; issuerEmail: string; expected: string }) => {
+  const send = async (account: typeof owner, sharedRole: string, roleSync?: { issuerId: string; issuerEmail: string; expected: string }, identitySync?: { issuerId: string; issuerEmail: string }) => {
     const payload = Buffer.from(JSON.stringify({
-      ...account, sharedRole, roleSync, aud: "pulpo-generador",
+      ...account, sharedRole, roleSync, identitySync, aud: "pulpo-generador",
       exp: Math.floor(Date.now() / 1000) + 25, nonce: randomBytes(24).toString("base64url"),
       page: "home", provision: true, name: "Fixture",
     })).toString("base64url");
@@ -79,6 +81,51 @@ test("requires a linked Owner to reconcile roles and preserves module grants", a
       await assert.rejects(savePortalLink(actor, { advisorId: person.id, userId: unavailable.id, revision: initialLink.revision }), /cuenta aprobada/);
     }
     await assert.rejects(performanceSettings({ id: account.id, role: "ADVISOR" }), /Solo OWNER o Supervisor/);
+
+    const nativeIdentity = identity();
+    const native = await db.user.create({ data: {
+      email: nativeIdentity.email, name: "Superadmin nativa", role: "SUPERADMIN", passwordHash: "unchanged", status: "APPROVED",
+    } });
+    assert.deepEqual(await send(nativeIdentity, "SUPERADMIN", undefined, { issuerId: target.sub, issuerEmail: target.email }), { state: "role-denied" });
+    assert.equal((await db.user.findUniqueOrThrow({ where: { id: native.id } })).pulpoUserId, null);
+    assert.deepEqual(await send(nativeIdentity, "SUPERADMIN", undefined, { issuerId: owner.sub, issuerEmail: owner.email }), { state: "linked" });
+    const reconciled = await db.user.findUniqueOrThrow({ where: { id: native.id } });
+    assert.equal(reconciled.pulpoUserId, nativeIdentity.sub);
+    assert.equal(reconciled.passwordHash, "unchanged");
+    assert.equal(reconciled.role, "SUPERADMIN");
+    const elevated = identity();
+    assert.deepEqual(await send(elevated, "SUPERADMIN", undefined, { issuerId: owner.sub, issuerEmail: owner.email }), { state: "linked" });
+    assert.equal((await db.user.findUniqueOrThrow({ where: { email: elevated.email } })).role, "SUPERADMIN");
+
+    const local = await db.user.create({ data: {
+      email: randomUUID() + "@example.test", name: "Creada en Generador", role: "USER", passwordHash: "native", status: "APPROVED",
+    } });
+    const messagingId = randomUUID();
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async (url, init) => {
+        const grant = verifyDirectory(new Headers(init?.headers).get("authorization"));
+        assert(grant);
+        assert.equal(grant.issuerId, owner.sub);
+        assert.equal(grant.id, local.id);
+        if (String(url).endsWith("generator-user-roles")) {
+          assert.equal(grant.operation, "role");
+          assert.equal(grant.expectedRole, "user");
+          assert.equal(grant.role, "superadmin");
+          assert.equal(grant.messagingId, messagingId);
+        } else {
+          assert.match(grant.credentialHash!, /^scrypt-v1:[a-f\d]{32}:[a-f\d]{128}$/);
+        }
+        return Response.json({ state: "linked", id: messagingId, role: "user" });
+      };
+      assert.deepEqual(await syncMessagingUser(issuer.id, local.id, "Fixture-password-123!"), { state: "linked" });
+      assert.equal((await db.user.findUniqueOrThrow({ where: { id: local.id } })).pulpoUserId, messagingId);
+      assert.deepEqual(await syncMessagingRole(issuer.id, local.id, "SUPERADMIN", "USER"), { state: "linked" });
+      assert.deepEqual(await syncMessagingRole(member.id, local.id, "OWNER", "USER"), { state: "role-denied" });
+      globalThis.fetch = async () => { throw Error("Unavailable"); };
+      assert.deepEqual(await syncMessagingRole(issuer.id, local.id, "SUPERADMIN", "USER"), { state: "pending" });
+      assert.equal((await db.user.findUniqueOrThrow({ where: { id: local.id } })).role, "USER");
+    } finally { globalThis.fetch = originalFetch; }
   } finally {
     await db.$disconnect();
   }

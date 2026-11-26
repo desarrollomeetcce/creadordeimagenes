@@ -8,6 +8,7 @@ import { rateLimit } from "./auth";
 import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
 import { issuePasswordReset } from "./accounts";
 import { linkedMessagingUser } from "./pulpo-sso";
+import { syncMessagingUser, syncMessagingRole } from "./pulpo-messaging-users";
 
 const role = z.enum([
   "OWNER",
@@ -119,7 +120,17 @@ export async function userManagement(
       });
       return account;
     });
-    return send(created, 201);
+    const messagingSync = await syncMessagingUser(actor.id, created.id, b.password);
+    return send({ ...created, messagingSync }, 201);
+  }
+  if (parts.length === 3 && parts[2] === "messaging" && req.method === "POST")
+    return send(await syncMessagingUser(actor.id, parts[1]));
+  if (parts.length === 3 && parts[2] === "shared-role" && req.method === "POST") {
+    demand(actor.role === "OWNER", "Solo Owner puede cambiar roles compartidos.", 403);
+    const b = z.object({ role, expectedRole: role }).strict().parse(await body());
+    const result = await syncMessagingRole(actor.id, parts[1], b.role, b.expectedRole);
+    demand(result.state === "linked", "No se confirmó el rol en ambos sistemas: " + result.state + ". Actualiza los accesos antes de reintentar.", 409);
+    return send({ ...result, closesOwnSession: actor.id === parts[1] });
   }
   if (parts.length === 3 && parts[2] === "recovery" && req.method === "POST")
     return send(await issuePasswordReset(actor, parts[1], await body()), 201);

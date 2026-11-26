@@ -26,6 +26,7 @@ type Assertion = {
   name?: string;
   sharedRole?: SharedPulpoRole;
   roleSync?: { issuerId: string; issuerEmail: string; expected: SharedPulpoRole };
+  identitySync?: { issuerId: string; issuerEmail: string };
 };
 
 export function verifyPulpoAssertion(token: string, key: string, now = Math.floor(Date.now() / 1000), purpose: "sso" | "provision" = "sso"): Assertion | null {
@@ -57,6 +58,11 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
     if ((claims.sharedRole !== undefined || claims.roleSync !== undefined) &&
         (claims.provision !== true || !isSharedRole(claims.sharedRole))) return null;
     const sync = claims.roleSync;
+    const identity = claims.identitySync;
+    if (identity !== undefined && (purpose !== "provision" || claims.provision !== true ||
+        !identity || typeof identity.issuerId !== "string" ||
+        !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(identity.issuerId) ||
+        typeof identity.issuerEmail !== "string" || !/^[^\s@]+@[^\s@]+$/.test(identity.issuerEmail))) return null;
     if (sync !== undefined && (
       purpose !== "provision" || !sync || typeof sync.issuerId !== "string" ||
       !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(sync.issuerId) ||
