@@ -3,6 +3,7 @@ import { setPerformancePeriod, usePerformancePeriod } from "./use-performance-pe
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { advisorPeriodSignals, advisorWhatsAppActivity } from "../../lib/meta-ads/advisor-period-signals";
+import { categoryKey } from "../../lib/meta-ads/category-paste";
 import { cacStatusNames } from "../../lib/meta-ads/inventory-cac-policy";
 import { MetaDateRange } from "./meta-date-range";
 import { PerformanceMotivation } from "./performance-motivation";
@@ -15,6 +16,20 @@ type Period = { since: string; until: string };
 const regionNames = new Intl.DisplayNames(["es"], { type: "region" });
 const countryLabel = (country: string) =>
   /^[A-Z]{2}$/.test(country) ? (regionNames.of(country) ?? country) : country;
+
+function WhatsAppContactCount({ count }: { count?: NonNullable<Activity>["items"][number] }) {
+  if (!count) return <>—</>;
+  return (
+    <>
+      {count.contacts.toLocaleString("es-PE")}
+      {count.organic !== undefined && count.paid !== undefined && (
+        <small>
+          {count.organic} orgánicos · {count.paid} de anuncios · {Math.max(0, count.contacts - count.organic - count.paid)} sin origen
+        </small>
+      )}
+    </>
+  );
+}
 
 export function AdvisorPeriodSignals({
   advisorId,
@@ -192,7 +207,12 @@ export function AdvisorPeriodSignals({
   const topKeys = new Set(top.map((item) => item.key));
   const products = [...top, ...ranked.filter((item) => !topKeys.has(item.key))];
   const catalogMatches = new Map<string, string[]>();
+  const nameMatches = new Map<string, string[]>();
   for (const item of products) {
+    const nameKey = JSON.stringify([categoryKey(item.name), item.country]);
+    const sameName = nameMatches.get(nameKey) ?? [];
+    sameName.push(item.key);
+    nameMatches.set(nameKey, sameName);
     if (!item.catalogKey) continue;
     const key = JSON.stringify([...item.catalogKey, item.country]);
     const keys = catalogMatches.get(key) ?? [];
@@ -202,16 +222,17 @@ export function AdvisorPeriodSignals({
   const candidates = whatsapp.filter((item) => !selectedCountry || item.country === selectedCountry);
   const possibleMatches = candidates.map((item) => ({
     item,
-    keys: [...new Set(item.links.flatMap((link) =>
-      catalogMatches.get(JSON.stringify([...link, item.country])) ?? []))],
+    keys: item.links.length
+      ? [...new Set(item.links.flatMap((link) => catalogMatches.get(JSON.stringify([...link, item.country])) ?? []))]
+      : nameMatches.get(JSON.stringify([categoryKey(item.name), item.country])) ?? [],
   }));
   const matchCounts = new Map<string, number>();
   for (const { keys } of possibleMatches)
     if (keys.length === 1) matchCounts.set(keys[0], (matchCounts.get(keys[0]) ?? 0) + 1);
-  const contactsByProduct = new Map<string, number>();
+  const contactsByProduct = new Map<string, (typeof whatsapp)[number]>();
   const additional = possibleMatches.filter(({ item, keys }) => {
     if (keys.length !== 1 || matchCounts.get(keys[0]) !== 1) return true;
-    contactsByProduct.set(keys[0], item.contacts);
+    contactsByProduct.set(keys[0], item);
     return false;
   }).map(({ item }) => item);
 
@@ -387,7 +408,7 @@ export function AdvisorPeriodSignals({
                   <th scope="col">Diplomado</th>
                   <th scope="col">Base de Meta</th>
                   <th scope="col">Ventas</th>
-                  <th scope="col">Contactos WhatsApp</th>
+                  <th scope="col">Nuevos en WhatsApp</th>
                   <th scope="col">Estado</th>
                 </tr>
               </thead>
@@ -421,14 +442,17 @@ export function AdvisorPeriodSignals({
                           )}
                         </th>
                         <td className="advisor-diploma-base">
-                          {item.metaBase?.toLocaleString("es-PE") ?? "—"}
-                          {item.metaBasePartial && <small>Parcial</small>}
+                          {item.metaBase?.toLocaleString("es-PE") ?? "Sin dato de Meta"}
+                          {item.metaBase !== null && item.metaBasePartial && <small>Parcial</small>}
                         </td>
                         <td className="advisor-diploma-base">
                           {(item.sales ?? item.recordedSales)?.toLocaleString("es-PE") ?? "—"}
                           {item.sales === null && item.recordedSales !== null && <small>Total del diplomado</small>}
                         </td>
-                        <td className="advisor-diploma-base">{contactsByProduct.get(item.key)?.toLocaleString("es-PE") ?? "—"}</td>
+                        <td className="advisor-diploma-base">
+                          <WhatsAppContactCount count={contactsByProduct.get(item.key)} />
+                          {contactsByProduct.get(item.key)?.links.length === 0 && <small>Por etiqueta y país</small>}
+                        </td>
                         <td>
                           <button
                             type="button"
@@ -554,7 +578,7 @@ export function AdvisorPeriodSignals({
                     </th>
                     <td>—</td>
                     <td>—</td>
-                    <td className="advisor-diploma-base">{item.contacts.toLocaleString("es-PE")}</td>
+                    <td className="advisor-diploma-base"><WhatsAppContactCount count={item} /></td>
                     <td>Etiqueta de producto</td>
                   </tr>
                 ))}
@@ -564,7 +588,7 @@ export function AdvisorPeriodSignals({
           {!activityResult && <p role="status" className="hint">Cargando contactos de WhatsApp…</p>}
           {activityResult && !activityResult.data && <p className="hint">Contactos de WhatsApp no disponibles para esta cuenta vinculada.</p>}
           {whatsappTotal !== undefined && (
-            <p className="hint">Contactos de WhatsApp del período: <strong>{whatsappTotal}</strong>. Incluye contactos sin diplomado identificado.</p>
+            <p className="hint">Contactos nuevos de WhatsApp del período: <strong>{whatsappTotal}</strong>. Incluye contactos cuyo diplomado no se pudo confirmar.</p>
           )}
           {activityResult?.data?.truncated && <p className="hint">WhatsApp muestra las 500 etiquetas con más actividad.</p>}
         </>

@@ -10,10 +10,12 @@ const activity = z.object({
     country: z.string().regex(/^(?:[A-Z]{2})?$/),
     folders: z.array(z.string()),
     contacts: z.number().int().positive(),
+    organic: z.number().int().nonnegative().optional(),
+    paid: z.number().int().nonnegative().optional(),
     links: z.array(z.tuple([z.string(), z.string()])),
   })).max(500),
   truncated: z.boolean(),
-  totals: z.array(z.object({ country: z.string(), contacts: z.number().int().nonnegative() })).optional(),
+  totals: z.array(z.object({ country: z.string(), contacts: z.number().int().nonnegative(), organic: z.number().int().nonnegative().optional(), paid: z.number().int().nonnegative().optional() })).optional(),
 });
 
 export async function pulpoDiplomaActivity(actorId: string, advisorId: string, from: string, to: string) {
