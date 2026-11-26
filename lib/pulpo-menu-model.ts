@@ -51,7 +51,11 @@ export const modules = {
 } as const;
 export type Module = keyof typeof modules;
 export type Movable = Exclude<Module, "performance">;
-export type Layout = { order: Record<Group, Movable[]>; collapsed: Group[] };
+export type Layout = {
+  version?: 2;
+  order: Record<Group, Movable[]>;
+  collapsed: Group[];
+};
 export type Move =
   | { kind: "restore-groups" }
   | { kind: "move"; id: Movable; group: Group; before?: Movable }
@@ -79,6 +83,7 @@ export const generatorModules = [
   "fixed-costs",
 ] as const;
 export const initialLayout: Layout = {
+  version: 2,
   order: {
     CRM: [
       "accounts",
@@ -115,7 +120,23 @@ export function readMove(value: unknown): Move | null {
   return null;
 }
 
+export function upgradeLayout(layout: Layout): Layout {
+  if (layout.version === 2) return layout;
+  const order = Object.fromEntries(
+    groups.map((group) => {
+      const expected = initialLayout.order[group];
+      const old = layout.order[group];
+      const misplaced =
+        old.length !== expected.length ||
+        old.some((id) => !expected.includes(id));
+      return [group, misplaced ? expected : old];
+    }),
+  ) as Layout["order"];
+  return { ...layout, order, version: 2 };
+}
+
 export function changeLayout(layout: Layout, move: Move): Layout {
+  layout = upgradeLayout(layout);
   if (move.kind === "restore-groups")
     return { ...layout, order: initialLayout.order };
   if (move.kind === "toggle")

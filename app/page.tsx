@@ -536,8 +536,10 @@ export default function Home() {
                   navigate(id);
                 },
               };
-              if (!peer.includes(id)) return null;
-              return crmDestination(id) ? { href: "/api/pulpo/open-crm?module=" + id } : null;
+              const destination = crmDestination(id);
+              if (!destination) return null;
+              if (peer.includes(id)) return { href: "/api/pulpo/open-crm?module=" + id };
+              return user.role === "OWNER" ? { href: "https://pulpo.agenciamagneto.org" + destination } : null;
             }}
           />
           <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {

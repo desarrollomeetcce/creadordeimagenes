@@ -5,6 +5,7 @@ import {
   changeLayout,
   groups,
   initialLayout,
+  upgradeLayout,
   modules,
   type Group,
   type Layout,
@@ -51,7 +52,7 @@ export function SharedPulpoMenu({
           Array.isArray(previous.collapsed) &&
           groups.every((group) => Array.isArray(previous.order?.[group]))
         )
-          setLayout(previous);
+          setLayout(upgradeLayout(previous));
       }
     } catch {}
     const load = () =>
@@ -60,7 +61,7 @@ export function SharedPulpoMenu({
           if (!response.ok) throw Error();
           const snapshot: Snapshot = await response.json();
           if (controller.signal.aborted) return;
-          setLayout(snapshot.layout);
+          setLayout(upgradeLayout(snapshot.layout));
           setPeer(snapshot.modules ?? []);
           setServer(true);
         })
@@ -99,7 +100,7 @@ export function SharedPulpoMenu({
       });
       if (!response.ok) throw Error();
       const snapshot: Snapshot = await response.json();
-      setLayout(snapshot.layout);
+      setLayout(upgradeLayout(snapshot.layout));
       if (snapshot.modules) setPeer(snapshot.modules);
     } catch {
       setLayout(layout);
@@ -118,7 +119,7 @@ export function SharedPulpoMenu({
         title={label}
         aria-label={label}
         aria-current={destination.active ? "page" : undefined}
-        className={`nav-item pulpo-module${destination.active ? " active" : ""}`}
+        className="pulpo-module"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           {id === "performance" ? (
