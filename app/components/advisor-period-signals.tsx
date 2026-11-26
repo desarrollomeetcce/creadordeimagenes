@@ -1,5 +1,5 @@
 "use client";
-import { setPerformancePeriod, usePerformancePeriod } from "./use-performance-period";
+import { setPerformancePeriod, setWorkspaceQuery, usePerformancePeriod, useWorkspaceQuery } from "./use-performance-period";
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { advisorPeriodSignals, advisorWhatsAppActivity } from "../../lib/meta-ads/advisor-period-signals";
@@ -41,13 +41,14 @@ export function AdvisorPeriodSignals({
   reload?: number;
 }) {
   const today = limaToday();
-  const [view, setView] = useState<"today" | "yesterday">("today");
+  const search = useWorkspaceQuery();
+  const view = search.get("day") === "yesterday" ? "yesterday" : "today";
   const period = usePerformancePeriod();
   const since = period?.from ?? today;
   const until = period?.to ?? today;
   const [day, setDay] = useState(today);
   const [data, setData] = useState<Data | null>(null);
-  const [country, setCountry] = useState("");
+  const country = search.get("country") ?? "";
   const [activity, setActivity] = useState<{ key: string; data: Activity } | null>(null);
   const activityKey = JSON.stringify([advisorId, since, until]);
   const [focus, setFocus] = useState("");
@@ -284,14 +285,14 @@ export function AdvisorPeriodSignals({
             <button
               type="button"
               aria-pressed={view === "today"}
-              onClick={() => setView("today")}
+              onClick={() => setWorkspaceQuery({ day: "today" })}
             >
               Hoy
             </button>
             <button
               type="button"
               aria-pressed={view === "yesterday"}
-              onClick={() => setView("yesterday")}
+              onClick={() => setWorkspaceQuery({ day: "yesterday" })}
             >
               Ayer
             </button>
@@ -386,7 +387,7 @@ export function AdvisorPeriodSignals({
                   value={selectedCountry}
                   disabled={busy}
                   onChange={(event) => {
-                    setCountry(event.target.value);
+                    setWorkspaceQuery({ country: event.target.value || null });
                     setFocus("");
                   }}
                 >

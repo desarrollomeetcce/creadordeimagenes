@@ -1,4 +1,5 @@
 "use client";
+import { setWorkspaceQuery, useWorkspaceQuery } from "./use-performance-period";
 import { WorkspaceHeaderNavigation } from "./workspace-header-navigation";
 import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
@@ -76,12 +77,9 @@ async function api(
   return b;
 }
 export function AISettingsHub({ posters }: { posters: ReactNode }) {
-  const [tab, setTab] = useState<string | null>(null),
-    [posterOpen, setPosterOpen] = useState(false);
-  useEffect(() => {
-    const value = new URLSearchParams(window.location.search).get("aiTab");
-    setTab(value === "posters" || value === "courses" ? value : "connections");
-  }, []);
+  const value = useWorkspaceQuery().get("aiTab");
+  const tab = value === "posters" || value === "courses" ? value : "connections";
+  const [posterOpen, setPosterOpen] = useState(false);
   return (
     <section className="ai-hub">
       <header className="ai-hub-hero">
@@ -107,7 +105,7 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
               type="button"
               key={id}
               aria-pressed={tab === id}
-              onClick={() => setTab(id)}
+              onClick={() => setWorkspaceQuery({ aiTab: id })}
             >
               {name}
             </button>
@@ -117,7 +115,7 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
           </a>
         </nav>
       </WorkspaceHeaderNavigation>
-      {tab === null ? null : tab === "connections" ? (
+      {tab === "connections" ? (
         <UnifiedConnections />
       ) : tab === "posters" ? (
         <section>

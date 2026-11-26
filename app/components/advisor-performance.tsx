@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { setPerformancePeriod, usePerformancePeriod } from "./use-performance-period";
+import { setPerformancePeriod, setWorkspaceQuery, usePerformancePeriod, useWorkspaceQuery } from "./use-performance-period";
 import { withPerformancePeriod } from "../../lib/performance-period";
 import { WorkspaceHeaderNavigation } from "./workspace-header-navigation";
 import { engineRequest as api } from "./generation-engine";
@@ -28,6 +28,15 @@ const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
 type PerformancePanel = "team" | "advisor" | "products";
+
+function usePerformancePanel(initialPanel: PerformancePanel | undefined, manager: boolean) {
+  const requested = useWorkspaceQuery().get("panel") ?? initialPanel;
+  const panel = requested === "products" || requested === "advisor"
+    ? requested
+    : manager ? "team" : "advisor";
+  return [panel, (next: PerformancePanel) => setWorkspaceQuery({ panel: next })] as const;
+}
+
 
 function PerformanceNavigation({
   panel,
@@ -98,9 +107,7 @@ function PersonalAdvisorPerformance({
 }: {
   initialPanel?: PerformancePanel;
 }) {
-  const [panel, setPanel] = useState<PerformancePanel>(
-    initialPanel === "products" ? "products" : "advisor",
-  );
+  const [panel, setPanel] = usePerformancePanel(initialPanel, false);
   return (
     <section className="advisor-performance" aria-label="Desempeño">
       <PerformanceNavigation panel={panel} onSelect={setPanel} />
@@ -124,20 +131,25 @@ function ManagedAdvisorPerformance({
   const today = limaToday();
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const [panel, setPanel] = useState<PerformancePanel>(initialPanel ?? "team");
-  const [productAdvisorId, setProductAdvisorId] = useState(aggregateProducts ? "all" : "");
+  const [panel, setPanel] = usePerformancePanel(initialPanel, true);
+  const search = useWorkspaceQuery();
   const period = usePerformancePeriod();
   const since = period?.from ?? today;
   const until = period?.to ?? today;
   const [settings, setSettings] = useState<Settings | null>(null),
-    [advisorId, setAdvisorId] = useState(""),
     [reload, setReload] = useState(0),
     [response, setResponse] = useState<{ key: string; data: Report } | null>(
       null,
     ),
-    [error, setError] = useState(""),
-    [view, setView] = useState<"today" | "yesterday">("today");
-  const productScope = productAdvisorId || advisorId;
+    [error, setError] = useState("");
+  const view = search.get("day") === "yesterday" ? "yesterday" : "today";
+  const defaultAdvisor = settings?.people[0]?.id ?? "";
+  const requestedAdvisor = search.get("advisor");
+  const requestedProductAdvisor = search.get("productAdvisor");
+  const advisorId = settings?.people.some((p) => p.id === requestedAdvisor)
+    ? requestedAdvisor! : defaultAdvisor;
+  const productScope = settings?.people.some((p) => p.id === requestedProductAdvisor)
+    ? requestedProductAdvisor! : aggregateProducts ? "all" : advisorId;
   const pickerValue = panel === "products" ? productScope : advisorId;
   const query =
     "meta-ads/my-performance?" +
@@ -150,7 +162,7 @@ function ManagedAdvisorPerformance({
       .then((s: Settings) => {
         if (active) {
           setSettings(s);
-          setAdvisorId((id) => id || s.people[0]?.id || "");
+
         }
       })
       .catch((e) => {
@@ -233,8 +245,7 @@ function ManagedAdvisorPerformance({
               <PerformanceTeam
                 reload={reload}
                 onDetail={(id) => {
-                  setAdvisorId(id);
-                  setPanel("advisor");
+                  setWorkspaceQuery({ panel: "advisor", advisor: id });
                 }}
               />
             )}
@@ -255,7 +266,7 @@ function ManagedAdvisorPerformance({
                   label: p.name + " · " + p.sheet.name,
                 })),
               ]}
-              onSelect={panel === "products" ? setProductAdvisorId : setAdvisorId}
+              onSelect={(id) => setWorkspaceQuery(panel === "products" ? { productAdvisor: id } : { advisor: id })}
             />
             {panel === "advisor" && (
               <span className="hint">
@@ -297,13 +308,13 @@ function ManagedAdvisorPerformance({
             >
               <button
                 aria-pressed={view === "today"}
-                onClick={() => setView("today")}
+                onClick={() => setWorkspaceQuery({ day: "today" })}
               >
                 Hoy
               </button>
               <button
                 aria-pressed={view === "yesterday"}
-                onClick={() => setView("yesterday")}
+                onClick={() => setWorkspaceQuery({ day: "yesterday" })}
               >
                 Ayer
               </button>
