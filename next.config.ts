@@ -13,7 +13,7 @@ const config: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path((?!pulpo-workspace(?:/|$)).*)",
+        source: "/:path((?!(?:pulpo-workspace|api/pulpo/open-crm)(?:/|$)).*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },

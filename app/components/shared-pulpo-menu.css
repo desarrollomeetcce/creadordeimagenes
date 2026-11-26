@@ -1,0 +1,110 @@
+.pulpo-shared-menu {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.pulpo-shared-menu .pulpo-module {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  min-height: 33px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 7px;
+}
+.pulpo-module svg {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pulpo-module[aria-current="page"] {
+  background: color-mix(
+    in srgb,
+    var(--pulpo-section, #a891f5) 20%,
+    transparent
+  );
+  box-shadow: inset 2px 0 var(--pulpo-section, #a891f5);
+}
+.pulpo-menu-group[data-color="0"] {
+  --pulpo-section: #8eaaf7;
+}
+.pulpo-menu-group[data-color="1"] {
+  --pulpo-section: #58bdad;
+}
+.pulpo-menu-group[data-color="2"] {
+  --pulpo-section: #d99ce8;
+}
+.pulpo-menu-group[data-color="3"] {
+  --pulpo-section: #e4b66b;
+}
+.pulpo-menu-band,
+.pulpo-menu-edit {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  font-size: 11px;
+  padding: 5px 8px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+}
+.pulpo-menu-band {
+  font-weight: 700;
+  border-inline-start-color: var(--pulpo-section);
+  background: color-mix(in srgb, var(--pulpo-section) 18%, transparent);
+}
+.pulpo-menu-band:disabled {
+  opacity: 1;
+}
+.pulpo-group-chevron {
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+.pulpo-menu-move {
+  display: flex;
+  gap: 4px;
+  margin: 0 4px 5px;
+}
+.pulpo-menu-move :is(button, select) {
+  font-size: 10px;
+  min-height: 26px;
+  padding: 3px 6px;
+}
+.pulpo-menu-move select {
+  flex: 1;
+  min-width: 0;
+}
+.pulpo-menu-row[draggable="true"] {
+  cursor: grab;
+}
+.sidebar-mini
+  .pulpo-shared-menu
+  :is(.pulpo-module, .pulpo-menu-band, .pulpo-menu-edit),
+.sidebar-collapsed
+  .pulpo-shared-menu
+  :is(.pulpo-module, .pulpo-menu-band, .pulpo-menu-edit) {
+  justify-content: center;
+  padding-inline: 3px;
+}
+.sidebar-mini .pulpo-module span,
+.sidebar-collapsed .pulpo-module span,
+.sidebar-mini .pulpo-menu-band span:last-child,
+.sidebar-collapsed .pulpo-menu-band span:last-child,
+.sidebar-mini .pulpo-menu-edit span:last-child,
+.sidebar-collapsed .pulpo-menu-edit span:last-child {
+  display: none;
+}

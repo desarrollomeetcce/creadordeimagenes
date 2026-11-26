@@ -1,0 +1,273 @@
+"use client";
+
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  changeLayout,
+  groups,
+  initialLayout,
+  modules,
+  type Group,
+  type Layout,
+  type Module,
+  type Move,
+  type Movable,
+} from "@/lib/pulpo-menu-model";
+import "./shared-pulpo-menu.css";
+
+type Destination = {
+  href: string;
+  active?: boolean;
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+};
+type Snapshot = { layout: Layout; modules?: Module[] };
+
+export function SharedPulpoMenu({
+  endpoint,
+  userId,
+  resolve,
+  expand,
+}: {
+  endpoint: string;
+  userId: string;
+  resolve: (id: Module, peer: Module[]) => Destination | null;
+  expand: () => void;
+}) {
+  const [layout, setLayout] = useState(initialLayout);
+  const [peer, setPeer] = useState<Module[]>([]);
+  const [server, setServer] = useState<boolean | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dragged = useRef<Movable | null>(null);
+  const storage = "pulpo-shared-menu:" + userId;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    try {
+      const saved = localStorage.getItem(storage);
+      if (saved) {
+        const previous: Layout = JSON.parse(saved);
+        if (
+          Array.isArray(previous.collapsed) &&
+          groups.every((group) => Array.isArray(previous.order?.[group]))
+        )
+          setLayout(previous);
+      }
+    } catch {}
+    const load = () =>
+      void fetch(endpoint, { cache: "no-store", signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw Error();
+          const snapshot: Snapshot = await response.json();
+          if (controller.signal.aborted) return;
+          setLayout(snapshot.layout);
+          setPeer(snapshot.modules ?? []);
+          setServer(true);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setServer(false);
+        });
+    load();
+    const resume = (event: PageTransitionEvent) => {
+      if (event.persisted) load();
+    };
+    window.addEventListener("pageshow", resume);
+    return () => {
+      window.removeEventListener("pageshow", resume);
+      controller.abort();
+    };
+  }, [endpoint, storage]);
+
+  async function apply(move: Move) {
+    if (busy || server === null) return;
+    const next = changeLayout(layout, move);
+    setLayout(next);
+    setError("");
+    if (!server) {
+      try {
+        localStorage.setItem(storage, JSON.stringify(next));
+      } catch {}
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(move),
+      });
+      if (!response.ok) throw Error();
+      const snapshot: Snapshot = await response.json();
+      setLayout(snapshot.layout);
+      if (snapshot.modules) setPeer(snapshot.modules);
+    } catch {
+      setLayout(layout);
+      setError("No se pudo guardar el cambio. Inténtalo otra vez.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function link(id: Module, destination: Destination) {
+    const [label, path] = modules[id];
+    return (
+      <a
+        href={destination.href}
+        onClick={destination.onClick}
+        title={label}
+        aria-label={label}
+        aria-current={destination.active ? "page" : undefined}
+        className={`nav-item pulpo-module${destination.active ? " active" : ""}`}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d={path} />
+        </svg>
+        <span>{label}</span>
+      </a>
+    );
+  }
+
+  function drop(group: Group, before?: Movable) {
+    const id = dragged.current;
+    dragged.current = null;
+    if (id) void apply({ kind: "move", id, group, before });
+  }
+
+  const performance = resolve("performance", peer);
+  return (
+    <nav aria-label="Menú principal" className="pulpo-shared-menu">
+      {performance && link("performance", performance)}
+      <button
+        type="button"
+        className="pulpo-menu-edit"
+        aria-label={editing ? "Listo" : "Ordenar menú"}
+        title={editing ? "Listo" : "Ordenar menú"}
+        aria-pressed={editing}
+        disabled={server === null}
+        onClick={() => {
+          if (!editing) expand();
+          setEditing(!editing);
+        }}
+      >
+        <span aria-hidden="true">{editing ? "✓" : "↕"}</span>{" "}
+        <span>{editing ? "Listo" : "Ordenar menú"}</span>
+      </button>
+      {error && <p role="alert">{error}</p>}
+      {groups.map((group, index) => {
+        const visible = layout.order[group].flatMap((id) => {
+          const destination = resolve(id, peer);
+          return destination ? [{ id, destination }] : [];
+        });
+        const collapsed = !editing && layout.collapsed.includes(group);
+        if (!visible.length && !editing) return null;
+        return (
+          <section
+            key={group}
+            data-color={index}
+            className="pulpo-menu-group"
+            onDragOver={(event) => {
+              if (editing && dragged.current) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              drop(group);
+            }}
+          >
+            <button
+              type="button"
+              className="pulpo-menu-band"
+              aria-expanded={!collapsed}
+              aria-label={group}
+              title={group}
+              disabled={busy || editing || server === null}
+              onClick={() =>
+                void apply({ kind: "toggle", group, collapsed: !collapsed })
+              }
+            >
+              <span aria-hidden="true" className="pulpo-group-chevron">
+                {collapsed ? "›" : "⌄"}
+              </span>
+              <span>{group}</span>
+            </button>
+            {!collapsed &&
+              visible.map(({ id, destination }, itemIndex) => (
+                <div
+                  key={id}
+                  className="pulpo-menu-row"
+                  draggable={editing && !busy}
+                  onDragStart={(event) => {
+                    dragged.current = id;
+                    event.dataTransfer.setData("text/plain", id);
+                  }}
+                  onDragEnd={() => {
+                    dragged.current = null;
+                  }}
+                  onDragOver={(event) => {
+                    if (editing && dragged.current) event.preventDefault();
+                  }}
+                  onDrop={(event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    drop(group, id);
+                  }}
+                >
+                  {link(id, destination)}
+                  {editing && (
+                    <div className="pulpo-menu-move">
+                      <button
+                        type="button"
+                        aria-label={`Subir ${modules[id][0]}`}
+                        disabled={busy || !itemIndex}
+                        onClick={() =>
+                          void apply({
+                            kind: "move",
+                            id,
+                            group,
+                            before: visible[itemIndex - 1]?.id,
+                          })
+                        }
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Bajar ${modules[id][0]}`}
+                        disabled={busy || itemIndex === visible.length - 1}
+                        onClick={() =>
+                          void apply({
+                            kind: "move",
+                            id,
+                            group,
+                            before: visible[itemIndex + 2]?.id,
+                          })
+                        }
+                      >
+                        ↓
+                      </button>
+                      <select
+                        aria-label={`Grupo de ${modules[id][0]}`}
+                        value={group}
+                        disabled={busy}
+                        onChange={(event) =>
+                          void apply({
+                            kind: "move",
+                            id,
+                            group: event.target.value as Group,
+                          })
+                        }
+                      >
+                        {groups.map((target) => (
+                          <option key={target}>{target}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ))}
+          </section>
+        );
+      })}
+    </nav>
+  );
+}

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance"] as const;
+const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance", "projects", "library", "trash", "courses-ai", "fixed-costs"] as const;
 type WorkspaceView = (typeof workspaceViews)[number];
 
 type Assertion = {
@@ -46,7 +46,7 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
   }
 }
 
-export function linkedGeneratorUser(links: string, assertion: Assertion) {
+export function linkedGeneratorUser(links: string, assertion: Pick<Assertion, "sub" | "email">) {
   try {
     const directory = JSON.parse(links);
     const link = Object.hasOwn(directory, assertion.sub) ? directory[assertion.sub] : null;
@@ -54,4 +54,17 @@ export function linkedGeneratorUser(links: string, assertion: Assertion) {
   } catch {
     return null;
   }
+}
+
+
+export function linkedMessagingUser(user: { id: string; email: string; pulpoUserId: string | null }) {
+  if (user.pulpoUserId) return user.pulpoUserId;
+  const links = process.env.PULPO_GENERATOR_LINKS || "";
+  try {
+    const mapping = JSON.parse(links);
+    const candidates = Object.keys(mapping).filter((sub) => linkedGeneratorUser(links, {
+      sub, email: user.email.trim().toLowerCase(),
+    }) === user.id);
+    return candidates.length === 1 ? candidates[0] : null;
+  } catch { return null; }
 }
