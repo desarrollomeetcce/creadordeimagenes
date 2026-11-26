@@ -174,9 +174,13 @@ export function AdvisorPeriodSignals({
   }
   const activityResult = activity?.key === activityKey ? activity : null;
   const whatsapp = activityResult?.data?.items ?? [];
-  const countries = [...new Set([...groups.keys(), ...whatsapp.map((item) => item.country).filter(Boolean)])]
+  const countries = [...new Set([...groups.keys(), ...whatsapp.map((item) => item.country).filter(Boolean), ...(activityResult?.data?.totals ?? []).map((item) => item.country).filter(Boolean)])]
     .sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), "es"));
   const selectedCountry = countries.includes(country) ? country : "";
+  const activityTotals = activityResult?.data?.totals;
+  const whatsappTotal = selectedCountry
+    ? activityTotals?.find((item) => item.country === selectedCountry)?.contacts
+    : activityTotals?.reduce((total, item) => total + item.contacts, 0);
   const ranked = (selectedCountry ? [...(groups.get(selectedCountry) ?? [])] : [...groups.values()].flat())
     .sort((a, b) =>
       Number(b.currentAssignment && b.campaignActive) - Number(a.currentAssignment && a.campaignActive) ||
@@ -420,7 +424,10 @@ export function AdvisorPeriodSignals({
                           {item.metaBase?.toLocaleString("es-PE") ?? "—"}
                           {item.metaBasePartial && <small>Parcial</small>}
                         </td>
-                        <td className="advisor-diploma-base">{item.sales?.toLocaleString("es-PE") ?? "—"}</td>
+                        <td className="advisor-diploma-base">
+                          {(item.sales ?? item.recordedSales)?.toLocaleString("es-PE") ?? "—"}
+                          {item.sales === null && item.recordedSales !== null && <small>Total del diplomado</small>}
+                        </td>
                         <td className="advisor-diploma-base">{contactsByProduct.get(item.key)?.toLocaleString("es-PE") ?? "—"}</td>
                         <td>
                           <button
@@ -556,6 +563,9 @@ export function AdvisorPeriodSignals({
           )}
           {!activityResult && <p role="status" className="hint">Cargando contactos de WhatsApp…</p>}
           {activityResult && !activityResult.data && <p className="hint">Contactos de WhatsApp no disponibles para esta cuenta vinculada.</p>}
+          {whatsappTotal !== undefined && (
+            <p className="hint">Contactos de WhatsApp del período: <strong>{whatsappTotal}</strong>. Incluye contactos sin diplomado identificado.</p>
+          )}
           {activityResult?.data?.truncated && <p className="hint">WhatsApp muestra las 500 etiquetas con más actividad.</p>}
         </>
       )}

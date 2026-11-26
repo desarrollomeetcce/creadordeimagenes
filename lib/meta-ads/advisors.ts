@@ -1321,6 +1321,7 @@ async function readAdvisorSheet(
         current: boolean;
         lastStateChange: string | null;
         catalogKey: [string, string] | null;
+        recordedSales: number | null;
       }> = {};
       if (scopedInventoryRows.size) {
         const [aliases, rates] = await Promise.all([
@@ -1358,7 +1359,14 @@ async function readAdvisorSheet(
           const base = baseRange.since === evaluationRange.since && baseRange.until === evaluationRange.until
             ? evaluation
             : inventoryCacSummary({ ...input, ...baseRange });
+          const recordedSales = actor.role === "OWNER"
+            ? Object.entries(row.days).reduce<number | null>((total, [day, cell]) =>
+                day >= baseRange.since && day <= baseRange.until && cell.sales !== null && !cell.na.includes("sales")
+                  ? (total ?? 0) + cell.sales
+                  : total, null)
+            : null;
           inventoryStatus[key] = {
+            recordedSales,
             status: evaluation.meta.assessment.status,
             base: base.metaBase,
             basePartial: base.metaBasePartial,

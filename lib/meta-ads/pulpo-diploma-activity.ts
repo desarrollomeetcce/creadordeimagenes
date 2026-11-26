@@ -13,6 +13,7 @@ const activity = z.object({
     links: z.array(z.tuple([z.string(), z.string()])),
   })).max(500),
   truncated: z.boolean(),
+  totals: z.array(z.object({ country: z.string(), contacts: z.number().int().nonnegative() })).optional(),
 });
 
 export async function pulpoDiplomaActivity(actorId: string, advisorId: string, from: string, to: string) {

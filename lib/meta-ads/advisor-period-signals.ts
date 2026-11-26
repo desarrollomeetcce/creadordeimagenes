@@ -214,13 +214,14 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
               currentAssignment: (entry ?? status)?.current === true,
               recentlyChanged: !!changedDay && changedDay >= since && changedDay <= until,
               sales: sales.length ? sales.reduce((sum, value) => sum + value, 0) : null,
+              recordedSales: entry?.recordedSales ?? null,
               notes: notes
                 .filter((note) => same(note) === key)
                 .map(({ id, day, body }) => ({ id, day, body })),
             };
           })
           .filter((item) => section !== "products" || item.currentAssignment ||
-            item.recentlyChanged || (item.metaBase ?? 0) > 0 || (item.sales ?? 0) > 0)
+            item.recentlyChanged || (item.metaBase ?? 0) > 0 || (item.sales ?? 0) > 0 || (item.recordedSales ?? 0) > 0)
       : [],
   };
 }
