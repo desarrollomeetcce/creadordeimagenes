@@ -10,8 +10,9 @@ type Grant = {
   nonce?: string;
   linkedId?: string;
 };
-type Audience = "preferences" | "access" | "open-crm" | "session-access" | "messaging-session-access";
+type Audience = "preferences" | "access" | "open-crm" | "session-access" | "messaging-session-access" | "pull-generator-users" | "merge-pulpo-users";
 const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
+const directoryAudience = (audience: Audience) => audience === "pull-generator-users" || audience === "merge-pulpo-users";
 function key() {
   const value = process.env.PULPO_GENERATOR_SSO_KEY;
   return value && /^[a-f\d]{64}$/i.test(value)
@@ -35,7 +36,7 @@ export function signMenu(
       move,
       module,
       linkedId,
-      ...(module ? { nonce: randomBytes(18).toString("base64url") } : {}),
+      ...(module || directoryAudience(audience) ? { nonce: randomBytes(18).toString("base64url") } : {}),
       exp: Math.floor(Date.now() / 1000) + 20,
     }),
   ).toString("base64url");
@@ -77,6 +78,10 @@ export function verifyMenu(
       data.exp > now + 30
     )
       return null;
+    if (directoryAudience(audience)) {
+      if (typeof data.nonce !== "string" || !/^[\w-]{24}$/.test(data.nonce)) return null;
+      return { sub: data.sub, email: data.email, exp: data.exp, nonce: data.nonce };
+    }
     if (audience === "messaging-session-access") {
       if (data.linkedId !== undefined && (typeof data.linkedId !== "string" || !uuid.test(data.linkedId))) return null;
       return { sub: data.sub, email: data.email, exp: data.exp, linkedId: data.linkedId };

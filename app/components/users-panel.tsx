@@ -209,8 +209,13 @@ export function UsersPanel({ role }: { role: string }) {
         </div>
         {isOwner && <button type="button" disabled={busy} onClick={() => void run(async () => {
           const result = await api("users/sync-messaging", "POST", {});
-          return `${result.linked} vinculados con Mensajería, ${result.conflicts} con rol por confirmar y ${result.pending} pendientes.`;
-        })}>Sincronizar usuarios con Mensajería</button>}
+          if (!result.outgoing) return "Falta configurar la conexión compartida con Mensajería.";
+          const describe = (direction: string, counts: { linked: number; conflicts: number; pending: number }) =>
+            `${direction}, ${counts.linked} vinculados, ${counts.conflicts} con rol por confirmar y ${counts.pending} pendientes.`;
+          return describe("Desde Mensajería", result.outgoing) + " " + (result.incoming
+            ? describe("Desde Generador", result.incoming)
+            : "No se pudo comprobar el directorio de Generador. Puedes reintentar.");
+        })}>Sincronizar usuarios</button>}
       </div>
       <WorkspaceHeaderNavigation>
         <nav className="account-app-tabs" aria-label="Usuarios y accesos">

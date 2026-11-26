@@ -8,6 +8,7 @@ import { rateLimit } from "./auth";
 import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
 import { issuePasswordReset } from "./accounts";
 import { linkedMessagingUser } from "./pulpo-sso";
+import { signMenu } from "./pulpo-menu-token";
 import { syncMessagingUser, syncMessagingRole } from "./pulpo-messaging-users";
 
 const role = z.enum([
@@ -131,23 +132,17 @@ export async function userManagement(
       where: { id: actor.id, role: "OWNER", status: "APPROVED", archivedAt: null },
       select: { id: true, email: true, pulpoUserId: true },
     });
-    demand(issuer && linkedMessagingUser(issuer), "Primero vincula tu cuenta de Owner con Mensajería.", 403);
-    const candidates = await db.user.findMany({
-      where: { status: "APPROVED", archivedAt: null, pulpoUserId: null },
-      select: { id: true }, orderBy: { id: "asc" },
-    });
-    let cursor = 0;
-    let linked = 0;
-    let conflicts = 0;
-    await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
-      while (cursor < candidates.length) {
-        const account = candidates[cursor++];
-        const result = await syncMessagingUser(issuer.id, account.id);
-        if (result.state === "linked") linked++;
-        if (result.state === "role-conflict") conflicts++;
-      }
-    }));
-    return send({ linked, conflicts, pending: candidates.length - linked - conflicts });
+    const id = issuer && linkedMessagingUser(issuer);
+    demand(issuer && id, "Primero vincula tu cuenta de Owner con Mensajería.", 403);
+    const authorization = signMenu("merge-pulpo-users", id, issuer.email.trim().toLowerCase());
+    demand(authorization, "Falta configurar la conexión compartida con Mensajería.", 503);
+    const response = await fetch("https://pulpo.agenciamagneto.org/api/integrations/sync-directory", {
+      method: "POST", headers: { Authorization: authorization }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(90000),
+    }).catch(() => null);
+    demand(response?.ok, response?.status === 403
+      ? "La cuenta debe ser Owner y estar vinculada en ambas aplicaciones."
+      : "No se pudo confirmar la sincronización con Mensajería. Actualiza el directorio y vuelve a intentar.", 503);
+    return send(await response.json());
   }
   if (parts.length === 3 && parts[2] === "shared-role" && req.method === "POST") {
     demand(actor.role === "OWNER", "Solo Owner puede cambiar roles compartidos.", 403);

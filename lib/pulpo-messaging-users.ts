@@ -6,6 +6,25 @@ import { signDirectory } from "./pulpo-directory-token";
 
 export type MessagingSync = { state: "linked" | "role-conflict" | "verify" | "pending" | "unconfigured" | "role-denied" };
 
+export async function importGeneratorUsersIntoMessaging(issuerId: string) {
+  const candidates = await db.user.findMany({
+    where: { status: "APPROVED", archivedAt: null, pulpoUserId: null },
+    select: { id: true }, orderBy: { id: "asc" },
+  });
+  let cursor = 0;
+  let linked = 0;
+  let conflicts = 0;
+  await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
+    while (cursor < candidates.length) {
+      const account = candidates[cursor++];
+      const result = await syncMessagingUser(issuerId, account.id);
+      if (result.state === "linked") linked++;
+      if (result.state === "role-conflict") conflicts++;
+    }
+  }));
+  return { linked, conflicts, pending: candidates.length - linked - conflicts };
+}
+
 export async function syncMessagingRole(actorId: string, userId: string, role: string, expectedRole: string): Promise<MessagingSync> {
   const [issuer, account] = await Promise.all([
     db.user.findUnique({ where: { id: actorId } }), db.user.findUnique({ where: { id: userId } }),
