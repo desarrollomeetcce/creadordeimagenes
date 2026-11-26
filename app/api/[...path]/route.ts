@@ -1,3 +1,4 @@
+import { linkedMessagingUser } from "@/lib/pulpo-sso";
 import { hasAiModuleAccess } from "@/lib/roles";
 import {libraryJobAccess} from "@/lib/library-access";
 import {libraryImageVisibility} from "@/lib/library-visibility";
@@ -664,6 +665,7 @@ async function handle(
         email: user.email,
         role: user.role,
         aiAccessEnabled: user.aiAccessEnabled,
+        messagingLinked: Boolean(linkedMessagingUser(user)),
         ...grants,
       });
     }

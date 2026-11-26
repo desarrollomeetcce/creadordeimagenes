@@ -44,7 +44,9 @@ export function SidebarAccount({
     return () => window.removeEventListener("resize", resize);
   }, [open]);
   const item = (v: string, icon: string, label: string) => {
-    const active = view === v || (v === "website" && ["mail", "payments"].includes(view));
+    const active = view === v ||
+      (v === "website" && ["mail", "payments"].includes(view)) ||
+      (label === "Auditoría" && ["visual-audit", "campaign-audit", "history"].includes(view));
     return (
       <a
         key={v}
@@ -132,16 +134,8 @@ export function SidebarAccount({
               {item("website", "◈", "Páginas")}
             </>
           )}
-          {(history || user.role === "OWNER") && (
-            <details open={["visual-audit", "campaign-audit", "history"].includes(view)}>
-              <summary>▧ Auditoría</summary>
-              <nav aria-label="Auditoría">
-                {user.role === "OWNER" && item("visual-audit", "▧", "Visual")}
-                {user.role === "OWNER" && item("campaign-audit", "↗", "Campañas")}
-                {history && item("history", "◷", "Historial")}
-              </nav>
-            </details>
-          )}
+          {(history || user.role === "OWNER") &&
+            item(user.role === "OWNER" ? "visual-audit" : "history", "▧", "Auditoría")}
           {managesUsers(user.role) && (
             <div className="sidebar-admin-group">
               <small>Equipo</small>

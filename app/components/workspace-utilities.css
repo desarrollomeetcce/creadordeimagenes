@@ -19,3 +19,15 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
   color: var(--selection-ink);
   border-color: var(--selection);
 }
+
+.account-app-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.account-app-tabs [aria-current="page"] {
+  background: var(--selection-soft);
+  color: var(--selection-ink);
+  border-color: var(--selection);
+}

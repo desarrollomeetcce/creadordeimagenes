@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance", "projects", "library", "trash", "courses-ai", "fixed-costs", "ai", "usage"] as const;
+const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance", "projects", "library", "trash", "courses-ai", "fixed-costs", "ai", "usage", "account", "website", "visual-audit"] as const;
 type WorkspaceView = (typeof workspaceViews)[number];
 
 type Assertion = {

@@ -88,7 +88,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -598,6 +598,12 @@ export default function Home() {
               <CreativeStudio userId={user.id}/>
             ) : view === "account" ? (
               <>
+                {user.messagingLinked && (
+                  <nav className="account-app-tabs" aria-label="Mi cuenta">
+                    <a className="button" href="/api/pulpo/open-crm?module=account">Pulpo Mensajería</a>
+                    <span className="button" aria-current="page">Pulpo Generador</span>
+                  </nav>
+                )}
                 <AccountSecurity onChanged={reloadUser} />
                 {user.role === "OWNER" && (
                   <>

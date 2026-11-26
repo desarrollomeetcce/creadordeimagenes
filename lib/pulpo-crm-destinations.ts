@@ -10,6 +10,7 @@ export const crmDestinations = {
   "funnel-labels": "/?section=Etiquetas",
   "bot-costs": "/?section=Costos%20de%20IA",
   "bot-ai": "/?section=Ajustes%20IA",
+  account: "/account",
   contacts: "/?section=Contactos%20y%20CRM",
 } as const;
 
