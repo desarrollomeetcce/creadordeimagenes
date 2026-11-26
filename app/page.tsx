@@ -642,7 +642,15 @@ export default function Home() {
             ) : view === "history" ? (
               <History />
             ) : view === "usage" ? (
-              <Usage />
+              <>
+                {user.role === "OWNER" && (
+                  <nav className="account-app-tabs" aria-label="Costos de IA">
+                    <a className="button" href="/api/pulpo/open-crm?module=bot-costs">Bot de Mensajería</a>
+                    <span className="button" aria-current="page">Pulpo Generador</span>
+                  </nav>
+                )}
+                <Usage />
+              </>
             ) : view === "statistics" && user.role === "OWNER" ? (
               <StatisticsPanel />
             ) : view === "jobs" ? (

@@ -9,6 +9,7 @@ export function SidebarAccount({
 }: {
   user: {
     aiAccessEnabled?: boolean;
+    messagingLinked?: boolean;
     name: string;
     role: keyof typeof roleLabels;
   };
@@ -28,11 +29,6 @@ export function SidebarAccount({
     });
   const ai = hasAiModuleAccess(user),
     history = ai && !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role);
-  const settings = [
-    ...(user.role === "OWNER"
-      ? [["ai", "⚙", "Ajustes de IA"]]
-      : []),
-  ];
   const close = () => panel.current?.hidePopover();
   useEffect(() => {
     panel.current?.hidePopover();
@@ -107,27 +103,13 @@ export function SidebarAccount({
         aria-label="Opciones de cuenta"
       >
         <div className="sidebar-account-actions">
-          {settings.length > 0 && (
-            <details>
-              <summary>⚙ Ajustes</summary>
-              <nav aria-label="Ajustes">
-                {settings.map(([v, icon, label]) => item(v, icon, label))}
-              </nav>
-            </details>
+          {user.role === "OWNER" && item("ai", "⚙", "Ajustes IA")}
+          {user.messagingLinked && (
+            <a className="sidebar-account-link" href="/api/pulpo/open-crm?module=settings" onClick={close}>
+              <span aria-hidden="true">⚙</span><span>Configuración</span>
+            </a>
           )}
-          {(history || user.role === "OWNER") && (
-            <details open={view === "usage"}>
-              <summary>↗ Costos de IA</summary>
-              <nav aria-label="Costos de IA">
-                {history && item("usage", "↗", "Pulpo Generador")}
-                {user.role === "OWNER" && (
-                  <a className="sidebar-account-link" href="/api/pulpo/open-crm?module=bot-costs">
-                    <span>Bot de Mensajería</span>
-                  </a>
-                )}
-              </nav>
-            </details>
-          )}
+          {history && item("usage", "↗", "Costos de IA")}
           {user.role === "OWNER" && (
             <>
               {item("statistics", "▥", "Estadísticas")}
@@ -136,24 +118,7 @@ export function SidebarAccount({
           )}
           {(history || user.role === "OWNER") &&
             item(user.role === "OWNER" ? "visual-audit" : "history", "▧", "Auditoría")}
-          {managesUsers(user.role) && (
-            <div className="sidebar-admin-group">
-              <small>Equipo</small>
-              {item("users", "♙", "Usuarios y accesos")}
-              <a
-                className="sidebar-account-link"
-                href="https://pulpo.agenciamagneto.org/users"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Abrir Usuarios y acceso de Pulpo en una pestaña nueva"
-                onClick={close}
-              >
-                <span aria-hidden="true">↗</span>
-                <span>Usuarios de Pulpo</span>
-              </a>
-
-            </div>
-          )}
+          {managesUsers(user.role) && item("users", "♙", "Usuarios y accesos")}
           {item("account", "♙", "Mi cuenta")}
           {ai &&
             !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role) &&

@@ -147,45 +147,32 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
             Una fila por persona. Guarda rol, estado y plan con un solo botón.
           </p>
         </div>
-        <a
-          className="users-plans-link"
-          href="https://pulpo.agenciamagneto.org/users"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Abrir Usuarios y acceso de Pulpo en una pestaña nueva"
-        >
-          Usuarios de Pulpo ↗
-        </a>
       </div>
-      {isOwner && (
-        <nav
-          className="users-section-tabs"
-          aria-label="Administración de usuarios y planes"
+      <nav className="account-app-tabs" aria-label="Usuarios y accesos">
+        <a className="button" href="/api/pulpo/open-crm?module=users">Pulpo Mensajería</a>
+        <button
+          type="button"
+          aria-current={section !== "plans" || !isOwner ? "page" : undefined}
+          onClick={() => {
+            if (section === "plans") {
+              setSection("users");
+              void refresh();
+              void api("plans").then(setPlans).catch((e) => setMessage(e.message));
+            }
+          }}
         >
+          Pulpo Generador
+        </button>
+        {isOwner && (
           <button
             type="button"
-            aria-pressed={section === "users"}
-            onClick={() => {
-              if (section !== "users") {
-                setSection("users");
-                void refresh();
-                void api("plans")
-                  .then(setPlans)
-                  .catch((e) => setMessage(e.message));
-              }
-            }}
-          >
-            ♙ Usuarios y accesos
-          </button>
-          <button
-            type="button"
-            aria-pressed={section === "plans"}
+            aria-current={section === "plans" ? "page" : undefined}
             onClick={() => setSection("plans")}
           >
-            ◈ Planes de IA
+            Planes de IA
           </button>
-        </nav>
-      )}
+        )}
+      </nav>
       {section === "plans" && isOwner ? (
         <PlanSettings />
       ) : (

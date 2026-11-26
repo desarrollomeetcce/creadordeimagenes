@@ -33,7 +33,7 @@ test("separates provisioning credentials from browser sign-in", () => {
 });
 test("accepts only signed, known workspace views on the normal sign-in path", () => {
   assert.equal(verifyPulpoAssertion(sign({ view: "products" }), key, 100)?.view, "products");
-  for (const view of ["usage", "account", "website", "visual-audit"])
+  for (const view of ["usage", "account", "website", "visual-audit", "users", "statistics", "plans"])
     assert.equal(verifyPulpoAssertion(sign({ view }), key, 100)?.view, view);
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "advisor" }), key, 100)?.panel, "advisor");
   assert.equal(verifyPulpoAssertion(sign({ view: "performance", panel: "products" }), key, 100)?.panel, "products");

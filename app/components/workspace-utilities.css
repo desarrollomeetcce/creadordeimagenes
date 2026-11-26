@@ -22,6 +22,7 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
 
 .account-app-tabs {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
