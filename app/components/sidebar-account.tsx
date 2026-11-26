@@ -42,7 +42,7 @@ export function SidebarAccount({
   const item = (v: string, icon: string, label: string) => {
     const active = view === v ||
       (v === "website" && ["mail", "payments"].includes(view)) ||
-      (label === "Auditoría" && ["visual-audit", "campaign-audit", "history"].includes(view));
+      ((v === "visual-audit" || v === "history") && ["visual-audit", "campaign-audit", "history"].includes(view));
     return (
       <a
         key={v}
@@ -104,7 +104,7 @@ export function SidebarAccount({
       >
         <div className="sidebar-account-actions">
           {user.role === "OWNER" && item("ai", "⚙", "Ajustes IA")}
-          {user.messagingLinked && (
+          {(user.messagingLinked || user.role === "OWNER") && (
             <a className="sidebar-account-link" href="/api/pulpo/open-crm?module=settings" onClick={close}>
               <span aria-hidden="true">⚙</span><span>Configuración</span>
             </a>
@@ -113,11 +113,11 @@ export function SidebarAccount({
           {user.role === "OWNER" && (
             <>
               {item("statistics", "▥", "Estadísticas")}
-              {item("website", "◈", "Páginas")}
+              {item("website", "◈", "Página: planes, correo y pago")}
             </>
           )}
           {(history || user.role === "OWNER") &&
-            item(user.role === "OWNER" ? "visual-audit" : "history", "▧", "Auditoría")}
+            item(user.role === "OWNER" ? "visual-audit" : "history", "▧", "Auditoría de contenido")}
           {managesUsers(user.role) && item("users", "♙", "Usuarios y accesos")}
           {item("account", "♙", "Mi cuenta")}
           {ai &&
