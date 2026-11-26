@@ -75,12 +75,11 @@ async function api(
   return b;
 }
 export function AISettingsHub({ posters }: { posters: ReactNode }) {
-  const [tab, setTab] = useState("connections"),
+  const [tab, setTab] = useState<string | null>(null),
     [posterOpen, setPosterOpen] = useState(false);
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("aiTab");
-    if (["connections", "posters", "courses"].includes(value ?? ""))
-      setTab(value!);
+    setTab(value === "posters" || value === "courses" ? value : "connections");
   }, []);
   return (
     <section className="ai-hub">
@@ -98,9 +97,9 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
       </header>
       <nav className="ai-hub-tabs" aria-label="Secciones de Ajustes IA">
         {[
-          ["connections", "⚡ Conexiones"],
-          ["posters", "▧ Afiches"],
-          ["courses", "▣ Cursos · texto, voz y video"],
+          ["connections", "Conexiones de contenido IA"],
+          ["posters", "Afiches"],
+          ["courses", "Cursos · texto, voz y video"],
         ].map(([id, name]) => (
           <button
             type="button"
@@ -115,7 +114,7 @@ export function AISettingsHub({ posters }: { posters: ReactNode }) {
           Bot de Mensajería
         </a>
       </nav>
-      {tab === "connections" ? (
+      {tab === null ? null : tab === "connections" ? (
         <UnifiedConnections />
       ) : tab === "posters" ? (
         <section>
