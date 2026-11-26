@@ -75,6 +75,7 @@ export async function performanceSettings(actor: Actor) {
     db.user.findMany({
       where: {
         status: "APPROVED",
+        archivedAt: null,
         role: { in: ["ADVISOR", "USER", "OBSERVER"] },
       },
       select: {
@@ -115,6 +116,7 @@ export async function savePortalLink(actor: Actor, input: unknown) {
           where: {
             id: b.userId,
             status: "APPROVED",
+            archivedAt: null,
             role: { in: ["ADVISOR", "USER", "OBSERVER"] },
           },
         }),

@@ -88,6 +88,13 @@ function AdvisorManagementRow({
             }}
           >
             <h4>Vincular una cuenta existente</h4>
+            {accountRole === "OWNER" && (
+              <p className="hint">
+                Si falta una cuenta, verifica su vínculo en{" "}
+                <a href="/api/pulpo/open-crm?module=users">Usuarios y accesos de Mensajería</a>{" "}
+                y vuelve a actualizar el equipo.
+              </p>
+            )}
             <SheetSearchSelect
               label={"Cuenta de " + person.name}
               disabled={busy}
@@ -175,6 +182,7 @@ export function PerformanceTeam({
 }) {
   const [data, setData] = useState<Team | null>(null),
     [search, setSearch] = useState(""),
+    [refreshing, setRefreshing] = useState(false),
     [error, setError] = useState("");
   async function load() {
     const result: Team = await api("meta-ads/my-performance/settings");
@@ -249,6 +257,22 @@ export function PerformanceTeam({
             <span>
               {people.length} de {data.people.length} asesores
             </span>
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={async () => {
+                setRefreshing(true);
+                try {
+                  await load();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "No se pudo actualizar el equipo.");
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+            >
+              {refreshing ? "Actualizando…" : "Actualizar cuentas"}
+            </button>
           </div>
           {people.length ? (
             people.map((person) => (
