@@ -3,6 +3,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { POST } from "../app/api/pulpo/provision-user/route";
 import { db } from "../lib/db";
+import { performanceSettings, savePortalLink } from "../lib/meta-ads/advisor-performance";
 
 test("requires a linked Owner to reconcile roles and preserves module grants", async () => {
   assert.match(process.env.DATABASE_URL ?? "", /127\.0\.0\.1:5432\/generator_shared_role_qa_\d+$/);
@@ -44,6 +45,15 @@ test("requires a linked Owner to reconcile roles and preserves module grants", a
     assert.deepEqual(await send(owner, "ADMIN", { ...confirmation, expected: "OWNER" }), { state: "last-owner" });
     assert.deepEqual(await send(observer, "OBSERVER"), { state: "linked" });
     assert.equal((await db.user.findUniqueOrThrow({ where: { email: observer.email } })).role, "OBSERVER");
+
+    const advisor = identity();
+    assert.deepEqual(await send(advisor, "ADVISOR"), { state: "linked" });
+    const account = await db.user.findUniqueOrThrow({ where: { email: advisor.email } });
+    const sheet = await db.metaEffectivenessSheet.create({ data: { kind: "ADVISORS", name: "Equipo de prueba" } });
+    const person = await db.metaAdvisor.create({ data: { name: "Asesora de prueba", sheetId: sheet.id } });
+    const actor = { id: issuer.id, role: issuer.role };
+    assert((await performanceSettings(actor)).accounts.some((candidate) => candidate.id === account.id));
+    assert.equal((await savePortalLink(actor, { advisorId: person.id, userId: account.id, revision: 0 })).userId, account.id);
   } finally {
     await db.$disconnect();
   }
