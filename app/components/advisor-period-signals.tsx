@@ -154,6 +154,7 @@ export function AdvisorPeriodSignals({ advisorId }: { advisorId?: string }) {
               effectivenessTarget={performance.goal}
               partial={summary.partial}
               salesTarget={performance.salesTarget}
+              awaitingSales={summary.awaitingSales}
               salesStatus={summary.dailySalesGoal}
               previous={
                 view === "today"

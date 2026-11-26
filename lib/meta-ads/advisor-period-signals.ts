@@ -84,6 +84,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
     return {
       percent: performanceRatio(sales, base?.value ?? null, 100),
       partial,
+      awaitingSales: sales === null && !row?.na,
       dailySalesGoal: advisorGoalStatus(
         sales,
         target?.salesTarget ?? null,

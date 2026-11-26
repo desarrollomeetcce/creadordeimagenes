@@ -39,6 +39,7 @@ export function PerformanceMotivation({
   salesTarget,
   salesStatus,
   salesRemaining,
+  awaitingSales = false,
   previous,
 }: {
   percent: number | null;
@@ -47,6 +48,7 @@ export function PerformanceMotivation({
   salesTarget: number | null;
   salesStatus: GoalStatus;
   salesRemaining?: number;
+  awaitingSales?: boolean;
   previous?: { percent: number | null; partial: boolean };
 }) {
   const effectivenessStatus = advisorGoalStatus(
@@ -106,7 +108,9 @@ export function PerformanceMotivation({
     half: "Ya vas por la mitad de tu meta",
     decline: "¿Qué cambió en tu jornada?",
     start: "Cada seguimiento cuenta",
-    pending: "Tus metas, paso a paso",
+    pending: awaitingSales
+      ? "A la espera del registro de ventas"
+      : "Tus metas, paso a paso",
   }[stage];
   return (
     <section className="advisor-goals" aria-label="Metas del día">

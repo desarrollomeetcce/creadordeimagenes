@@ -322,6 +322,7 @@ function ManagedAdvisorPerformance({
                     effectivenessTarget={card.goal?.percent ?? null}
                     partial={card.partial}
                     salesTarget={card.salesTarget}
+                    awaitingSales={card.sales === null && !card.na}
                     salesStatus={advisorGoalStatus(
                       card.sales,
                       card.salesTarget,
