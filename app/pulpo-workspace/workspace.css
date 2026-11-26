@@ -5,3 +5,10 @@
 .pulpo-embedded .topbar {
   padding-inline: 12px;
 }
+
+body:has(.pulpo-embedded-sales) > .theme-toggle {
+  display: none;
+}
+.pulpo-embedded-sales.workspace {
+  width: 100%;
+}

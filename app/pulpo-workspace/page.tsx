@@ -11,15 +11,7 @@ export default async function EmbeddedWorkspace({
   searchParams: Promise<{ view?: string }>;
 }) {
   const { view } = await searchParams;
-  if (view === "products") {
-    return (
-      <p>
-        Ventas está disponible en{" "}
-        <a href="/?view=products" target="_blank" rel="noopener noreferrer">Pulpo Generador</a>.
-      </p>
-    );
-  }
-  if (view !== "metaads" && view !== "advisors")
+  if (view !== "metaads" && view !== "advisors" && view !== "products")
     return <p role="alert">Este módulo no está disponible en Pulpo.</p>;
 
   const user = await actor().catch(() => null);
@@ -28,6 +20,15 @@ export default async function EmbeddedWorkspace({
       <p role="alert">
         La sesión de Generador no está disponible. Vuelve a abrir el módulo
         desde Mensajería.
+        {view === "products" && (
+          <>
+            {" "}
+            <a href="/?view=products" target="_blank" rel="noopener noreferrer">
+              Iniciar sesión en Generador
+            </a>
+            .
+          </>
+        )}
       </p>
     );
 

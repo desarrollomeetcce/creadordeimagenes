@@ -57,10 +57,12 @@ export function ProductsCatalog({
   onSalesPeriod,
   initialAdvisorPeriod,
   initialTop = false,
+  embeddedShare = false,
 }: {
   module?: "sales" | "inventory" | "advisors";
   onSalesPeriod?: (period: AdvisorPeriodView) => void;
   initialTop?: boolean;
+  embeddedShare?: boolean;
   initialAdvisorPeriod?: AdvisorPeriodView | null;
 }) {
   const moduleKind =
@@ -704,6 +706,9 @@ export function ProductsCatalog({
         role="tablist"
         aria-label="Pestañas del libro"
       >
+        {embeddedShare && access?.isOwner && (
+          <button type="button" onClick={() => window.dispatchEvent(new Event("share-effectiveness"))}>Compartir Ventas</button>
+        )}
         {module === "sales" && (access?.isOwner || access?.global === "EDIT" ||
           access?.grants.some((grant) => grant.scope.startsWith("TABLE:") && grant.permission === "EDIT")) && (
           <button type="button" aria-haspopup="dialog" onClick={() => setPendingSalesOpen(true)}>Pendientes</button>
