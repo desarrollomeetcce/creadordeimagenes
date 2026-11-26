@@ -121,7 +121,17 @@ export function SharedPulpoMenu({
         className={`nav-item pulpo-module${destination.active ? " active" : ""}`}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d={path} />
+          {id === "performance" ? (
+            <>
+              <rect x="3" y="3" width="7" height="9" rx="1" />
+              <rect x="14" y="3" width="7" height="5" rx="1" />
+              <rect x="14" y="12" width="7" height="9" rx="1" />
+              <rect x="3" y="16" width="7" height="5" rx="1" />
+            </>
+          ) : (
+            <path d={path} />
+          )}
+          {id === "contacts" && <circle cx="9" cy="7" r="4" />}
         </svg>
         <span>{label}</span>
       </a>
@@ -138,7 +148,16 @@ export function SharedPulpoMenu({
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
       <div className="pulpo-menu-top">
-        {performance && link("performance", performance)}
+        {editing && (
+          <button
+            type="button"
+            className="pulpo-menu-restore"
+            disabled={busy}
+            onClick={() => void apply({ kind: "restore-groups" })}
+          >
+            Restablecer grupos
+          </button>
+        )}
         <button
           type="button"
           className="pulpo-menu-edit"
@@ -169,7 +188,8 @@ export function SharedPulpoMenu({
           return destination ? [{ id, destination }] : [];
         });
         const collapsed = !editing && layout.collapsed.includes(group);
-        if (!visible.length && !editing) return null;
+        const pinned = group === "CRM" ? performance : null;
+        if (!visible.length && !pinned && !editing) return null;
         return (
           <section
             key={group}
@@ -199,6 +219,7 @@ export function SharedPulpoMenu({
                 {collapsed ? "›" : "⌄"}
               </span>
             </button>
+            {!collapsed && pinned && link("performance", pinned)}
             {!collapsed &&
               visible.map(({ id, destination }, itemIndex) => (
                 <div

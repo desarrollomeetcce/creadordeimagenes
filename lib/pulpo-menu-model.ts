@@ -2,27 +2,30 @@ export const groups = ["CRM", "Marketing", "Publicidad", "Gestión"] as const;
 export type Group = (typeof groups)[number];
 
 export const modules = {
-  performance: ["Desempeño", "M3 3v18h18 M7 14l4-4 4 2 5-6"],
+  performance: ["Desempeño", ""],
   accounts: [
     "Subcuentas",
-    "m12 2 10 5-10 5L2 7l10-5 M2 12l10 5 10-5 M2 17l10 5 10-5",
+    "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12 M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17",
   ],
   conversations: [
     "Conversaciones",
-    "M21 11a8 8 0 0 1-8 8H7l-4 3v-6a8 8 0 0 1 7-13h3a8 8 0 0 1 8 8",
+    "M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",
   ],
   facebook: [
     "Facebook",
-    "M14 21v-8h3l1-4h-4V7c0-1 1-2 3-2h1V2h-3c-4 0-5 2-5 5v2H7v4h3v8",
+    "M21 11.5a9 9 0 0 1-9 9 10 10 0 0 1-3.7-.7L4 22v-5a8.7 8.7 0 0 1-1-5.5 9 9 0 0 1 18 0Z M7 14 4-5 3 3 3-3-4 6-3-3Z",
   ],
   calls: [
     "Llamadas",
-    "M5 3h4l2 5-3 2c1 3 3 5 6 6l2-3 5 2v4c0 2-2 2-4 2C10 21 3 14 3 7c0-2 0-4 2-4Z",
+    "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z",
   ],
-  books: ["Libros", "M2 4h8l2 2 2-2h8v15h-8l-2 2-2-2H2Z M12 6v15"],
+  books: [
+    "Libros",
+    "M12 7v14 M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+  ],
   contacts: [
     "Contactos y CRM",
-    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M18 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-4-4",
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
   ],
   metaads: ["Meta Ads", "m3 10 17-6v14L3 13v-3Z M6 14l2 7h4l-2-6 M20 9h2"],
   products: ["Ventas", "M3 3v18h18 M7 16v-4 M12 16V8 M17 16V5"],
@@ -50,6 +53,7 @@ export type Module = keyof typeof modules;
 export type Movable = Exclude<Module, "performance">;
 export type Layout = { order: Record<Group, Movable[]>; collapsed: Group[] };
 export type Move =
+  | { kind: "restore-groups" }
   | { kind: "move"; id: Movable; group: Group; before?: Movable }
   | { kind: "toggle"; group: Group; collapsed: boolean };
 
@@ -94,6 +98,7 @@ export const initialLayout: Layout = {
 export function readMove(value: unknown): Move | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Move;
+  if (v.kind === "restore-groups") return { kind: "restore-groups" };
   if (!groups.includes(v.group)) return null;
   const valid = (id: string) =>
     typeof id === "string" &&
@@ -111,6 +116,8 @@ export function readMove(value: unknown): Move | null {
 }
 
 export function changeLayout(layout: Layout, move: Move): Layout {
+  if (move.kind === "restore-groups")
+    return { ...layout, order: initialLayout.order };
   if (move.kind === "toggle")
     return {
       ...layout,
