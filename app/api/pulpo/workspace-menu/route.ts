@@ -6,6 +6,7 @@ import { availableGeneratorModules } from "@/lib/pulpo-generator-modules";
 import { linkedGeneratorUser, linkedMessagingUser } from "@/lib/pulpo-sso";
 import { signMenu, verifyMenu, requestMove } from "@/lib/pulpo-menu-token";
 import type { Move } from "@/lib/pulpo-menu-model";
+import { hasSharedCourses } from "@/lib/courses/sharing";
 
 const json = (data: unknown, status = 200) =>
   Response.json(data, {
@@ -35,13 +36,14 @@ const menuAccount = {
 } as const;
 
 async function authorizedModules(user: { id: string; role: string; aiAccessEnabled: boolean; advisorPortal: unknown; metaWorkspaceGrant: unknown }) {
-  const [fixedCostsShared, financialAccess] = await Promise.all([
+  const [fixedCostsShared, financialAccess, coursesShared] = await Promise.all([
     fixedCostNavigationAccess(user.id, user.role),
     financialNavigationAccess(user.id, user.role),
+    hasSharedCourses(user),
   ]);
   return availableGeneratorModules({
     ...user, advisorLinked: Boolean(user.advisorPortal), metaAdsShared: Boolean(user.metaWorkspaceGrant),
-    fixedCostsShared, ...financialAccess,
+    fixedCostsShared, coursesShared, ...financialAccess,
   });
 }
 
@@ -51,7 +53,11 @@ async function messaging(move?: Move, layoutOnly = false) {
   const email = user.email.trim().toLowerCase();
   const id = linkedMessagingUser(user);
   const token = id && signMenu("preferences", id, email, move);
-  if (!token) return json({}, 403);
+  const fallback = (status: number) => {
+    const sessionGrant = !layoutOnly && !move && signMenu("messaging-session-access", user.id, email, undefined, undefined, id ?? undefined);
+    return sessionGrant ? json({ sessionGrant }) : json({}, status);
+  };
+  if (!token) return fallback(403);
   try {
     const response = await fetch(
       "https://pulpo.agenciamagneto.org/api/workspace-menu",
@@ -63,11 +69,11 @@ async function messaging(move?: Move, layoutOnly = false) {
         signal: AbortSignal.timeout(4000),
       },
     );
-    if (!response.ok) return json({}, 403);
+    if (!response.ok) return fallback(403);
     const snapshot = await response.json();
     return json(layoutOnly ? { layout: snapshot.layout } : snapshot);
   } catch {
-    return json({}, 502);
+    return fallback(502);
   }
 }
 

@@ -42,11 +42,18 @@ export async function courseRoutes(
   u: { id: string; role: string },
   body: () => Promise<unknown>,
 ) {
-  await courseOwner(u);
   const p = parts.slice(1),
     method = req.method;
   const send = (v: unknown, status = 200) =>
     NextResponse.json(v, { status, headers: { "Cache-Control": "no-store" } });
+  if (p[0] === "shared" && p.length <= 2 && method === "GET")
+    return send(await (await import("./sharing")).sharedCourses(u, p[1]));
+  await courseOwner(u);
+  if (p.length === 2 && p[1] === "viewers") {
+    const sharing = await import("./sharing");
+    if (method === "GET") return send(await sharing.courseViewers(p[0]));
+    if (method === "PUT") return send(await sharing.setCourseViewer(u, p[0], await body()));
+  }
   if (p[0] === "vimeo" && p.length === 1) {
     const vimeo = await import("./vimeo");
     if (method === "GET") return send(await vimeo.vimeoConnection(u));

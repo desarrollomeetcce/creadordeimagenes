@@ -9,3 +9,11 @@ test("marketing entries follow the individual Generator permissions", () => {
   assert.deepEqual(availableGeneratorModules({ ...advisor, salesShared: true }), ["performance", "products"]);
   assert.deepEqual(availableGeneratorModules({ ...advisor, advisorsShared: true }), ["performance", "advisors"]);
 });
+
+test("Publicidad keeps role-based pages and shows Cursos IA only after a course is shared", () => {
+  const superadmin = { role: "SUPERADMIN" };
+  assert.deepEqual(availableGeneratorModules(superadmin), ["projects", "library", "trash"]);
+  assert.deepEqual(availableGeneratorModules({ ...superadmin, coursesShared: true }), ["projects", "library", "trash", "courses-ai"]);
+  assert.deepEqual(availableGeneratorModules({ ...superadmin, aiAccessEnabled: false, coursesShared: true }), ["courses-ai"]);
+  assert(!availableGeneratorModules({ role: "ADMIN", coursesShared: true }).includes("courses-ai"));
+});

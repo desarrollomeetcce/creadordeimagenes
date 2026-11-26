@@ -125,6 +125,30 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "messaging" && req.method === "POST")
     return send(await syncMessagingUser(actor.id, parts[1]));
+  if (parts.length === 2 && parts[1] === "sync-messaging" && req.method === "POST") {
+    demand(actor.role === "OWNER", "Solo Owner puede sincronizar el directorio.", 403);
+    const issuer = await db.user.findFirst({
+      where: { id: actor.id, role: "OWNER", status: "APPROVED", archivedAt: null },
+      select: { id: true, email: true, pulpoUserId: true },
+    });
+    demand(issuer && linkedMessagingUser(issuer), "Primero vincula tu cuenta de Owner con Mensajería.", 403);
+    const candidates = await db.user.findMany({
+      where: { status: "APPROVED", archivedAt: null, pulpoUserId: null },
+      select: { id: true }, orderBy: { id: "asc" },
+    });
+    let cursor = 0;
+    let linked = 0;
+    let conflicts = 0;
+    await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
+      while (cursor < candidates.length) {
+        const account = candidates[cursor++];
+        const result = await syncMessagingUser(issuer.id, account.id);
+        if (result.state === "linked") linked++;
+        if (result.state === "role-conflict") conflicts++;
+      }
+    }));
+    return send({ linked, conflicts, pending: candidates.length - linked - conflicts });
+  }
   if (parts.length === 3 && parts[2] === "shared-role" && req.method === "POST") {
     demand(actor.role === "OWNER", "Solo Owner puede cambiar roles compartidos.", 403);
     const b = z.object({ role, expectedRole: role }).strict().parse(await body());

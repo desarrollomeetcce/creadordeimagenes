@@ -21,6 +21,7 @@ enum AccountStatus {
   SUSPENDED
 }
 model User {
+ sharedCourses AICourseViewer[]
   diplomaApiKeys DiplomaApiKey[]
   fixedCostGrant FixedCostGrant?
   fixedCostSheetGrants FixedCostSheetGrant[]
@@ -1336,6 +1337,7 @@ model MetaAdvisorSupport {
 
 // Cursos IA is isolated: no relation to image jobs, Meta sync, or image quotas.
 model AICourse {
+ viewers AICourseViewer[]
   id String @id @default(cuid())
   actorId String
   title String
@@ -1353,6 +1355,14 @@ model AICourse {
   modules AICourseModule[]
   tasks AICourseTask[]
   @@index([archivedAt,updatedAt])
+}
+model AICourseViewer {
+  courseId String
+  userId String
+  course AICourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([courseId, userId])
+  @@index([userId])
 }
 model AICourseModule {
   renders AICourseRender[]

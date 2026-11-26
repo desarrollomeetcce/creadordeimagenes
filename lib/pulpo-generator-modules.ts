@@ -10,6 +10,7 @@ export function availableGeneratorModules(user: {
   inventoryShared?: boolean;
   advisorsShared?: boolean;
   fixedCostsShared?: boolean;
+  coursesShared?: boolean;
 }): Module[] {
   const owner = user.role === "OWNER";
   const restricted = ["ADVISOR", "SUPERVISOR"].includes(user.role);
@@ -26,5 +27,6 @@ export function availableGeneratorModules(user: {
     if (!observer) result.push("trash");
     if (owner) result.push("courses-ai");
   }
+  if (user.role === "SUPERADMIN" && user.coursesShared) result.push("courses-ai");
   return result;
 }

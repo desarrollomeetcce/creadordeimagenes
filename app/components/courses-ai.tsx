@@ -160,6 +160,38 @@ async function request(
   if (!r.ok) throw Error(data.error ?? "No se pudo completar la operación.");
   return data;
 }
+function CourseViewers({ course }: { course: Pick<Course, "id" | "title"> }) {
+  type Viewers = { users: { id: string; name: string; email: string }[]; granted: string[] };
+  const [viewers, setViewers] = useState<Viewers | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const path = "/" + encodeURIComponent(course.id) + "/viewers";
+  useEffect(() => {
+    const controller = new AbortController();
+    void request(path, undefined, "GET", controller.signal).then(setViewers)
+      .catch((failure) => { if (!controller.signal.aborted) setError(failure.message); });
+    return () => controller.abort();
+  }, [path]);
+  async function change(userId: string, allowed: boolean) {
+    setSaving(true);
+    setError("");
+    try { setViewers(await request(path, { userId, allowed }, "PUT")); }
+    catch (failure) { setError((failure as Error).message); }
+    finally { setSaving(false); }
+  }
+  return <>
+    <p>{course.title} · Permiso de lectura del temario</p>
+    {error && <p role="alert">{error}</p>}
+    {!viewers && !error && <p role="status">Consultando accesos…</p>}
+    {viewers && !viewers.users.length && <p>No hay Superadministradores activos.</p>}
+    {viewers && <ul className="courses-owner-list">
+      {viewers.users.map((user) => <li key={user.id}>
+        <label><input type="checkbox" checked={viewers.granted.includes(user.id)} disabled={saving}
+          onChange={(event) => void change(user.id, event.target.checked)} /> {user.name} · {user.email}</label>
+      </li>)}
+    </ul>}
+  </>;
+}
 function Window({
   title,
   children,
@@ -1516,9 +1548,6 @@ export function CoursesAI() {
     [moduleSize, setModuleSize] = useState(25),
     [resources, setResources] = useState<ResourceChoice[]>(defaultResources),
     [sharing, setSharing] = useState(false),
-    [owners, setOwners] = useState<
-      { id: string; name: string; email: string }[] | null
-    >(null),
     [newGroup, setNewGroup] = useState<CourseGroupId>("adults");
   const busyRef = useRef(false);
   const [moduleDetail, setModuleDetail] = useState<Module | null>(null);
@@ -1542,13 +1571,7 @@ export function CoursesAI() {
     [preview, setPreview] = useState(false),
     [promoId, setPromoId] = useState("");
   useEffect(() => {
-    const open = () => {
-      setSharing(true);
-      setOwners(null);
-      void request("/access")
-        .then((d) => setOwners(d.users))
-        .catch((e) => setError(e.message));
-    };
+    const open = () => setSharing(true);
     globalThis.window.addEventListener("share-courses", open);
     return () => globalThis.window.removeEventListener("share-courses", open);
   }, []);
@@ -2619,23 +2642,8 @@ export function CoursesAI() {
       )}
       {sharing && (
         <Window title="Compartir Cursos IA" onClose={() => setSharing(false)}>
-          <p>
-            Actualmente solo los OWNER aprobados con acceso a IA pueden ver
-            todas las categorías y cursos. Otros roles no tienen acceso.
-          </p>
-          {owners ? (
-            <ul className="courses-owner-list">
-              {owners.map((u) => (
-                <li key={u.id}>
-                  <strong>{u.name}</strong>
-                  <span>{u.email}</span>
-                  <small>OWNER · acceso completo</small>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p role="status">Consultando accesos…</p>
-          )}
+          {course && !libraryOnly ? <CourseViewers key={course.id} course={course} /> :
+            <p>Abre el curso que quieras compartir y vuelve a pulsar Compartir.</p>}
         </Window>
       )}
       {window === "new" && (

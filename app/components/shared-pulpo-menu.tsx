@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   changeLayout,
+  crmModules,
   groups,
   initialLayout,
   upgradeLayout,
@@ -20,7 +21,19 @@ type Destination = {
   active?: boolean;
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
 };
-type Snapshot = { layout: Layout; modules?: Module[]; sync?: boolean };
+type Snapshot = { layout?: Layout; modules?: Module[]; sync?: boolean; sessionGrant?: string };
+
+async function messagingSession(grant: string, signal: AbortSignal): Promise<Snapshot | null> {
+  try {
+    const response = await fetch("https://pulpo.agenciamagneto.org/api/workspace-menu", {
+      method: "POST", credentials: "include", headers: { Authorization: grant }, redirect: "error",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(4000)]),
+    });
+    if (!response.ok) return null;
+    const { layout, modules } = await response.json();
+    return Array.isArray(modules) ? { layout, modules: crmModules.filter((id) => modules.includes(id)) } : null;
+  } catch { return null; }
+}
 
 export function SharedPulpoMenu({
   endpoint,
@@ -30,11 +43,12 @@ export function SharedPulpoMenu({
 }: {
   endpoint: string;
   userId: string;
-  resolve: (id: Module, peer: Module[]) => Destination | null;
+  resolve: (id: Module, peer: Module[], fromSession: boolean) => Destination | null;
   expand: () => void;
 }) {
   const [layout, setLayout] = useState(initialLayout);
   const [peer, setPeer] = useState<Module[]>([]);
+  const [fromSession, setFromSession] = useState(false);
   const [server, setServer] = useState<boolean | null>(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -71,7 +85,7 @@ export function SharedPulpoMenu({
         return;
       const elapsed = Date.now() - peerCheckedAt;
       const checkPeer = force || !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
-      if (background && !shared && !checkPeer) return;
+      if (!shared && !checkPeer) return;
       const layoutOnly = !checkPeer;
       if (checkPeer) peerCheckedAt = Date.now();
       const current = revision.current;
@@ -93,12 +107,16 @@ export function SharedPulpoMenu({
         }
         const snapshot: Snapshot = await response.json();
         if (controller.signal.aborted || current !== revision.current) return;
-        setLayout(upgradeLayout(snapshot.layout));
+        if (snapshot.layout) setLayout(upgradeLayout(snapshot.layout));
         if (!layoutOnly) {
+          const session = snapshot.sessionGrant ? await messagingSession(snapshot.sessionGrant, controller.signal) : null;
+          if (controller.signal.aborted || current !== revision.current) return;
           ready = true;
           shared = snapshot.sync ?? Boolean(snapshot.modules?.length);
-          setPeer(snapshot.modules ?? []);
-          setServer(true);
+          if (session?.layout) setLayout(upgradeLayout(session.layout));
+          setPeer(session?.modules ?? snapshot.modules ?? []);
+          setFromSession(session !== null);
+          setServer(Boolean(snapshot.layout));
         }
       } catch {
         if (!controller.signal.aborted && !ready) setServer(false);
@@ -146,6 +164,7 @@ export function SharedPulpoMenu({
       });
       if (!response.ok) throw Error();
       const snapshot: Snapshot = await response.json();
+      if (!snapshot.layout) throw Error();
       setLayout(upgradeLayout(snapshot.layout));
       if (snapshot.modules) setPeer(snapshot.modules);
     } catch {
@@ -199,7 +218,7 @@ export function SharedPulpoMenu({
     if (id) void apply({ kind: "move", id, group, before });
   }
 
-  const performance = resolve("performance", peer);
+  const performance = resolve("performance", peer, fromSession);
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
       <div className="pulpo-menu-top">
@@ -223,7 +242,7 @@ export function SharedPulpoMenu({
           aria-label={editing ? "Listo" : "Ordenar menú"}
           title={editing ? "Listo" : "Ordenar menú"}
           aria-pressed={editing}
-          disabled={server === null}
+          disabled={server === null || fromSession}
           onClick={() => {
             if (!editing) expand();
             setEditing(!editing);
@@ -243,7 +262,7 @@ export function SharedPulpoMenu({
       {error && <p role="alert">{error}</p>}
       {groups.map((group) => {
         const visible = layout.order[group].flatMap((id) => {
-          const destination = resolve(id, peer);
+          const destination = resolve(id, peer, fromSession);
           return destination ? [{ id, destination }] : [];
         });
         const collapsed = !editing && layout.collapsed.includes(group);

@@ -207,6 +207,10 @@ export function UsersPanel({ role }: { role: string }) {
               : "Una fila por persona. Guarda rol, estado y plan con un solo botón."}
           </p>
         </div>
+        {isOwner && <button type="button" disabled={busy} onClick={() => void run(async () => {
+          const result = await api("users/sync-messaging", "POST", {});
+          return `${result.linked} vinculados con Mensajería, ${result.conflicts} con rol por confirmar y ${result.pending} pendientes.`;
+        })}>Sincronizar usuarios con Mensajería</button>}
       </div>
       <WorkspaceHeaderNavigation>
         <nav className="account-app-tabs" aria-label="Usuarios y accesos">

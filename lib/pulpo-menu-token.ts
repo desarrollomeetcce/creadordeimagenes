@@ -8,8 +8,10 @@ type Grant = {
   move?: Move;
   module?: string;
   nonce?: string;
+  linkedId?: string;
 };
-type Audience = "preferences" | "access" | "open-crm" | "session-access";
+type Audience = "preferences" | "access" | "open-crm" | "session-access" | "messaging-session-access";
+const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
 function key() {
   const value = process.env.PULPO_GENERATOR_SSO_KEY;
   return value && /^[a-f\d]{64}$/i.test(value)
@@ -22,6 +24,7 @@ export function signMenu(
   email: string,
   move?: Move,
   module?: string,
+  linkedId?: string,
 ) {
   const secret = key();
   if (!secret) return null;
@@ -31,6 +34,7 @@ export function signMenu(
       email,
       move,
       module,
+      linkedId,
       ...(module ? { nonce: randomBytes(18).toString("base64url") } : {}),
       exp: Math.floor(Date.now() / 1000) + 20,
     }),
@@ -65,7 +69,7 @@ export function verifyMenu(
     const now = Math.floor(Date.now() / 1000);
     if (
       typeof data.sub !== "string" ||
-      !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(data.sub) ||
+      !(audience === "messaging-session-access" ? /^[\w-]{1,100}$/ : uuid).test(data.sub) ||
       typeof data.email !== "string" ||
       !/^[^\s@]+@[^\s@]+$/.test(data.email) ||
       !Number.isSafeInteger(data.exp) ||
@@ -73,6 +77,10 @@ export function verifyMenu(
       data.exp > now + 30
     )
       return null;
+    if (audience === "messaging-session-access") {
+      if (data.linkedId !== undefined && (typeof data.linkedId !== "string" || !uuid.test(data.linkedId))) return null;
+      return { sub: data.sub, email: data.email, exp: data.exp, linkedId: data.linkedId };
+    }
     if (audience === "open-crm") {
       if (
         typeof data.module !== "string" ||
