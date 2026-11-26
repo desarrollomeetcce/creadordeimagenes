@@ -775,6 +775,23 @@ export async function personalAdvisorSheet(
     true,
   );
 }
+export async function ownerProductSheet(
+  actor: Actor,
+  since: string,
+  until: string,
+  inventoryPeriods: Parameters<typeof personalAdvisorSheet>[5],
+  product?: { tableId: string; aliasId: string; country: string },
+) {
+  demand(actor.role === "OWNER", "Solo el propietario puede consultar el total de Productos.", 403);
+  return readAdvisorSheet(actor, product?.tableId ?? "all", since, until, {
+    advisorListId: "all",
+    ownerProducts: true,
+    includeInventoryStatus: true,
+    inventoryPeriods,
+    aliasId: product?.aliasId,
+    country: product?.country,
+  }, false, true);
+}
 async function readAdvisorSheet(
   actor: Actor,
   tableId: string,
@@ -787,6 +804,7 @@ async function readAdvisorSheet(
     advisorListId?: string;
     periodId?: string;
     includeInventoryStatus?: boolean;
+    ownerProducts?: boolean;
     inventoryPeriods?: Parameters<typeof personalAdvisorSheet>[5];
   } = {},
   personal = false,
@@ -828,7 +846,7 @@ async function readAdvisorSheet(
               ...(filters.advisorId ? { id: filters.advisorId } : {}),
             };
       const [people, attendance, absences, tables] = await Promise.all([
-        tx.metaAdvisor.findMany({
+        filters.ownerProducts ? [] : tx.metaAdvisor.findMany({
           where: personWhere,
           select: {
             id: true,
@@ -840,13 +858,13 @@ async function readAdvisorSheet(
           },
           orderBy: { name: "asc" },
         }),
-        tx.metaAdvisorAttendance.findMany({
+        filters.ownerProducts ? [] : tx.metaAdvisorAttendance.findMany({
           where: {
             ...(filters.advisorId ? { advisorId: filters.advisorId } : {}),
             day: { gte: since, lte: until },
           },
         }),
-        tx.metaAdvisorAbsence.findMany({
+        filters.ownerProducts ? [] : tx.metaAdvisorAbsence.findMany({
           where: {
             ...(filters.advisorId ? { advisorId: filters.advisorId } : {}),
             day: { gte: since, lte: until },
@@ -874,7 +892,7 @@ async function readAdvisorSheet(
           404,
         );
       }
-      const baseDays = await tx.metaManualBaseDay.findMany({
+      const baseDays = filters.ownerProducts ? [] : await tx.metaManualBaseDay.findMany({
         where: {
           tableId: { in: tables.map((t) => t.id) },
           day: { gte: since, lte: until },
@@ -907,7 +925,7 @@ async function readAdvisorSheet(
           (manualBaseByPersonDay.get(key) ?? 0) + r.quantity,
         );
       }
-      const advisorBaseDays = await tx.metaAdvisorBaseDay.findMany({
+      const advisorBaseDays = filters.ownerProducts ? [] : await tx.metaAdvisorBaseDay.findMany({
         where: {
           tableId: { in: tables.map((t) => t.id) },
           day: { gte: since, lte: until },
@@ -958,6 +976,7 @@ async function readAdvisorSheet(
       const historyScope = financialContext(actor);
       if (
         tableId === "all" &&
+        !filters.ownerProducts &&
         !filters.aliasId &&
         !filters.periodId &&
         (!historyScope ||
@@ -1059,6 +1078,28 @@ async function readAdvisorSheet(
                 )
               : await effectiveness(actor, table.id, since, until, tx),
           names = new Map(sheet.table.aliases.map((a) => [a.id, a.name]));
+        if (filters.ownerProducts) {
+          for (const row of sheet.rows) {
+            if (!row.country || (filters.aliasId && row.aliasId !== filters.aliasId) ||
+                (filters.country && row.country !== filters.country)) continue;
+            const { aliasId, country } = row;
+            const key = JSON.stringify([table.id, aliasId, country]);
+            scopedInventoryRows.set(key, {
+              row,
+              current: row.active || row.metaActive === true,
+              baseDays: new Set(dates),
+            });
+            breakdown.push({
+              tableId: table.id, tableName: table.name, aliasId,
+              alias: names.get(aliasId) ?? "Inventario", country,
+              advisorId: "all",
+              days: Object.fromEntries(Object.entries(row.days).map(([day, cell]) => [
+                day, { sales: cell.sales, na: cell.na.includes("sales"), partial: cell.partialMetrics.includes("sales") },
+              ])),
+            });
+          }
+          continue;
+        }
         const assignments = await tx.metaAdvisorAssignment.findMany({
           where: { alias: { tableId: table.id } },
           orderBy: [

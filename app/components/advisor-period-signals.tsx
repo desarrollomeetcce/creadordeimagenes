@@ -369,8 +369,8 @@ export function AdvisorPeriodSignals({
             )}
           </div>
           <p className="hint">
-            La base cuenta los ingresos de Meta asignados al asesor. Abre el
-            estado para consultar su evaluación.
+            {advisorId === "all" ? "La base de Meta y las ventas corresponden al diplomado en el país y período seleccionados." :
+              "La base cuenta los ingresos de Meta asignados al asesor."} Abre el estado para consultar su evaluación.
           </p>
           {error && <p role="alert">{error}</p>}
           {!valid && !error && <p role="status">Cargando diplomados…</p>}
@@ -481,7 +481,7 @@ export function AdvisorPeriodSignals({
                                     {detail.sales?.toLocaleString("es-PE") ??
                                       "—"}
                                   </p>
-                                  <form
+                                  {advisorId !== "all" && <form
                                     onSubmit={(event) => {
                                       event.preventDefault();
                                       void submit();
@@ -522,7 +522,7 @@ export function AdvisorPeriodSignals({
                                       Guardar observación
                                     </button>
                                     {status && <p role="status">{status}</p>}
-                                  </form>
+                                  </form>}
                                   {detail.notes.map((note) => (
                                     <p key={note.id}>
                                       <time dateTime={note.day}>

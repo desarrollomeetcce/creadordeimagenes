@@ -23,12 +23,12 @@ export async function pulpoDiplomaActivity(actorId: string, advisorId: string, f
     const select = { id: true, email: true, pulpoUserId: true } as const;
     const [viewer, portal] = await Promise.all([
       db.user.findFirst({ where: { id: actorId, status: "APPROVED", archivedAt: null }, select }),
-      db.metaAdvisorPortal.findUnique({ where: { advisorId }, select: { user: { select } } }),
+      advisorId === "all" ? null : db.metaAdvisorPortal.findUnique({ where: { advisorId }, select: { user: { select } } }),
     ]);
-    if (!viewer || !portal?.user) return null;
+    if (!viewer || (advisorId !== "all" && !portal?.user)) return null;
     const caller = linkedMessagingUser(viewer);
-    const advisor = linkedMessagingUser(portal.user);
-    if (!caller || !advisor) return null;
+    const advisor = portal?.user ? linkedMessagingUser(portal.user) : null;
+    if (!caller || (advisorId !== "all" && !advisor)) return null;
     const payload = Buffer.from(JSON.stringify({
       viewer: caller, advisor, from, to, exp: Math.floor(Date.now() / 1000) + 30,
     })).toString("base64url");

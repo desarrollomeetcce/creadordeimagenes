@@ -2,7 +2,7 @@ import { pulpoDiplomaActivity } from "./pulpo-diploma-activity";
 import { z } from "zod";
 import { db } from "../db";
 import { demand } from "../errors";
-import { personalAdvisorSheet } from "./advisors";
+import { personalAdvisorSheet, ownerProductSheet } from "./advisors";
 import { localDay, shiftDay } from "./analytics";
 import { isPerformanceManager, performanceManager } from "./performance-access";
 import { performanceMetaGoal } from "./advisor-performance";
@@ -36,6 +36,10 @@ function rangeCheck(since: string, until: string) {
   );
 }
 async function advisorFor(actor: Actor, requested?: string) {
+  if (requested === "all") {
+    demand(actor.role === "OWNER", "Solo el propietario puede ver todos los contactos y ventas.", 403);
+    return requested;
+  }
   if (requested) {
     demand(
       await isPerformanceManager(actor),
@@ -101,17 +105,21 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
   const start = since < evaluation.since ? since : evaluation.since;
   const end = until > evaluation.until ? until : evaluation.until;
   const separate = Date.parse(end) - Date.parse(start) >= 44 * 86400000;
+  const readSheet = (from: string, to: string, showProducts: boolean,
+    periods?: Parameters<typeof personalAdvisorSheet>[5],
+    selection?: Parameters<typeof personalAdvisorSheet>[6]) =>
+      advisorId === "all"
+        ? ownerProductSheet(actor, from, to, periods, selection)
+        : personalAdvisorSheet(actor, advisorId, from, to, showProducts, periods, selection);
   const [current, notes, daily, goal, target, evaluated] = await Promise.all([
-    personalAdvisorSheet(
-      actor,
-      advisorId,
+    readSheet(
       includeProducts ? (separate ? since : start) : comparisonSince,
       includeProducts ? (separate ? until : end) : today,
       includeProducts,
       includeProducts && !separate ? { base, evaluation } : undefined,
       section === "detail" ? selected : undefined,
     ),
-    includeProducts && section !== "products"
+    advisorId !== "all" && includeProducts && section !== "products"
       ? db.metaAdvisorPeriodNote.findMany({
           where: { advisorId, day: { gte: since, lte: until }, ...selected },
           orderBy: [{ day: "desc" }, { createdAt: "desc" }],
@@ -128,9 +136,7 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
         })
       : null,
     separate
-      ? personalAdvisorSheet(
-          actor,
-          advisorId,
+      ? readSheet(
           evaluation.since,
           evaluation.until,
           true,
@@ -244,6 +250,7 @@ export async function addAdvisorPeriodNote(actor: Actor, input: unknown) {
     "El comentario debe estar dentro del periodo elegido.",
   );
   const advisorId = await advisorFor(actor, note.advisorId);
+  demand(advisorId !== "all", "Elige un asesor para guardar la observación.", 403);
   const scoped = await personalAdvisorSheet(
     actor,
     advisorId,
