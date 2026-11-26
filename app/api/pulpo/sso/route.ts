@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
   if (!admitted) return denied();
 
   const path = assertion.embedded ? "/pulpo-workspace?view=" + assertion.view
-    : assertion.page === "plans" ? "/?view=users&tab=plans"
+    : assertion.page === "plans" ? "/?view=website&tab=plans"
     : assertion.view ? "/?view=" + assertion.view + (assertion.panel ? "&panel=" + assertion.panel : "") + (assertion.aiTab ? "&aiTab=" + assertion.aiTab : "") : "/";
   const response = NextResponse.redirect("https://generator.agenciamagneto.org" + path, { status: 303, headers });
   if (admitted !== "existing") response.cookies.set("session", raw, {

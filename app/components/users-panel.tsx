@@ -1,9 +1,5 @@
 "use client";
 import { RecoveryIssuer } from "./account-security";
-import dynamic from "next/dynamic";
-const PlanSettings = dynamic(() =>
-  import("./membership-plans").then((m) => m.PlanSettings),
-);
 import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
@@ -36,12 +32,6 @@ async function api(path: string, method = "GET", data?: unknown) {
   return b;
 }
 export function UsersPanel({ isOwner }: { isOwner: boolean }) {
-  const [section, setSection] = useState(() =>
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("tab") === "plans"
-      ? "plans"
-      : "users",
-  );
   const [users, setUsers] = useState<Account[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -150,33 +140,9 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
       </div>
       <nav className="account-app-tabs" aria-label="Usuarios y accesos">
         <a className="button" href="/api/pulpo/open-crm?module=users">Pulpo Mensajería</a>
-        <button
-          type="button"
-          aria-current={section !== "plans" || !isOwner ? "page" : undefined}
-          onClick={() => {
-            if (section === "plans") {
-              setSection("users");
-              void refresh();
-              void api("plans").then(setPlans).catch((e) => setMessage(e.message));
-            }
-          }}
-        >
-          Pulpo Generador
-        </button>
-        {isOwner && (
-          <button
-            type="button"
-            aria-current={section === "plans" ? "page" : undefined}
-            onClick={() => setSection("plans")}
-          >
-            Planes de IA
-          </button>
-        )}
+        <span className="button" aria-current="page">Pulpo Generador</span>
       </nav>
-      {section === "plans" && isOwner ? (
-        <PlanSettings />
-      ) : (
-        <>
+      <div>
           <details className="panel roles-guide">
             <summary>Qué permite cada rol</summary>
             <div className="inside stack">
@@ -601,8 +567,7 @@ export function UsersPanel({ isOwner }: { isOwner: boolean }) {
               onClose={() => setSharing(null)}
             />
           )}
-        </>
-      )}
+      </div>
     </>
   );
 }

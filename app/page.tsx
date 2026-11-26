@@ -289,7 +289,9 @@ export default function Home() {
       setCollection(null);
       try {
         const params = new URLSearchParams(location);
-        const requested = params.get("view") ?? defaultAccountView(user);
+        const requested = params.get("view") === "users" && params.get("tab") === "plans"
+          ? "website"
+          : params.get("view") ?? defaultAccountView(user);
         const allowed = [
           "performance",
           "projects",
@@ -2695,7 +2697,7 @@ function PosterAISettings() {
           proveedor. Los límites globales y particulares anteriores ya no
           bloquean la generación.
         </p>
-        <p className="hint">Los planes y sus cuotas se administran en <a href="?view=users&tab=plans">Usuarios y accesos → Planes de IA</a>.</p>
+        <p className="hint">Los planes y sus cuotas se administran en <a href="?view=website&tab=plans">Página → Planes</a>.</p>
       </section>
       <section  className="panel stack">
         <h2>03　Prueba real de generación · opcional</h2>
