@@ -4,6 +4,7 @@ import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
   user,
   view,
+  activeTab,
   navigate,
   logout,
 }: {
@@ -13,7 +14,8 @@ export function SidebarAccount({
     role: keyof typeof roleLabels;
   };
   view: string;
-  navigate: (view: string) => void;
+  activeTab?: string | null;
+  navigate: (view: string, tab?: string) => void;
   logout: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null),
@@ -30,11 +32,7 @@ export function SidebarAccount({
     history = ai && !["OBSERVER", "SUPERVISOR", "ADVISOR"].includes(user.role);
   const settings = [
     ...(user.role === "OWNER"
-      ? [
-          ["mail", "✉", "Ajustes de correo"],
-          ["ai", "⚙", "Ajustes de IA"],
-          ["payments", "◇", "Ajustes de pago"],
-        ]
+      ? [["ai", "⚙", "Ajustes de IA"]]
       : []),
     ...(ai && history ? [["usage", "↗", "Costos de IA"]] : []),
   ];
@@ -48,26 +46,29 @@ export function SidebarAccount({
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, [open]);
-  const item = (v: string, icon: string, label: string) => (
-    <a
-      key={v}
-      href={"?view=" + encodeURIComponent(v)}
-      title={label}
-      aria-label={label}
-      aria-current={view === v ? "page" : undefined}
-      className={"sidebar-account-link" + (view === v ? " active" : "")}
-      onClick={(e) => {
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
-          return;
-        e.preventDefault();
-        close();
-        navigate(v);
-      }}
-    >
-      <span aria-hidden="true">{icon}</span>
-      <span>{label}</span>
-    </a>
-  );
+  const item = (v: string, icon: string, label: string, tab?: string) => {
+    const active = view === v && (!tab || (activeTab ?? "page") === tab);
+    return (
+      <a
+        key={v + (tab ?? "")}
+        href={"?" + new URLSearchParams({ view: v, ...(tab ? { tab } : {}) })}
+        title={label}
+        aria-label={label}
+        aria-current={active ? "page" : undefined}
+        className={"sidebar-account-link" + (active ? " active" : "")}
+        onClick={(e) => {
+          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+            return;
+          e.preventDefault();
+          close();
+          navigate(v, tab);
+        }}
+      >
+        <span aria-hidden="true">{icon}</span>
+        <span>{label}</span>
+      </a>
+    );
+  };
   return (
     <footer className="sidebar-account">
       <button
@@ -118,7 +119,15 @@ export function SidebarAccount({
           {user.role === "OWNER" && (
             <>
               {item("statistics", "▥", "Estadísticas")}
-              {item("website", "◈", "Página y planes")}
+              <details open={["website", "mail", "payments"].includes(view)}>
+                <summary>◈ Páginas</summary>
+                <nav aria-label="Páginas">
+                  {item("website", "◈", "Página", "page")}
+                  {item("website", "◇", "Planes", "plans")}
+                  {item("mail", "✉", "Correo")}
+                  {item("payments", "◇", "Pago")}
+                </nav>
+              </details>
             </>
           )}
           {(history || user.role === "OWNER") && (
@@ -133,7 +142,7 @@ export function SidebarAccount({
           )}
           {managesUsers(user.role) && (
             <div className="sidebar-admin-group">
-              <small>Equipo y planes</small>
+              <small>Equipo</small>
               {item("users", "♙", "Usuarios y accesos")}
               <a
                 className="sidebar-account-link"
@@ -146,16 +155,7 @@ export function SidebarAccount({
                 <span aria-hidden="true">↗</span>
                 <span>Usuarios de Pulpo</span>
               </a>
-              {user.role === "OWNER" && (
-                <a
-                  className="sidebar-account-link"
-                  href="?view=users&tab=plans"
-                  aria-label="Planes de IA"
-                >
-                  <span aria-hidden="true">◇</span>
-                  <span>Planes de IA</span>
-                </a>
-              )}
+
             </div>
           )}
           {item("account", "♙", "Mi cuenta")}

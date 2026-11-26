@@ -44,13 +44,13 @@ async function request(path: string, method = "GET", body?: unknown) {
   if (!r.ok) throw Error(b.error ?? "No se pudo guardar la página.");
   return b;
 }
-export function SiteEditor() {
+export function SiteEditor({ initialTab = "page" }: { initialTab?: "page" | "plans" }) {
   const [content, setContent] = useState<SiteDocument | null>(null),
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [inboxOpen, setInboxOpen] = useState(false),
-    [tab, setTab] = useState("page");
+    [tab, setTab] = useState<string>(initialTab);
   useEffect(() => {
     let active = true;
     void request("admin")

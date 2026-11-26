@@ -506,7 +506,7 @@ export default function Home() {
     website: "Página y planes",
     collection: "Galería de afiches",
   };
-  const navigate = (v: string) => {setMobileMenuOpen(false);setSalesAdvisorPeriod(null);changeAddress({ view: v });};
+  const navigate = (v: string, tab?: string) => {setMobileMenuOpen(false);setSalesAdvisorPeriod(null);changeAddress({ view: v, ...(tab ? { tab } : {}) });};
   const sidebarContent=<>
 
           <button className="sidebar-collapse" type="button" aria-label={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} title={smallNavigation?"Cerrar menú":sidebarMini?"Ampliar menú":"Minimizar menú"} aria-pressed={sidebarMini} onClick={()=>{if(smallNavigation){setMobileMenuOpen(false);return;}setSidebarMini(v=>{ const next=!v; try { localStorage.setItem("sidebar-mini:v1:"+user.id,next?"1":"0"); }catch{} return next; })}}>{smallNavigation?"×":sidebarMini?"☰":"‹"}</button>
@@ -542,7 +542,7 @@ export default function Home() {
               return user.role === "OWNER" ? { href: "https://pulpo.agenciamagneto.org" + destination } : null;
             }}
           />
-          <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
+          <SidebarAccount user={user} view={view} activeTab={new URLSearchParams(location).get("tab")} navigate={navigate} logout={() => {
             void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
           }} />
   </>;
@@ -622,7 +622,7 @@ export default function Home() {
             ) : view === "courses-ai" && user.role === "OWNER" && hasAiModuleAccess(user) ? (
               <CoursesAI />
             ) : view === "website" && user.role === "OWNER" ? (
-              <SiteEditor />
+              <SiteEditor key={new URLSearchParams(location).get("tab") ?? "page"} initialTab={new URLSearchParams(location).get("tab") === "plans" ? "plans" : "page"} />
             ) : view === "payments" && user.role === "OWNER" ? (
               <PaymentSettings />
             ) : view === "plans" ? (
