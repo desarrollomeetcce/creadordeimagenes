@@ -7,7 +7,7 @@ import "./components/meta-header.css";
 import "./components/creative-workspace.css";
 import "./components/workspace-utilities.css";
 import "./components/responsive-shell.css";
-const utilityViews=["library","jobs","history","visual-audit","campaign-audit","website"];
+const utilityViews=["mail","payments","library","jobs","history","visual-audit","campaign-audit","website"];
 const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m=>m.CreativeStudio),{loading:()=> <p role="status">Abriendo el estudio creativo…</p>});
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import { SharedPulpoMenu } from "./components/shared-pulpo-menu";
@@ -491,7 +491,7 @@ export default function Home() {
     performance: "Desempeño",
     presets: "Configuraciones guardadas",
     ai: "Ajustes de IA",
-    mail: "Ajustes de correo",
+    mail: "Páginas",
     "visual-audit": "Auditoría visual y conservación",
     "campaign-audit": "Auditoría de campañas",
     history: "Historial",
@@ -502,8 +502,8 @@ export default function Home() {
     jobs: "Biblioteca",
     account: "Mi cuenta",
     plans: "Mi plan",
-    payments: "Ajustes de pago",
-    website: "Página y planes",
+    payments: "Páginas",
+    website: "Páginas",
     collection: "Galería de afiches",
   };
   const navigate = (v: string, tab?: string) => {setMobileMenuOpen(false);setSalesAdvisorPeriod(null);changeAddress({ view: v, ...(tab ? { tab } : {}) });};
@@ -542,7 +542,7 @@ export default function Home() {
               return user.role === "OWNER" ? { href: "https://pulpo.agenciamagneto.org" + destination } : null;
             }}
           />
-          <SidebarAccount user={user} view={view} activeTab={new URLSearchParams(location).get("tab")} navigate={navigate} logout={() => {
+          <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {
             void api("auth/logout", "POST").then(() => { clearGallerySession(); return reloadUser(); });
           }} />
   </>;
@@ -621,16 +621,12 @@ export default function Home() {
               <Presets />
             ) : view === "courses-ai" && user.role === "OWNER" && hasAiModuleAccess(user) ? (
               <CoursesAI />
-            ) : view === "website" && user.role === "OWNER" ? (
-              <SiteEditor key={new URLSearchParams(location).get("tab") ?? "page"} initialTab={new URLSearchParams(location).get("tab") === "plans" ? "plans" : "page"} />
-            ) : view === "payments" && user.role === "OWNER" ? (
-              <PaymentSettings />
+            ) : ["website", "mail", "payments"].includes(view) && user.role === "OWNER" ? (
+              <PagesSettings view={view} tab={new URLSearchParams(location).get("tab")} navigate={navigate} />
             ) : view === "plans" ? (
               <MyPlan canPurchase={user.role !== "OBSERVER"&&hasAiModuleAccess(user)} />
             ) : view === "ai" ? (
               <AISettings />
-            ) : view === "mail" && user.role === "OWNER" ? (
-              <MailSettings />
             ) : view === "campaign-audit" && user.role === "OWNER" ? (
               <CampaignAuditPanel />
             ) : view === "visual-audit" && user.role === "OWNER" ? (
@@ -1955,6 +1951,45 @@ function SubproductRow({
     </>
   );
 }
+function PagesSettings({ view, tab, navigate }: {
+  view: string;
+  tab: string | null;
+  navigate: (view: string, tab?: string) => void;
+}) {
+  const current = view === "mail" ? "mail" : view === "payments" ? "payments"
+    : tab === "plans" || tab === "mail" || tab === "payments" ? tab : "page";
+  return (
+    <section className="stack">
+      <div className="site-editor-toolbar">
+        <nav aria-label="Páginas">
+          {[
+            ["page", "Página"],
+            ["plans", "Planes"],
+            ["mail", "Correo"],
+            ["payments", "Pago"],
+          ].map(([id, label]) => (
+            <a
+              className="button"
+              aria-current={current === id ? "page" : undefined}
+              href={"?view=website&tab=" + id}
+              key={id}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                navigate("website", id);
+              }}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      </div>
+      {current === "mail" ? <MailSettings /> : current === "payments" ? <PaymentSettings /> :
+        <SiteEditor section={current} />}
+    </section>
+  );
+}
+
 function AISettings(){return <AISettingsHub posters={<PosterAISettings/>}/>;}
 function PosterAISettings() {
   const [testMode, setTestMode] = useState<ExecutionMode>("background");

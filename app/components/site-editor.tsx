@@ -44,13 +44,13 @@ async function request(path: string, method = "GET", body?: unknown) {
   if (!r.ok) throw Error(b.error ?? "No se pudo guardar la página.");
   return b;
 }
-export function SiteEditor({ initialTab = "page" }: { initialTab?: "page" | "plans" }) {
+export function SiteEditor({ section = "page" }: { section?: "page" | "plans" }) {
   const [content, setContent] = useState<SiteDocument | null>(null),
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
-    [inboxOpen, setInboxOpen] = useState(false),
-    [tab, setTab] = useState<string>(initialTab);
+    [privacyOpen, setPrivacyOpen] = useState(false);
+  const tab = section === "page" && privacyOpen ? "privacy" : section;
   useEffect(() => {
     let active = true;
     void request("admin")
@@ -79,32 +79,15 @@ export function SiteEditor({ initialTab = "page" }: { initialTab?: "page" | "pla
   return (
     <section className="stack site-editor">
       <div className="site-editor-toolbar">
-        <nav aria-label="Página y planes">
-          <button
-            type="button"
-            aria-pressed={tab === "page"}
-            onClick={() => setTab("page")}
-          >
-            ◈ Página
-          </button>
-          <button
-            type="button"
-            aria-pressed={tab === "plans"}
-            onClick={() => setTab("plans")}
-          >
-            ◇ Planes
-          </button>
+        {section === "page" && (
           <button
             type="button"
             aria-pressed={tab === "privacy"}
-            onClick={() => {
-              setTab("privacy");
-              setInboxOpen(true);
-            }}
+            onClick={() => setPrivacyOpen((open) => !open)}
           >
-            ▧ Privacidad
+            Privacidad
           </button>
-        </nav>
+        )}
         <a className="button" href="/plans" target="_blank" rel="noreferrer">
           Vista pública ↗
         </a>
@@ -121,7 +104,7 @@ export function SiteEditor({ initialTab = "page" }: { initialTab?: "page" | "pla
       {tab === "privacy" && (
         <details className="panel">
           <summary>Solicitudes de privacidad y eliminación</summary>
-          <div className="inside">{inboxOpen && <PrivacyRequestInbox />}</div>
+          <div className="inside"><PrivacyRequestInbox /></div>
         </details>
       )}
       {content &&

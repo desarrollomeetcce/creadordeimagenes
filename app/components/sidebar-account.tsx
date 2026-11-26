@@ -4,7 +4,6 @@ import { roleLabels, managesUsers, hasAiModuleAccess } from "../../lib/roles";
 export function SidebarAccount({
   user,
   view,
-  activeTab,
   navigate,
   logout,
 }: {
@@ -14,7 +13,6 @@ export function SidebarAccount({
     role: keyof typeof roleLabels;
   };
   view: string;
-  activeTab?: string | null;
   navigate: (view: string, tab?: string) => void;
   logout: () => void;
 }) {
@@ -45,12 +43,12 @@ export function SidebarAccount({
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, [open]);
-  const item = (v: string, icon: string, label: string, tab?: string) => {
-    const active = view === v && (!tab || (activeTab ?? "page") === tab);
+  const item = (v: string, icon: string, label: string) => {
+    const active = view === v || (v === "website" && ["mail", "payments"].includes(view));
     return (
       <a
-        key={v + (tab ?? "")}
-        href={"?" + new URLSearchParams({ view: v, ...(tab ? { tab } : {}) })}
+        key={v}
+        href={"?" + new URLSearchParams({ view: v })}
         title={label}
         aria-label={label}
         aria-current={active ? "page" : undefined}
@@ -60,7 +58,7 @@ export function SidebarAccount({
             return;
           e.preventDefault();
           close();
-          navigate(v, tab);
+          navigate(v);
         }}
       >
         <span aria-hidden="true">{icon}</span>
@@ -131,15 +129,7 @@ export function SidebarAccount({
           {user.role === "OWNER" && (
             <>
               {item("statistics", "▥", "Estadísticas")}
-              <details open={["website", "mail", "payments"].includes(view)}>
-                <summary>◈ Páginas</summary>
-                <nav aria-label="Páginas">
-                  {item("website", "◈", "Página", "page")}
-                  {item("website", "◇", "Planes", "plans")}
-                  {item("mail", "✉", "Correo")}
-                  {item("payments", "◇", "Pago")}
-                </nav>
-              </details>
+              {item("website", "◈", "Páginas")}
             </>
           )}
           {(history || user.role === "OWNER") && (

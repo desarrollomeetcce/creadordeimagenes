@@ -9,3 +9,13 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
 .site-editor .compact-plan-settings{border:0;padding:0;background:transparent}.site-editor .compact-plan-settings>.heading{margin:0}.site-editor .compact-plan-settings>.heading h2{font-size:23px;letter-spacing:-.4px}.site-editor .compact-plan-settings .plan-edit-row{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:18px;margin-bottom:12px}.site-editor .compact-plan-settings .custom-plans{border-radius:12px;background:var(--surface)}.site-editor .compact-plan-settings .plan-rows{gap:14px}
 .utility-account-context .visual-audit-compact>details{margin:0;padding:0;border:0;background:transparent}.utility-account-context .visual-audit-compact summary{padding:0;font-size:10px}.utility-account-context .role-guide summary{padding:0}.library-search input:focus,.utility-search input:focus{outline:none;border:0;box-shadow:none}.library-search input::-webkit-search-cancel-button{appearance:none}.explorer-desktop-main .library-explorer:not(.library-picker) .folder-cards.size-medium{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}.explorer-desktop-main .library-explorer:not(.library-picker) .folder-open>span{font-size:40px;padding:0;line-height:1.1}.explorer-desktop-main .library-explorer:not(.library-picker) .folder-open strong{font-size:13px;line-height:1.4}.explorer-desktop-main .library-explorer:not(.library-picker) .folder-card>small{text-align:left;margin-top:4px}.explorer-desktop-main .library-explorer:not(.library-picker) .folder-card{padding:12px;background:var(--surface)}.explorer-desktop-main .library-file-details{padding:0;border:0;background:none;margin:0}.explorer-desktop-main .library-file-details>summary{font-size:11px;color:var(--muted);padding:6px 0;cursor:pointer}.explorer-desktop-main .library-file-details .hint{font-size:10px;margin:6px 0;overflow-wrap:anywhere}.explorer-desktop-main .gallery>.button,.explorer-desktop-main .gallery>button:not(.image-preview-trigger){padding:7px 9px;font-size:11px}.explorer-desktop-main .gallery>a:last-of-type{font-size:12px;padding:6px 0}
 @media(max-width:720px){.explorer-desktop-main .library-explorer:not(.library-picker) .folder-cards.size-medium{grid-template-columns:repeat(2,minmax(0,1fr))}.utility-account-context .role-guide>summary{font-size:10px}}
+
+.site-editor-toolbar > nav {
+  display: flex;
+  flex-wrap: wrap;
+}
+.site-editor-toolbar > nav a[aria-current="page"] {
+  background: var(--selection-soft);
+  color: var(--selection-ink);
+  border-color: var(--selection);
+}
