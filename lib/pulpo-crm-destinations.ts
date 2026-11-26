@@ -5,6 +5,9 @@ export const crmDestinations = {
   facebook: "/?section=Messenger",
   calls: "/calls",
   books: "/books",
+  "countries-prices": "/?section=Pa%C3%ADses%20y%20cuentas",
+  "product-labels": "/?section=Productos",
+  "funnel-labels": "/?section=Etiquetas",
   contacts: "/?section=Contactos%20y%20CRM",
 } as const;
 

@@ -52,7 +52,11 @@ export function SharedPulpoMenu({
         const previous: Layout = JSON.parse(saved);
         if (
           Array.isArray(previous.collapsed) &&
-          groups.every((group) => Array.isArray(previous.order?.[group]))
+          groups.every(
+            (group) =>
+              (group === "Etiquetas" && previous.version !== 3) ||
+              Array.isArray(previous.order?.[group]),
+          )
         )
           setLayout(upgradeLayout(previous));
       }
@@ -221,7 +225,7 @@ export function SharedPulpoMenu({
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
-      {groups.map((group, index) => {
+      {groups.map((group) => {
         const visible = layout.order[group].flatMap((id) => {
           const destination = resolve(id, peer);
           return destination ? [{ id, destination }] : [];
@@ -232,7 +236,7 @@ export function SharedPulpoMenu({
         return (
           <section
             key={group}
-            data-color={index}
+            data-color={group}
             className="pulpo-menu-group"
             onDragOver={(event) => {
               if (editing && dragged.current) event.preventDefault();

@@ -1,4 +1,10 @@
-export const groups = ["CRM", "Marketing", "Publicidad", "Gestión"] as const;
+export const groups = [
+  "CRM",
+  "Etiquetas",
+  "Marketing",
+  "Publicidad",
+  "Gestión",
+] as const;
 export type Group = (typeof groups)[number];
 
 export const modules = {
@@ -23,6 +29,18 @@ export const modules = {
   contacts: [
     "Contactos y CRM",
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
+  ],
+  "countries-prices": [
+    "Países, cuentas y precios",
+    "M3 10h18L12 4 3 10Z M5 11v7m5-7v7m4-7v7m5-7v7M3 20h18",
+  ],
+  "product-labels": [
+    "Etiquetas de producto",
+    "m12 2 10 5v10l-10 5-10-5V7Z M2 7l10 5 10-5 M12 12v10 M7 4.5l10 5",
+  ],
+  "funnel-labels": [
+    "Etiquetas de embudo",
+    "M20 13l-7 7a2 2 0 0 1-3 0l-8-8V3h9l9 8a1.5 1.5 0 0 1 0 2Z M6 7h.01",
   ],
   metaads: ["Meta Ads", "m3 10 17-6v14L3 13v-3Z M6 14l2 7h4l-2-6 M20 9h2"],
   products: ["Ventas", "M3 3v18h18 M7 16v-4 M12 16V8 M17 16V5"],
@@ -49,7 +67,7 @@ export const modules = {
 export type Module = keyof typeof modules;
 export type Movable = Exclude<Module, "performance">;
 export type Layout = {
-  version?: 2;
+  version?: 2 | 3;
   order: Record<Group, Movable[]>;
   collapsed: Group[];
 };
@@ -66,6 +84,9 @@ export const crmModules = [
   "calls",
   "books",
   "contacts",
+  "countries-prices",
+  "product-labels",
+  "funnel-labels",
 ] as const;
 export const generatorModules = [
   "performance",
@@ -80,7 +101,7 @@ export const generatorModules = [
   "fixed-costs",
 ] as const;
 export const initialLayout: Layout = {
-  version: 2,
+  version: 3,
   order: {
     CRM: [
       "accounts",
@@ -90,6 +111,7 @@ export const initialLayout: Layout = {
       "books",
       "contacts",
     ],
+    Etiquetas: ["countries-prices", "product-labels", "funnel-labels"],
     Marketing: ["metaads", "products", "advisors", "inventory"],
     Publicidad: ["projects", "courses-ai", "library", "trash"],
     Gestión: ["fixed-costs"],
@@ -118,18 +140,25 @@ export function readMove(value: unknown): Move | null {
 }
 
 export function upgradeLayout(layout: Layout): Layout {
-  if (layout.version === 2) return layout;
+  if (layout.version === 3) return layout;
+  if (layout.version === 2)
+    return {
+      ...layout,
+      order: { ...layout.order, Etiquetas: initialLayout.order.Etiquetas },
+      version: 3,
+    };
   const order = Object.fromEntries(
     groups.map((group) => {
       const expected = initialLayout.order[group];
       const old = layout.order[group];
       const misplaced =
+        !old ||
         old.length !== expected.length ||
         old.some((id) => !expected.includes(id));
       return [group, misplaced ? expected : old];
     }),
   ) as Layout["order"];
-  return { ...layout, order, version: 2 };
+  return { ...layout, order, version: 3 };
 }
 
 export function changeLayout(layout: Layout, move: Move): Layout {

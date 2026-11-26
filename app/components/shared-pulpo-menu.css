@@ -60,16 +60,19 @@
   );
   box-shadow: inset 2px 0 var(--pulpo-section, #a891f5);
 }
-.pulpo-menu-group[data-color="0"] {
+.pulpo-menu-group[data-color="CRM"] {
   --pulpo-section: #8eaaf7;
 }
-.pulpo-menu-group[data-color="1"] {
+.pulpo-menu-group[data-color="Etiquetas"] {
+  --pulpo-section: #a891f5;
+}
+.pulpo-menu-group[data-color="Marketing"] {
   --pulpo-section: #58bdad;
 }
-.pulpo-menu-group[data-color="2"] {
+.pulpo-menu-group[data-color="Publicidad"] {
   --pulpo-section: #d99ce8;
 }
-.pulpo-menu-group[data-color="3"] {
+.pulpo-menu-group[data-color="Gestión"] {
   --pulpo-section: #e4b66b;
 }
 .pulpo-shared-menu .pulpo-menu-band,
