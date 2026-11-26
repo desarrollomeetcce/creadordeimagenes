@@ -38,12 +38,14 @@ async function messagingSession(grant: string, signal: AbortSignal): Promise<Sna
 export function SharedPulpoMenu({
   endpoint,
   userId,
+  visibility = null,
   resolve,
   expand,
 }: {
   endpoint: string;
   userId: string;
-  resolve: (id: Module, peer: Module[], fromSession: boolean) => Destination | null;
+  visibility?: Module[] | null;
+  resolve: (id: Module, peer: Module[], fromSession: boolean, assigned: boolean) => Destination | null;
   expand: () => void;
 }) {
   const [layout, setLayout] = useState(initialLayout);
@@ -53,9 +55,7 @@ export function SharedPulpoMenu({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [accessNotice, setAccessNotice] = useState("");
   const writing = useRef(false);
-  const refreshAccess = useRef<() => void>(() => {});
   const revision = useRef(0);
   const dragged = useRef<Movable | null>(null);
   const storage = "pulpo-shared-menu:" + userId;
@@ -81,11 +81,11 @@ export function SharedPulpoMenu({
     let shared = false;
     let peerCheckedAt = 0;
     let loading = false;
-    async function load(background: boolean, force = false) {
+    async function load(background: boolean) {
       if (loading || writing.current || document.visibilityState === "hidden")
         return;
       const elapsed = Date.now() - peerCheckedAt;
-      const checkPeer = force || !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
+      const checkPeer = !peerCheckedAt || elapsed >= (background ? 60000 : 3000);
       if (!shared && !checkPeer) return;
       const layoutOnly = !checkPeer;
       if (checkPeer) peerCheckedAt = Date.now();
@@ -118,24 +118,16 @@ export function SharedPulpoMenu({
           setPeer(session?.modules ?? snapshot.modules ?? []);
           setFromSession(session !== null);
           setServer(Boolean(snapshot.layout));
-          if (snapshot.peerStatus === "unconfigured") {
-            setAccessNotice(force ? "La conexión con Mensajería todavía no está configurada." : "");
-          } else if (force && !snapshot.layout && !session) {
-            setAccessNotice("No se pudo verificar Mensajería. Abre ambos sistemas con el mismo correo y vuelve a actualizar.");
-          } else {
-            setAccessNotice("");
-          }
+
         }
       } catch {
         if (!controller.signal.aborted && !ready) setServer(false);
-        if (!controller.signal.aborted && force) setAccessNotice("No se pudo actualizar el acceso a Mensajería.");
       } finally {
         loading = false;
       }
     }
 
     const resume = () => void load(false);
-    refreshAccess.current = () => { void load(false, true); window.dispatchEvent(new Event("pulpo-access-refresh")); };
     const interval = window.setInterval(() => void load(true), 8000);
     resume();
     document.addEventListener("visibilitychange", resume);
@@ -227,14 +219,14 @@ export function SharedPulpoMenu({
     if (id) void apply({ kind: "move", id, group, before });
   }
 
-  const performance = resolve("performance", peer, fromSession);
+  function destinationFor(id: Module) {
+    if (visibility !== null && !visibility.includes(id)) return null;
+    return resolve(id, peer, fromSession, visibility !== null);
+  }
+  const performance = destinationFor("performance");
   return (
     <nav aria-label="Menú principal" className="pulpo-shared-menu">
       <div className="pulpo-menu-top">
-        <button type="button" className="pulpo-menu-edit" title="Actualizar accesos" aria-label="Actualizar accesos"
-          disabled={busy} onClick={() => refreshAccess.current()}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-1l2 3 M4 15l2 3a7 7 0 0 0 12-1" /></svg>
-        </button>
         {editing && (
           <button
             type="button"
@@ -269,10 +261,9 @@ export function SharedPulpoMenu({
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
-      {accessNotice && <p className="pulpo-menu-access-notice" role="status">{accessNotice}</p>}
       {groups.map((group) => {
         const visible = layout.order[group].flatMap((id) => {
-          const destination = resolve(id, peer, fromSession);
+          const destination = destinationFor(id);
           return destination ? [{ id, destination }] : [];
         });
         const collapsed = !editing && layout.collapsed.includes(group);

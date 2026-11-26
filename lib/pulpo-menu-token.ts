@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { crmDestination } from "./pulpo-crm-destinations";
-import { readMove, type Move } from "./pulpo-menu-model";
+import { readMenuVisibility, readMove, type Module, type Move } from "./pulpo-menu-model";
+export type RoleMenuChange = { role: string; menu: Module[] | null; expected: Module[] | null };
 type Grant = {
   sub: string;
   email: string;
@@ -9,10 +10,12 @@ type Grant = {
   module?: string;
   nonce?: string;
   linkedId?: string;
+  roleMenu?: RoleMenuChange;
 };
-type Audience = "preferences" | "access" | "open-crm" | "session-access" | "messaging-session-access" | "pull-generator-users" | "merge-pulpo-users";
+type Audience = "preferences" | "access" | "open-crm" | "session-access" | "messaging-session-access" | "pull-generator-users" | "merge-pulpo-users" | "role-menu-to-generator" | "role-menu-to-messaging";
 const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
 const directoryAudience = (audience: Audience) => audience === "pull-generator-users" || audience === "merge-pulpo-users";
+const roleMenuAudience = (audience: Audience) => audience === "role-menu-to-generator" || audience === "role-menu-to-messaging";
 function key() {
   const value = process.env.PULPO_GENERATOR_SSO_KEY;
   return value && /^[a-f\d]{64}$/i.test(value)
@@ -26,6 +29,7 @@ export function signMenu(
   move?: Move,
   module?: string,
   linkedId?: string,
+  roleMenu?: RoleMenuChange,
 ) {
   const secret = key();
   if (!secret) return null;
@@ -36,6 +40,7 @@ export function signMenu(
       move,
       module,
       linkedId,
+      roleMenu,
       ...(module || directoryAudience(audience) ? { nonce: randomBytes(18).toString("base64url") } : {}),
       exp: Math.floor(Date.now() / 1000) + 20,
     }),
@@ -54,7 +59,7 @@ export function verifyMenu(
   const secret = key();
   const match =
     header &&
-    header.length < 2048 &&
+    header.length < (roleMenuAudience(audience) ? 4096 : 2048) &&
     /^Bearer ([\w-]+)\.([\w-]{43})$/.exec(header);
   if (
     !secret ||
@@ -78,6 +83,14 @@ export function verifyMenu(
       data.exp > now + 30
     )
       return null;
+    if (roleMenuAudience(audience)) {
+      const role = data.roleMenu?.role;
+      const menu = readMenuVisibility(data.roleMenu?.menu);
+      const expected = readMenuVisibility(data.roleMenu?.expected);
+      if (!["advisor", "admin", "superadmin", "supervisor", "user", "observer"].includes(role) ||
+          menu === undefined || expected === undefined) return null;
+      return { sub: data.sub, email: data.email, exp: data.exp, roleMenu: { role, menu, expected } };
+    }
     if (directoryAudience(audience)) {
       if (typeof data.nonce !== "string" || !/^[\w-]{24}$/.test(data.nonce)) return null;
       return { sub: data.sub, email: data.email, exp: data.exp, nonce: data.nonce };

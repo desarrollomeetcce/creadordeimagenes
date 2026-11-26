@@ -119,6 +119,20 @@ export const initialLayout: Layout = {
   collapsed: [],
 };
 
+export const menuModulesByGroup: Readonly<Record<Group, readonly Module[]>> = {
+  ...initialLayout.order,
+  CRM: ["performance", ...initialLayout.order.CRM],
+};
+
+export function readMenuVisibility(value: unknown): Module[] | null | undefined {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length > Object.keys(modules).length ||
+      value.some((id) => typeof id !== "string" || !Object.hasOwn(modules, id)))
+    return undefined;
+  const selected = new Set<Module>(value);
+  return groups.flatMap((group) => menuModulesByGroup[group].filter((id) => selected.has(id)));
+}
+
 export function readMove(value: unknown): Move | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Move;

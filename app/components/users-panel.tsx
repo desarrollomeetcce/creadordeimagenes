@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
 import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers, canManageAccount } from "../../lib/roles";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
+import { GeneratorMenuEditor } from "./generator-menu-editor";
+import { readMenuVisibility } from "../../lib/pulpo-menu-model";
 type Presence = {
   desktop: boolean;
   mobile: boolean;
@@ -38,6 +40,7 @@ type Account = {
   email: string;
   role: string;
   sharedRole?: boolean;
+  menuVisibility?: unknown;
   status: string;
   aiAccessEnabled?: boolean;
   archivedAt?: string | null;
@@ -72,6 +75,9 @@ export function UsersPanel({ role }: { role: string }) {
     [archived, setArchived] = useState(false),
     [editingIdentity, setEditingIdentity] = useState<Account | null>(null),
     [actions, setActions] = useState<string | null>(null),
+    [menuAccount, setMenuAccount] = useState<Account | null>(null),
+    [roleMenus, setRoleMenus] = useState<Record<string, unknown> | null>(null),
+    [menuRole, setMenuRole] = useState("ADVISOR"),
     [removing, setRemoving] = useState<Account | null>(null),
     [sharing, setSharing] = useState<{
       userId: string;
@@ -216,6 +222,10 @@ export function UsersPanel({ role }: { role: string }) {
             ? describe("Desde Generador", result.incoming)
             : "No se pudo comprobar el directorio de Generador. Puedes reintentar.");
         })}>Sincronizar usuarios</button>}
+        {isOwner && <button type="button" disabled={busy} onClick={async () => {
+          try { setRoleMenus((await api("users/role-menus")).menus); }
+          catch (error) { setMessage((error as Error).message); }
+        }}>Visibilidad del menú por rol</button>}
       </div>
       <WorkspaceHeaderNavigation>
         <nav className="account-app-tabs" aria-label="Usuarios y accesos">
@@ -571,6 +581,10 @@ export function UsersPanel({ role }: { role: string }) {
                             </button>
                           ) : (
                             <>
+                              {isOwner && u.role !== "OWNER" && <button type="button" disabled={busy}
+                                aria-label={"Configurar menú de Generador de " + u.name} onClick={() => setMenuAccount(u)}>
+                                Configurar menú
+                              </button>}
                               {canCreateUsers(role) && canManageAccount(role, u.role) && u.status === "APPROVED" && (
                                 <button type="button" disabled={busy}
                                   aria-label={"Sincronizar a " + u.name + " con Mensajería"}
@@ -638,6 +652,26 @@ export function UsersPanel({ role }: { role: string }) {
               }}
             />
           )}
+          {menuAccount && <GeneratorMenuEditor key={menuAccount.id} name={menuAccount.name}
+            original={readMenuVisibility(menuAccount.menuVisibility ?? null) ?? null}
+            automaticLabel="Usar el menú del rol"
+            onClose={() => setMenuAccount(null)}
+            onSave={async (menu) => {
+              const expected = readMenuVisibility(menuAccount.menuVisibility ?? null) ?? null;
+              const result = await api("users/" + encodeURIComponent(menuAccount.id) + "/menu", "PATCH", { menu, expected });
+              change(menuAccount.id, { menuVisibility: result.menu });
+              setMessage("Menú de Generador guardado.");
+            }} />}
+          {roleMenus && <GeneratorMenuEditor key={menuRole} name={roleLabels[menuRole]}
+            original={readMenuVisibility(roleMenus[menuRole] ?? null) ?? null}
+            rolePicker={<label>Rol <select value={menuRole} onChange={(event) => setMenuRole(event.target.value)}>
+              {Object.entries(roleLabels).filter(([role]) => role !== "OWNER").map(([role, label]) => <option key={role} value={role}>{label}</option>)}
+            </select></label>}
+            onClose={() => setRoleMenus(null)}
+            onSave={async (menu) => {
+              const result = await api("users/role-menus", "PATCH", { role: menuRole, menu, expected: roleMenus[menuRole] ?? null });
+              setMessage(result.peer ? "Menú del rol guardado en ambos sistemas." : "Menú guardado en Generador. Mensajería no confirmó la copia.");
+            }} />}
           {removing && (
             <RemoveAccount
               account={removing}

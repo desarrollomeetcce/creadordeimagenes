@@ -9,6 +9,10 @@ import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
 import { issuePasswordReset } from "./accounts";
 import { linkedMessagingUser } from "./pulpo-sso";
 import { signMenu } from "./pulpo-menu-token";
+import { readMenuVisibility } from "./pulpo-menu-model";
+import { Prisma } from "@prisma/client";
+import { saveRoleMenu } from "./role-menu";
+import { mirrorRoleMenu } from "./mirror-role-menu";
 import { syncMessagingUser, syncMessagingRole } from "./pulpo-messaging-users";
 
 const role = z.enum([
@@ -46,6 +50,27 @@ export async function userManagement(
       status,
       headers: { "Cache-Control": "no-store" },
     });
+  if (parts.length === 2 && parts[1] === "role-menus") {
+    demand(actor.role === "OWNER", "Solo el Owner puede configurar menús por rol.", 403);
+    if (req.method === "GET") {
+      const menus = await db.roleMenu.findMany();
+      return send({ menus: Object.fromEntries(menus.map(({ role, menu }) => [role, menu])) });
+    }
+    if (req.method === "PATCH") {
+      const input = z.object({ role, menu: z.unknown(), expected: z.unknown() }).strict().parse(await body());
+      const menu = readMenuVisibility(input.menu);
+      const expected = readMenuVisibility(input.expected);
+      demand(input.role !== "OWNER" && menu !== undefined && expected !== undefined, "Revisa el rol y las páginas seleccionadas.");
+      await saveRoleMenu(actor.id, input.role, menu, expected);
+      const issuer = await db.user.findFirst({
+        where: { id: actor.id, role: "OWNER", archivedAt: null, status: "APPROVED" },
+        select: { id: true, email: true, pulpoUserId: true },
+      });
+      const id = issuer && linkedMessagingUser(issuer);
+      const peer = issuer && id ? await mirrorRoleMenu(id, issuer.email, { role: input.role.toLowerCase(), menu, expected }) : false;
+      return send({ menu, peer });
+    }
+  }
   if (parts.length === 1 && req.method === "GET")
     return send(
       await db.user.findMany({
@@ -58,7 +83,7 @@ export async function userManagement(
                     : null,
               }
             : { archivedAt: null, role: { in: actor.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR"] : ["USER", "OBSERVER"] } },
-        select: { ...select, pulpoUserId: true },
+        select: { ...select, pulpoUserId: true, menuVisibility: true },
         orderBy: { name: "asc" },
       }).then((users) => users.map(({ pulpoUserId, ...user }) => ({
         ...user,
@@ -126,6 +151,25 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "messaging" && req.method === "POST")
     return send(await syncMessagingUser(actor.id, parts[1]));
+  if (parts.length === 3 && parts[2] === "menu" && req.method === "PATCH") {
+    demand(actor.role === "OWNER", "Solo el Owner puede configurar el menú de otra cuenta.", 403);
+    const input = z.object({ menu: z.unknown(), expected: z.unknown() }).strict().parse(await body());
+    const menu = readMenuVisibility(input.menu);
+    const expected = readMenuVisibility(input.expected);
+    demand(menu !== undefined && expected !== undefined, "Revisa las páginas seleccionadas.");
+    await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(891234)`;
+      const issuer = await tx.user.findFirst({ where: { id: actor.id, role: "OWNER", status: "APPROVED", archivedAt: null }, select: { id: true } });
+      demand(issuer, "Solo el Owner puede configurar el menú de otra cuenta.", 403);
+      const target = await tx.user.findFirst({ where: { id: parts[1], archivedAt: null }, select: { role: true, menuVisibility: true } });
+      demand(target, "Usuario no disponible.", 404);
+      demand(target.role !== "OWNER", "El Owner conserva el menú completo.", 409);
+      const current = readMenuVisibility(target.menuVisibility ?? null) ?? null;
+      demand(JSON.stringify(current) === JSON.stringify(expected), "El menú cambió. Vuelve a abrirlo antes de guardar.", 409);
+      await tx.user.update({ where: { id: parts[1] }, data: { menuVisibility: menu === null ? Prisma.DbNull : menu } });
+    });
+    return send({ menu });
+  }
   if (parts.length === 2 && parts[1] === "sync-messaging" && req.method === "POST") {
     demand(actor.role === "OWNER", "Solo Owner puede sincronizar el directorio.", 403);
     const issuer = await db.user.findFirst({

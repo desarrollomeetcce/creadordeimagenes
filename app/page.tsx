@@ -14,6 +14,7 @@ const CreativeStudio = dynamic(()=>import("./components/creative-studio").then(m
 const ProjectImagePreview = dynamic(() => import("./components/project-image-preview").then(m => m.ProjectImagePreview));
 import { SharedPulpoMenu } from "./components/shared-pulpo-menu";
 import { availableGeneratorModules } from "../lib/pulpo-generator-modules";
+import { generatorModules, readMenuVisibility } from "../lib/pulpo-menu-model";
 import { crmDestination } from "../lib/pulpo-crm-destinations";
 import type {AdvisorPeriodView} from "../lib/meta-ads/advisor-period-history";
 const FixedCosts=dynamic(()=>import("./components/fixed-costs").then(m=>m.FixedCosts),{loading:()=> <p role="status">Cargando costos…</p>});
@@ -90,7 +91,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { coursesShared?: boolean; salesShared?: boolean; inventoryShared?: boolean; advisorsShared?: boolean; messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { menuVisibility?: unknown; coursesShared?: boolean; salesShared?: boolean; inventoryShared?: boolean; advisorsShared?: boolean; messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -550,8 +551,9 @@ export default function Home() {
             </a>
           </div>
           <SharedPulpoMenu key={user.id} userId={user.id} endpoint="/api/pulpo/workspace-menu"
+            visibility={user.role === "OWNER" ? null : readMenuVisibility(user.menuVisibility ?? null) ?? null}
             expand={() => setSidebarMini(false)}
-            resolve={(id, peer, fromSession) => {
+            resolve={(id, peer, fromSession, assigned) => {
               const local = availableGeneratorModules(user);
               if (local.includes(id)) return {
                 href: "/?view=" + id,
@@ -562,10 +564,11 @@ export default function Home() {
                   navigate(id);
                 },
               };
+              if (assigned && generatorModules.some((module) => module === id)) return { href: "/?view=" + id };
               const destination = crmDestination(id);
               if (!destination) return null;
               if (peer.includes(id)) return { href: fromSession ? "https://pulpo.agenciamagneto.org" + destination : "/api/pulpo/open-crm?module=" + id };
-              return user.role === "OWNER" ? { href: "https://pulpo.agenciamagneto.org" + destination } : null;
+              return assigned || user.role === "OWNER" ? { href: "https://pulpo.agenciamagneto.org" + destination } : null;
             }}
           />
           <SidebarAccount user={user} view={view} navigate={navigate} logout={() => {

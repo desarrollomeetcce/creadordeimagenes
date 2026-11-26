@@ -649,7 +649,7 @@ async function handle(
         return send(await saveBrand(user, project.id, await body(req)));
     }
     if (route === "auth/me" && method === "GET") {
-      const [[grants], fixedCostsShared, financialAccess, coursesShared] = await Promise.all([
+      const [[grants], fixedCostsShared, financialAccess, coursesShared, roleMenu] = await Promise.all([
         db.$queryRaw<{
           effectivenessShared: boolean;
           metaAdsShared: boolean;
@@ -663,6 +663,7 @@ async function handle(
         fixedCostNavigationAccess(user.id, user.role),
         financialNavigationAccess(user.id, user.role),
         user.role === "SUPERADMIN" ? (await import("@/lib/courses/sharing")).hasSharedCourses(user) : false,
+        user.role !== "OWNER" && user.menuVisibility === null ? db.roleMenu.findUnique({ where: { role: user.role }, select: { menu: true } }) : null,
       ]);
       return send({
         id: user.id,
@@ -673,6 +674,7 @@ async function handle(
         messagingLinked: Boolean(linkedMessagingUser(user)),
         fixedCostsShared,
         coursesShared,
+        menuVisibility: user.menuVisibility ?? roleMenu?.menu ?? null,
         ...financialAccess,
         ...grants,
       });
