@@ -3194,26 +3194,6 @@ nav.performance-workspace-nav {
   margin:0 0 10px;
   border-bottom:1px solid var(--line);
 }
-.performance-workspace-nav :is(a,button) {
-  display:inline-flex;
-  align-items:center;
-  color:var(--ink);
-  background:var(--surface);
-  border:1px solid var(--line);
-  border-radius:8px;
-  padding:7px 11px;
-  font-size:13px;
-  font-weight:550;
-  text-decoration:none;
-}
-.performance-workspace-nav :is(a,button):hover {
-  border-color:var(--accent);
-}
-.performance-workspace-nav :is([aria-current="page"],[aria-pressed="true"]) {
-  background:var(--soft);
-  border-color:var(--accent);
-  font-weight:700;
-}
 .performance-configuration {
   max-width: 720px;
   display: grid;
