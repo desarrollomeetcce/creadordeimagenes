@@ -27,13 +27,11 @@ type Settings = {
 const fmt = (v: number | null) =>
   v === null ? "—" : v.toLocaleString("es-PE", { maximumFractionDigits: 2 });
 const pct = (v: number | null) => (v === null ? "—" : fmt(v) + " %");
-type PerformancePanel = "team" | "advisor" | "products";
+type PerformancePanel = "team" | "advisor";
 
 function usePerformancePanel(initialPanel: PerformancePanel | undefined, manager: boolean) {
   const requested = useWorkspaceQuery().get("panel") ?? initialPanel;
-  const panel = requested === "products" || requested === "advisor"
-    ? requested
-    : manager ? "team" : "advisor";
+  const panel = requested === "advisor" || requested === "products" || !manager ? "advisor" : "team";
   return [panel, (next: PerformancePanel) => setWorkspaceQuery({ panel: next })] as const;
 }
 
@@ -61,13 +59,6 @@ function PerformanceNavigation({
         >
           {manager ? "Desempeño del asesor" : "Mi desempeño"}
         </button>
-        <button
-          type="button"
-          aria-pressed={panel === "products"}
-          onClick={() => onSelect("products")}
-        >
-          Productos
-        </button>
         <a href={withPerformancePeriod("https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos", period)}>
           Ingresos
         </a>
@@ -88,15 +79,13 @@ function PerformanceNavigation({
 
 export function AdvisorPerformance({
   owner,
-  aggregateProducts = false,
   initialPanel,
 }: {
   owner: boolean;
-  aggregateProducts?: boolean;
   initialPanel?: PerformancePanel;
 }) {
   return owner ? (
-    <ManagedAdvisorPerformance owner aggregateProducts={aggregateProducts} initialPanel={initialPanel} />
+    <ManagedAdvisorPerformance owner initialPanel={initialPanel} />
   ) : (
     <PersonalAdvisorPerformance initialPanel={initialPanel} />
   );
@@ -113,7 +102,7 @@ function PersonalAdvisorPerformance({
       <PerformanceNavigation panel={panel} onSelect={setPanel} />
       <AdvisorPeriodSignals
         key={panel}
-        section={panel === "products" ? "products" : "summary"}
+        section="summary"
       />
     </section>
   );
@@ -121,11 +110,9 @@ function PersonalAdvisorPerformance({
 
 function ManagedAdvisorPerformance({
   owner,
-  aggregateProducts = false,
   initialPanel,
 }: {
   owner: boolean;
-  aggregateProducts?: boolean;
   initialPanel?: PerformancePanel;
 }) {
   const today = limaToday();
@@ -145,12 +132,8 @@ function ManagedAdvisorPerformance({
   const view = search.get("day") === "yesterday" ? "yesterday" : "today";
   const defaultAdvisor = settings?.people[0]?.id ?? "";
   const requestedAdvisor = search.get("advisor");
-  const requestedProductAdvisor = search.get("productAdvisor");
   const advisorId = settings?.people.some((p) => p.id === requestedAdvisor)
     ? requestedAdvisor! : defaultAdvisor;
-  const productScope = settings?.people.some((p) => p.id === requestedProductAdvisor)
-    ? requestedProductAdvisor! : aggregateProducts ? "all" : advisorId;
-  const pickerValue = panel === "products" ? productScope : advisorId;
   const query =
     "meta-ads/my-performance?" +
     new URLSearchParams({ since, until, ...(owner ? { advisorId } : {}) });
@@ -222,11 +205,7 @@ function ManagedAdvisorPerformance({
       <header className="performance-heading">
         <div>
           <h1>
-            {panel === "team"
-              ? "Metas diarias"
-              : panel === "products"
-                ? "Productos"
-                : "Desempeño de asesores"}
+            {panel === "team" ? "Metas diarias" : "Desempeño de asesores"}
           </h1>
         </div>
         <button type="button" onClick={() => setReload((n) => n + 1)}>
@@ -257,16 +236,13 @@ function ManagedAdvisorPerformance({
           <div className="performance-owner-picker">
             <SheetSearchSelect
               label="Asesor que deseas visualizar"
-              value={pickerValue}
+              value={advisorId}
               disabled={false}
-              options={[
-                ...(panel === "products" && aggregateProducts ? [{ value: "all", label: "Todos los asesores y contactos sin asignar" }] : []),
-                ...(settings?.people ?? []).map((p) => ({
-                  value: p.id,
-                  label: p.name + " · " + p.sheet.name,
-                })),
-              ]}
-              onSelect={(id) => setWorkspaceQuery(panel === "products" ? { productAdvisor: id } : { advisor: id })}
+              options={(settings?.people ?? []).map((p) => ({
+                value: p.id,
+                label: p.name + " · " + p.sheet.name,
+              }))}
+              onSelect={(id) => setWorkspaceQuery({ advisor: id })}
             />
             {panel === "advisor" && (
               <span className="hint">
@@ -281,23 +257,11 @@ function ManagedAdvisorPerformance({
             {error}
           </p>
         )}
-        {owner && settings && !settings.people.length && !(panel === "products" && aggregateProducts) ? (
+        {owner && settings && !settings.people.length ? (
           <p>No hay asesores. Regístralos primero en Efectividad.</p>
-        ) : !error && (panel === "products" ? !settings : !current) ? (
-          <p role="status">
-            {panel === "products"
-              ? "Cargando asesores…"
-              : "Cargando desempeño…"}
-          </p>
+        ) : !error && !current ? (
+          <p role="status">Cargando desempeño…</p>
         ) : null}
-        {panel === "products" && productScope && (
-          <AdvisorPeriodSignals
-            key={productScope}
-            advisorId={productScope}
-            section="products"
-            reload={reload}
-          />
-        )}
         {current && (!owner || panel === "advisor") && (
           <>
             <h2>{current.person.name}</h2>
