@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
+import { POST as messagingSales } from "../app/api/pulpo/pending-sales/route";
 import { NextRequest } from "next/server";
 import { metaRoutes } from "../lib/meta-ads/routes";
 import { db } from "../lib/db";
@@ -37,9 +38,21 @@ test(
       /127\.0\.0\.1:5432\/pulpo_pending_sales_qa\b/,
     );
     const suffix = randomUUID();
+    const previousKey = process.env.PULPO_GENERATOR_SSO_KEY;
+    const signingKey = "62".repeat(32);
+    process.env.PULPO_GENERATOR_SSO_KEY = signingKey;
+    const request = (action: string, data: unknown, email: string, sub = suffix) => {
+      const token = Buffer.from(JSON.stringify({ sub, email, action, data, exp: Math.floor(Date.now() / 1000) + 20 })).toString("base64url");
+      const signature = createHmac("sha256", Buffer.from(signingKey, "hex"))
+        .update("pulpo-pending-sales:v1:" + token).digest("base64url");
+      return messagingSales(new Request("https://generator.agenciamagneto.org/api/pulpo/pending-sales", {
+        method: "POST", headers: { Authorization: `Bearer ${token}.${signature}` },
+      }));
+    };
     const user = await db.user.create({
       data: {
         email: "seller-" + suffix + "@example.test",
+        pulpoUserId: suffix,
         name: "Owner QA",
         role: "OWNER",
         status: "APPROVED",
@@ -102,7 +115,10 @@ test(
     const actor = { id: user.id, role: user.role };
     const personal = { id: portalUser.id, role: portalUser.role };
     try {
-      await createPendingSale(actor, sale);
+      const denied = await request("create", sale, user.email, randomUUID());
+      assert.equal(denied.status, 403);
+      const created = await request("create", sale, user.email);
+      assert.equal(created.status, 201, await created.text());
       await createPendingSale(actor, sale);
       assert.equal(
         (
@@ -125,10 +141,11 @@ test(
         confirmPendingSale(personal, { id: sale.id }),
         /compartid|permiso|acceso/i,
       );
-      await Promise.all([
-        confirmPendingSale(actor, { id: sale.id }),
+      const [confirmed] = await Promise.all([
+        request("confirm", { id: sale.id }, user.email),
         confirmPendingSale(actor, { id: sale.id }),
       ]);
+      assert.equal(confirmed.status, 200, await confirmed.text());
       assert.equal(
         (
           await db.metaEffectivenessDay.findUniqueOrThrow({
@@ -170,7 +187,7 @@ test(
       assert.equal(item?.signal, "active");
       assert.equal(item?.notes[0]?.body, "Piden opciones de horario.");
       assert.equal(Object.hasOwn(item!, "days"), false);
-      assert.equal(Object.hasOwn(item!, "sales"), false);
+      assert.equal(item?.sales, null);
       await assert.rejects(
         metaRoutes(
           new NextRequest("http://localhost/api/meta-ads/my-performance"),
@@ -191,6 +208,8 @@ test(
         "Piden opciones de horario.",
       );
     } finally {
+      if (previousKey === undefined) delete process.env.PULPO_GENERATOR_SSO_KEY;
+      else process.env.PULPO_GENERATOR_SSO_KEY = previousKey;
       await db.$disconnect();
     }
   },
