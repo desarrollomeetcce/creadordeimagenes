@@ -172,7 +172,11 @@ export async function advisorPeriodSignals(actor: Actor, input: unknown) {
             ),
           ).values(),
         )
-          .filter((row) => !product || same(row) === product)
+          .filter((row) => {
+            const key = same(row);
+            return (!product || key === product) &&
+              (section !== "products" || (current.inventoryStatus[key] ?? evaluated?.inventoryStatus[key])?.current === true);
+          })
           .map(({ tableId, aliasId, country, tableName, alias, days }) => {
             const identity = { tableId, aliasId, country };
             const key = same(identity);

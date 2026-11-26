@@ -51,3 +51,9 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
   outline: 2px solid var(--selection);
   outline-offset: 2px;
 }
+
+.performance-workspace-nav > .performance-settings-link {
+  gap: 6px;
+  margin-inline-start: auto;
+  font-size: 12px;
+}

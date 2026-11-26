@@ -156,8 +156,8 @@ export function AdvisorPeriodSignals({
   const countries = [...groups.keys()].sort((a, b) =>
     countryLabel(a).localeCompare(countryLabel(b), "es"),
   );
-  const selectedCountry = groups.has(country) ? country : (countries[0] ?? "");
-  const products = (groups.get(selectedCountry) ?? []).sort(
+  const selectedCountry = groups.has(country) ? country : "";
+  const products = (selectedCountry ? [...(groups.get(selectedCountry) ?? [])] : [...groups.values()].flat()).sort(
     (a, b) =>
       Number(b.campaignActive === true) - Number(a.campaignActive === true) ||
       a.name.localeCompare(b.name, "es"),
@@ -174,7 +174,7 @@ export function AdvisorPeriodSignals({
     <section
       className="advisor-period-signals"
       aria-label={
-        section === "summary" ? "Mi desempeño" : "Productos por periodo"
+        section === "summary" ? "Mi desempeño" : "Productos vigentes"
       }
     >
       {!advisorId && section === "summary" && (
@@ -306,6 +306,7 @@ export function AdvisorPeriodSignals({
                     setFocus("");
                   }}
                 >
+                  <option value="">Todos los países</option>
                   {countries.map((code) => (
                     <option key={code} value={code}>
                       {countryLabel(code)}
@@ -322,12 +323,12 @@ export function AdvisorPeriodSignals({
           {error && <p role="alert">{error}</p>}
           {!valid && !error && <p role="status">Cargando diplomados…</p>}
           {valid && !products.length && (
-            <p>No hay diplomados con datos en este periodo.</p>
+            <p>No hay diplomados vigentes para este asesor.</p>
           )}
           {products.length > 0 && (
             <table
               className="advisor-diploma-table"
-              aria-label="Ingresos por diplomado"
+              aria-label="Diplomados vigentes"
             >
               <thead>
                 <tr>
@@ -349,6 +350,7 @@ export function AdvisorPeriodSignals({
                       <tr>
                         <th scope="row" data-cac-status={state}>
                           {item.name}
+                          {!selectedCountry && <small>{countryLabel(item.country)}</small>}
                           {item.campaignActive && (
                             <small>
                               <span

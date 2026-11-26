@@ -38,17 +38,8 @@ function PerformanceNavigation({
   return (
     <nav className="performance-workspace-nav" aria-label="Seguimiento">
       <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
-        Desempeño
+        Vista general
       </a>
-      {manager && (
-        <button
-          type="button"
-          aria-pressed={panel === "team"}
-          onClick={() => onSelect("team")}
-        >
-          Configuración de desempeño
-        </button>
-      )}
       <button
         type="button"
         aria-pressed={panel === "advisor"}
@@ -66,6 +57,16 @@ function PerformanceNavigation({
       <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general&panel=productos">
         Ingresos
       </a>
+      {manager && (
+        <button
+          className="performance-settings-link"
+          type="button"
+          aria-pressed={panel === "team"}
+          onClick={() => onSelect("team")}
+        >
+          <span aria-hidden="true">⚙</span> Configuración de desempeño
+        </button>
+      )}
     </nav>
   );
 }

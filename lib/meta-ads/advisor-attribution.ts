@@ -48,6 +48,21 @@ export function assignmentTimeline(changes: AssignmentChange[]) {
         a.id.localeCompare(b.id),
     );
 }
+export function advisorAssignedAt(
+  currentAdvisorId: string | null,
+  changes: AssignmentChange[],
+  at: Date,
+) {
+  const effective = assignmentTimeline(changes).reverse()
+    .find((change) => change.effectiveAt <= at);
+  if (effective) return effective.advisorId;
+  const first = changes.reduce<AssignmentChange | undefined>((earliest, change) =>
+    !earliest || change.createdAt < earliest.createdAt ||
+    (change.createdAt.getTime() === earliest.createdAt.getTime() && change.id.localeCompare(earliest.id) < 0)
+      ? change : earliest, undefined);
+  return first ? first.previousAdvisorId : currentAdvisorId;
+}
+
 /** Sales are cumulative daily counts. Clock boundaries are explicit count cuts, never time prorations. */
 export function attributeDailySales(
   currentAdvisorId: string | null,

@@ -25,6 +25,7 @@ import { advisorSalesPlan, salesAllocationsSchema } from "./advisor-sales-plan";
 import { createHash } from "node:crypto";
 import {
   attributeDailySales,
+  advisorAssignedAt,
   assignmentTimeline,
   limaDay,
 } from "./advisor-attribution";
@@ -1014,8 +1015,10 @@ async function readAdvisorSheet(
         cutoffSales: number | null;
       }[] = [];
       const activityStarts = new Map<string, string>();
+      const portfolioAsOf = new Date();
       const scopedInventoryRows = new Map<string, {
         row: EffectivenessRow;
+        current: boolean;
         baseDays: Set<string>;
       }>();
       for (const table of tables) {
@@ -1046,6 +1049,13 @@ async function readAdvisorSheet(
             { id: "asc" },
           ],
         });
+        const assignmentsByRow = new Map<string, typeof assignments>();
+        for (const change of assignments) {
+          const key = JSON.stringify([change.aliasId, change.country]);
+          const history = assignmentsByRow.get(key);
+          if (history) history.push(change);
+          else assignmentsByRow.set(key, [change]);
+        }
         const registrations =
           !personal && !managed
             ? await recordedStarts(
@@ -1075,9 +1085,7 @@ async function readAdvisorSheet(
           )
             continue;
           contextRows.push(row);
-          const changes = assignments.filter(
-            (e) => e.aliasId === row.aliasId && e.country === row.country,
-          );
+          const changes = assignmentsByRow.get(JSON.stringify([row.aliasId, row.country])) ?? [];
           if (!personal && !managed) {
             const saved = registrations.get(
               JSON.stringify([row.aliasId, row.country]),
@@ -1251,14 +1259,29 @@ async function readAdvisorSheet(
               }
             }
           }
-          breakdown.push(...sources.values());
-          if (personal && filters.includeInventoryStatus &&
-              filters.advisorId && sources.has(filters.advisorId)) {
-            scopedInventoryRows.set(
-              JSON.stringify([table.id, row.aliasId, row.country]),
-              { row, baseDays: new Set(Object.keys(sources.get(filters.advisorId)!.days)) },
-            );
+          const advisorSource = filters.advisorId ? sources.get(filters.advisorId) : undefined;
+          if (personal && filters.includeInventoryStatus && filters.advisorId) {
+            const assigned = advisorAssignedAt(row.advisorId, changes, portfolioAsOf);
+            const current = assigned === filters.advisorId && (row.active || row.metaActive === true);
+            if (advisorSource || current) {
+              scopedInventoryRows.set(
+                JSON.stringify([table.id, row.aliasId, row.country]),
+                { row, current, baseDays: new Set(Object.keys(advisorSource?.days ?? {})) },
+              );
+            }
+            if (current && !advisorSource) {
+              sources.set(filters.advisorId, {
+                tableId: table.id,
+                tableName: table.name,
+                aliasId: row.aliasId,
+                alias: names.get(row.aliasId) ?? "Inventario",
+                country: row.country,
+                advisorId: filters.advisorId,
+                days: {},
+              });
+            }
           }
+          breakdown.push(...sources.values());
         }
       }
       if (filters.periodId)
@@ -1276,6 +1299,7 @@ async function readAdvisorSheet(
         base: number | null;
         basePartial: boolean;
         campaignActive: boolean;
+        current: boolean;
       }> = {};
       if (scopedInventoryRows.size) {
         const [aliases, rates] = await Promise.all([
@@ -1294,7 +1318,7 @@ async function readAdvisorSheet(
           return [[id, readCacRules(config?.inventoryActivation?.cacRules)] as const];
         }));
         const fx = new Map(rates.map((day) => [day.day, day.rates as FxRates]));
-        for (const [key, { row, baseDays }] of scopedInventoryRows) {
+        for (const [key, { row, current, baseDays }] of scopedInventoryRows) {
           const limits = rules.get(row.aliasId);
           if (!limits) continue;
           const input = { row, rates: fx, rules: limits, baseDays };
@@ -1309,6 +1333,7 @@ async function readAdvisorSheet(
             base: base.metaBase,
             basePartial: base.metaBasePartial,
             campaignActive: row.metaActive === true,
+            current,
           };
         }
       }
