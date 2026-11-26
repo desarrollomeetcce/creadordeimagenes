@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { engineRequest as api } from "./generation-engine";
 import { SheetSearchSelect } from "./sheet-search-select";
 import { AdvisorPeriodSignals } from "./advisor-period-signals";
@@ -35,7 +36,12 @@ function PerformanceNavigation({
   onSelect: (panel: PerformancePanel) => void;
   manager?: boolean;
 }) {
-  return (
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setHeaderSlot(document.getElementById("performance-navigation-slot"));
+  }, []);
+  if (!headerSlot) return null;
+  return createPortal(
     <nav className="performance-workspace-nav" aria-label="Seguimiento">
       <a href="https://pulpo.agenciamagneto.org/?section=Vista%20general">
         Vista general
@@ -67,7 +73,8 @@ function PerformanceNavigation({
           <span aria-hidden="true">⚙</span> Configuración de desempeño
         </button>
       )}
-    </nav>
+    </nav>,
+    headerSlot,
   );
 }
 

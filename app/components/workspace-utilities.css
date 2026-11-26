@@ -57,3 +57,20 @@ main.utility-main{max-width:none;width:100%;margin:0;padding:26px 30px}.utility-
   margin-inline-start: auto;
   font-size: 12px;
 }
+
+.workspace > .performance-topbar {
+  height: auto;
+  min-height: 58px;
+  padding-block: 8px;
+}
+
+#performance-navigation-slot {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 620px) {
+  .performance-workspace-nav > .performance-settings-link {
+    margin-inline-start: 0;
+  }
+}

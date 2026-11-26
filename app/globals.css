@@ -3185,15 +3185,6 @@ tr[data-advisor-drop] > td { border-top:2px solid var(--accent)!important; }
 .advisor-period-notes { margin:8px 0; padding:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .advisor-period-notes form { display:grid; gap:8px; }
 
-nav.performance-workspace-nav {
-  display:flex;
-  flex-direction:row;
-  flex-wrap:wrap;
-  gap:6px;
-  padding:4px 0 10px;
-  margin:0 0 10px;
-  border-bottom:1px solid var(--line);
-}
 .performance-configuration {
   max-width: 720px;
   display: grid;
