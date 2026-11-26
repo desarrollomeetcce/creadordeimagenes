@@ -12,10 +12,10 @@ const claims = {
   nonce: "a".repeat(32),
   page: "home",
 };
-function sign(changes = {}) {
+function sign(changes = {}, purpose = "sso") {
   const encoded = Buffer.from(JSON.stringify({ ...claims, ...changes })).toString("base64url");
   return encoded + "." + createHmac("sha256", Buffer.from(key, "hex"))
-    .update("pulpo-sso:v1:" + encoded).digest("base64url");
+    .update(`pulpo-${purpose}:v1:` + encoded).digest("base64url");
 }
 test("validates a short Pulpo assertion and rejects another audience, key or destination", () => {
   assert.deepEqual(verifyPulpoAssertion(sign(), key, 100), claims);
@@ -23,6 +23,13 @@ test("validates a short Pulpo assertion and rejects another audience, key or des
   assert.equal(verifyPulpoAssertion(sign(), "22".repeat(32), 100), null);
   assert.equal(verifyPulpoAssertion(sign({ aud: "otro" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ page: "https://example.com" }), key, 100), null);
+});
+test("separates provisioning credentials from browser sign-in", () => {
+  const fields = { provision: true, name: "Usuario de prueba" };
+  const token = sign(fields, "provision");
+  assert.equal(verifyPulpoAssertion(token, key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign(fields), key, 100, "provision"), null);
+  assert.equal(verifyPulpoAssertion(token, key, 100, "provision")?.provision, true);
 });
 test("accepts only signed, known workspace views on the normal sign-in path", () => {
   assert.equal(verifyPulpoAssertion(sign({ view: "products" }), key, 100)?.view, "products");

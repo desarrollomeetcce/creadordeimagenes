@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../lib/db";
+import { createManagedGeneratorUser } from "../../../../lib/pulpo-provision";
 import { tokenHash } from "../../../../lib/auth";
 import { linkedGeneratorUser, verifyPulpoAssertion } from "../../../../lib/pulpo-sso";
 
@@ -64,18 +65,7 @@ export async function POST(request: NextRequest) {
           });
           if (!linked.count) return false;
         } else {
-          await tx.user.createMany({
-            data: [{
-              pulpoUserId: assertion.sub,
-              pulpoManagedLogin: true,
-              email: assertion.email,
-              name: assertion.name!.trim(),
-              passwordHash: "$pulpo$" + randomBytes(32).toString("base64url"),
-              role: "USER",
-              status: "APPROVED",
-            }],
-            skipDuplicates: true,
-          });
+          await createManagedGeneratorUser(tx, { ...assertion, name: assertion.name!.trim() });
         }
         user = await tx.user.findUnique({ where: { pulpoUserId: assertion.sub } });
       }
