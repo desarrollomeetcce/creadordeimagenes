@@ -11,6 +11,7 @@ type Assertion = {
   page: "home" | "plans";
   view?: WorkspaceView;
   panel?: "team" | "advisor" | "products";
+  embedded?: true;
   provision?: true;
   name?: string;
 };
@@ -33,6 +34,8 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
         (claims.page !== "home" && claims.page !== "plans") ||
         (claims.view !== undefined && (claims.page !== "home" || !workspaceViews.includes(claims.view))) ||
         (claims.panel !== undefined && (claims.view !== "performance" || !["team", "advisor", "products"].includes(claims.panel))) ||
+        (claims.embedded !== undefined && (claims.embedded !== true || claims.page !== "home" ||
+          !["metaads", "advisors", "products"].includes(claims.view) || claims.panel !== undefined)) ||
         (claims.provision !== undefined && (
           claims.provision !== true || typeof claims.name !== "string" ||
           !claims.name.trim() || claims.name.length > 100

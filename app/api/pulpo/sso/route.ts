@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   const localSession = request.cookies.get("session")?.value;
   const raw = randomBytes(32).toString("base64url");
-  const expires = new Date(Date.now() + (assertion.provision ? 30 * 60_000 : 8 * 3600_000));
+  const expires = new Date(Date.now() + (assertion.provision || assertion.embedded ? 30 * 60_000 : 8 * 3600_000));
   const admitted = await db.$transaction(async (tx) => {
     const now = new Date();
     const deadline = new Date(assertion.exp * 1000);
@@ -90,15 +90,20 @@ export async function POST(request: NextRequest) {
         (user.pulpoUserId && user.pulpoUserId !== assertion.sub) ||
         (assertion.page === "plans" && user.role !== "OWNER") ||
         Date.now() >= deadline.getTime()) return false;
+    if (assertion.embedded && localSession && await tx.session.findFirst({
+      where: { id: tokenHash(localSession), userId, expiresAt: { gt: now } },
+      select: { id: true },
+    })) return "existing" as const;
     await tx.session.create({ data: { id: tokenHash(raw), userId, expiresAt: expires } });
     return true;
   });
   if (!admitted) return denied();
 
-  const path = assertion.page === "plans" ? "/?view=users&tab=plans"
+  const path = assertion.embedded ? "/pulpo-workspace?view=" + assertion.view
+    : assertion.page === "plans" ? "/?view=users&tab=plans"
     : assertion.view ? "/?view=" + assertion.view + (assertion.panel ? "&panel=" + assertion.panel : "") : "/";
   const response = NextResponse.redirect("https://generator.agenciamagneto.org" + path, { status: 303, headers });
-  response.cookies.set("session", raw, {
+  if (admitted !== "existing") response.cookies.set("session", raw, {
     httpOnly: true, secure: true, sameSite: "strict", path: "/", expires,
   });
   return response;

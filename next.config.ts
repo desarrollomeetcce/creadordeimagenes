@@ -13,7 +13,7 @@ const config: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/:path((?!pulpo-workspace(?:/|$)).*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
@@ -22,6 +22,18 @@ const config: NextConfig = {
             key: "Content-Security-Policy",
             value:
               "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.fbcdn.net https://*.fbsbx.com https://graph.facebook.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          },
+        ],
+      },
+      {
+        source: "/pulpo-workspace",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "same-origin" },
+          { key: "Cache-Control", value: "private, no-store" },
+          {
+            key: "Content-Security-Policy",
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.fbcdn.net https://*.fbsbx.com https://graph.facebook.com; connect-src 'self'; frame-ancestors https://pulpo.agenciamagneto.org; base-uri 'self'; form-action 'self'",
           },
         ],
       },

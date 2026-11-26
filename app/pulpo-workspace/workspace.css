@@ -1,0 +1,7 @@
+.pulpo-embedded.workspace {
+  min-width: 0;
+  min-height: 100dvh;
+}
+.pulpo-embedded .topbar {
+  padding-inline: 12px;
+}

@@ -33,6 +33,13 @@ test("accepts only signed, known workspace views on the normal sign-in path", ()
   assert.equal(verifyPulpoAssertion(sign({ view: "https://example.com" }), key, 100), null);
   assert.equal(verifyPulpoAssertion(sign({ page: "plans", view: "products" }), key, 100), null);
 });
+test("limits signed embeds to the three approved modules", () => {
+  for (const view of ["metaads", "advisors", "products"])
+    assert.equal(verifyPulpoAssertion(sign({ embedded: true, view }), key, 100)?.view, view);
+  for (const view of [undefined, "inventory", "performance", "https://example.com"])
+    assert.equal(verifyPulpoAssertion(sign({ embedded: true, view }), key, 100), null);
+  assert.equal(verifyPulpoAssertion(sign({ embedded: false, view: "metaads" }), key, 100), null);
+});
 test("requires an explicit link for that Pulpo account and the same email", () => {
   const assertion = verifyPulpoAssertion(sign(), key, 100)!;
   const links = JSON.stringify({ [claims.sub]: { id: "generator-id", email: claims.email } });
