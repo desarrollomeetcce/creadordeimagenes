@@ -4,6 +4,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const workspaceViews = ["products", "inventory", "advisors", "metaads", "performance", "projects", "library", "trash", "courses-ai", "fixed-costs", "ai", "usage", "account", "website", "visual-audit", "users", "statistics", "plans"] as const;
 type WorkspaceView = (typeof workspaceViews)[number];
 
+export const sharedPulpoRoles = ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR", "ADMIN", "SUPERADMIN", "OWNER"] as const;
+export type SharedPulpoRole = (typeof sharedPulpoRoles)[number];
+
+function isSharedRole(value: unknown): value is SharedPulpoRole {
+  return sharedPulpoRoles.some((role) => role === value);
+}
+
 type Assertion = {
   sub: string;
   email: string;
@@ -17,6 +24,8 @@ type Assertion = {
   embedded?: true;
   provision?: true;
   name?: string;
+  sharedRole?: SharedPulpoRole;
+  roleSync?: { issuerId: string; issuerEmail: string; expected: SharedPulpoRole };
 };
 
 export function verifyPulpoAssertion(token: string, key: string, now = Math.floor(Date.now() / 1000), purpose: "sso" | "provision" = "sso"): Assertion | null {
@@ -45,6 +54,15 @@ export function verifyPulpoAssertion(token: string, key: string, now = Math.floo
           claims.provision !== true || typeof claims.name !== "string" ||
           !claims.name.trim() || claims.name.length > 100
         ))) return null;
+    if ((claims.sharedRole !== undefined || claims.roleSync !== undefined) &&
+        (claims.provision !== true || !isSharedRole(claims.sharedRole))) return null;
+    const sync = claims.roleSync;
+    if (sync !== undefined && (
+      purpose !== "provision" || !sync || typeof sync.issuerId !== "string" ||
+      !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(sync.issuerId) ||
+      typeof sync.issuerEmail !== "string" || !/^[^\s@]+@[^\s@]+$/.test(sync.issuerEmail) ||
+      !isSharedRole(sync.expected)
+    )) return null;
     return claims;
   } catch {
     return null;

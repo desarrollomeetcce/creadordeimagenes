@@ -7,6 +7,7 @@ import { demand } from "./errors";
 import { rateLimit } from "./auth";
 import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
 import { issuePasswordReset } from "./accounts";
+import { linkedMessagingUser } from "./pulpo-sso";
 
 const role = z.enum([
   "OWNER",
@@ -55,9 +56,12 @@ export async function userManagement(
                     : null,
               }
             : { archivedAt: null, role: { in: actor.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR"] : ["USER", "OBSERVER"] } },
-        select,
+        select: { ...select, pulpoUserId: true },
         orderBy: { name: "asc" },
-      }),
+      }).then((users) => users.map(({ pulpoUserId, ...user }) => ({
+        ...user,
+        sharedRole: Boolean(linkedMessagingUser({ ...user, pulpoUserId })),
+      }))),
     );
   if (parts.length === 1 && req.method === "POST") {
     demand(canCreateUsers(actor.role), "Solo Owner y Superadministrador pueden crear usuarios.", 403);
@@ -400,6 +404,11 @@ export async function userManagement(
           409,
         );
       demand(!target.archivedAt, "Restaura la ficha antes de editarla.", 409);
+      demand(
+        target.role === b.role || !linkedMessagingUser(target),
+        "Para cambiar el rol de una cuenta vinculada, abre Usuarios y accesos en Pulpo Mensajería.",
+        409,
+      );
       const editsPlan =
         b.planId !== undefined ||
         b.validUntil !== undefined ||

@@ -28,6 +28,7 @@ type Account = {
   name: string;
   email: string;
   role: string;
+  sharedRole?: boolean;
   status: string;
   aiAccessEnabled?: boolean;
   archivedAt?: string | null;
@@ -405,9 +406,9 @@ export function UsersPanel({ role }: { role: string }) {
                         <select
                           data-user-role={u.role}
                           aria-label={"Rol de " + u.name}
-                          title={roleDescriptions[u.role]}
+                          title={u.sharedRole ? "Rol administrado en Pulpo Mensajería" : roleDescriptions[u.role]}
                           value={u.role}
-                          disabled={busy || archived}
+                          disabled={u.sharedRole || busy || archived}
                           onChange={(e) =>
                             change(u.id, { role: e.target.value })
                           }
