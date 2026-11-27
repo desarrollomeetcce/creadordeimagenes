@@ -674,6 +674,7 @@ async function handle(
         role: user.role,
         aiAccessEnabled: user.aiAccessEnabled,
         messagingLinked: Boolean(linkedMessagingUser(user)),
+        pulpoManagedLogin: user.pulpoManagedLogin,
         fixedCostsShared,
         coursesShared,
         menuVisibility: user.menuVisibility ?? roleMenu?.menu ?? null,

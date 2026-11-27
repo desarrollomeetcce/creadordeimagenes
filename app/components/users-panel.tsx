@@ -4,7 +4,7 @@ import { RecoveryIssuer } from "./account-security";
 import { PasswordInput } from "./password-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { planLabel } from "../../lib/plan-label";
-import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers, canManageAccount } from "../../lib/roles";
+import { roleLabels, roleDescriptions, roleAbilities, canCreateUsers, canManageAccount, canSetAccountPassword } from "../../lib/roles";
 import { MetaWorkspaceSharing } from "./meta-workspace-sharing";
 type Presence = {
   desktop: boolean;
@@ -38,6 +38,7 @@ type Account = {
   email: string;
   role: string;
   sharedRole?: boolean;
+  pulpoManagedLogin?: boolean;
   status: string;
   aiAccessEnabled?: boolean;
   archivedAt?: string | null;
@@ -443,11 +444,12 @@ export function UsersPanel({ role }: { role: string }) {
                           aria-label={"Rol de " + u.name}
                           title={u.sharedRole ? "Guardar confirma el rol en Mensajería y Generador" : roleDescriptions[u.role]}
                           value={u.role}
-                          disabled={(u.sharedRole && !isOwner) || busy || archived}
+                          disabled={(u.sharedRole && !isOwner) || busy || archived || !canManageAccount(role, u.role)}
                           onChange={(e) =>
                             change(u.id, { role: e.target.value })
                           }
                         >
+                          {!roles.includes(u.role) && <option value={u.role}>{roleLabels[u.role]}</option>}
                           {roles.map((role) => (
                             <option key={role} value={role}>
                               {roleLabels[role]}
@@ -460,7 +462,7 @@ export function UsersPanel({ role }: { role: string }) {
                           data-user-status={u.status}
                           aria-label={"Estado de " + u.name}
                           value={u.status}
-                          disabled={busy || archived}
+                          disabled={busy || archived || !canManageAccount(role, u.role)}
                           onChange={(e) =>
                             change(u.id, { status: e.target.value })
                           }
@@ -584,6 +586,7 @@ export function UsersPanel({ role }: { role: string }) {
                                   Sincronizar Mensajería
                                 </button>
                               )}
+                              {canManageAccount(role, u.role) && (
                               <button
                                 type="button"
                                 className="primary"
@@ -593,6 +596,7 @@ export function UsersPanel({ role }: { role: string }) {
                               >
                                 Guardar
                               </button>
+                              )}
                               <button
                                 type="button"
                                 aria-label={"Más acciones de " + u.name}
@@ -632,6 +636,7 @@ export function UsersPanel({ role }: { role: string }) {
               account={active}
               busy={busy}
               isOwner={isOwner}
+              actorRole={role}
               run={run}
               onClose={() => setActions(null)}
               onRemove={() => {
@@ -675,6 +680,7 @@ function UserActions({
   account: u,
   busy,
   isOwner,
+  actorRole,
   run,
   onClose,
   onRemove,
@@ -683,6 +689,7 @@ function UserActions({
   account: Account;
   busy: boolean;
   isOwner: boolean;
+  actorRole: string;
   run: (f: () => Promise<unknown>) => Promise<void>;
   onClose: () => void;
   onRemove: () => void;
@@ -691,6 +698,7 @@ function UserActions({
   const ref = useRef<HTMLDialogElement>(null),
     [link, setLink] = useState(""),
     [info, setInfo] = useState(""),
+    [passwordMessage, setPasswordMessage] = useState(""),
     [working, setWorking] = useState(false);
   useEffect(() => {
     ref.current?.showModal();
@@ -761,15 +769,19 @@ function UserActions({
           <small>Comparte aquí sin cambiar el rol ni el plan de IA.</small>
         </section>
       )}
-      <section>
-        <AccountEmailEditor
-          account={u}
-          busy={busy}
-          run={run}
-          skipProof={isOwner}
-        />
-      </section>
-      {isOwner && (
+      {canManageAccount(actorRole, u.role) && (
+        <section>
+          <AccountEmailEditor account={u} busy={busy} run={run} skipProof={isOwner} />
+        </section>
+      )}
+      {canSetAccountPassword(actorRole, u.role) && u.pulpoManagedLogin && (
+        <section>
+          <h3>Cambiar contraseña</h3>
+          <p>Esta cuenta gestiona su contraseña en Pulpo Mensajería.</p>
+          <a className="button" href="/api/pulpo/open-crm?module=users">Abrir Usuarios y accesos de Mensajería</a>
+        </section>
+      )}
+      {canSetAccountPassword(actorRole, u.role) && !u.pulpoManagedLogin && (
         <section>
           <h3>🔑 Cambiar contraseña</h3>
           <small>
@@ -778,16 +790,24 @@ function UserActions({
           </small>
           <form
             className="row user-password-form"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
+              if (working) return;
               const form = e.currentTarget;
-              void run(async () => {
+              setWorking(true);
+              setPasswordMessage("");
+              try {
                 const r = await api("users/" + u.id + "/password", "POST", {
                   newPassword: new FormData(form).get("newPassword"),
                 });
                 form.reset();
+                setPasswordMessage("Contraseña actualizada. Se cerraron las sesiones de esta cuenta.");
                 if (r.closesOwnSession) window.location.reload();
-              });
+              } catch (e) {
+                setPasswordMessage(e instanceof Error ? e.message : "No se pudo cambiar la contraseña.");
+              } finally {
+                setWorking(false);
+              }
             }}
           >
             <PasswordInput
@@ -802,6 +822,7 @@ function UserActions({
               Establecer nueva contraseña
             </button>
           </form>
+          {passwordMessage && <p role="status">{passwordMessage}</p>}
         </section>
       )}
       {isOwner && (
@@ -848,7 +869,7 @@ function UserActions({
           {info && <p role="status">{info}</p>}
         </section>
       )}
-      {!isOwner && (
+      {!isOwner && !u.pulpoManagedLogin && canManageAccount(actorRole, u.role) && (
         <section>
           <RecoveryIssuer userId={u.id} name={u.name} />
         </section>

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { demand } from "./errors";
 import { rateLimit } from "./auth";
-import { managesUsers, canManageAccount, canCreateUsers } from "./roles";
+import { managesUsers, canManageAccount, canCreateUsers, canSetAccountPassword } from "./roles";
 import { issuePasswordReset } from "./accounts";
 import { linkedMessagingUser } from "./pulpo-sso";
 import { signMenu } from "./pulpo-menu-token";
@@ -30,6 +30,7 @@ const select = {
   id: true,
   aiAccessEnabled: true,
   archivedAt: true,
+  pulpoManagedLogin: true,
   name: true,
   email: true,
   role: true,
@@ -82,7 +83,7 @@ export async function userManagement(
                     ? { not: null }
                     : null,
               }
-            : { archivedAt: null, role: { in: actor.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR"] : ["USER", "OBSERVER"] } },
+            : { archivedAt: null, role: { in: actor.role === "SUPERADMIN" ? ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR"] : ["USER", "OBSERVER"] } },
         select: { ...select, pulpoUserId: true, menuVisibility: true },
         orderBy: { name: "asc" },
       }).then((users) => users.map(({ pulpoUserId, ...user }) => ({
@@ -294,15 +295,15 @@ export async function userManagement(
   }
   if (parts.length === 3 && parts[2] === "password" && req.method === "POST") {
     demand(
-      actor.role === "OWNER",
-      "Solo el OWNER puede cambiar directamente otras contraseñas.",
+      canCreateUsers(actor.role),
+      "Solo Owner o Superadministrador pueden cambiar contraseñas de otras cuentas autorizadas.",
       403,
     );
     const b = z
       .object({ currentPassword: password.optional(), newPassword: password })
       .strict()
       .parse(await body());
-    await rateLimit(`owner-password:${actor.id}`, 8);
+    await rateLimit(`managed-password:${actor.id}`, 8);
     const issuer = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
     if (b.currentPassword)
       demand(
@@ -313,20 +314,27 @@ export async function userManagement(
     const hash = await argon2.hash(b.newPassword, { type: argon2.argon2id });
     await db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
-        { id: string; role: string; status: string; passwordHash: string }[]
-      >`SELECT id, role, status, "passwordHash" FROM "User" WHERE id IN (${actor.id}, ${parts[1]}) ORDER BY id FOR UPDATE`;
+        { id: string; role: string; status: string; passwordHash: string; archivedAt: Date | null; pulpoManagedLogin: boolean }[]
+      >`SELECT id, role, status, "passwordHash", "archivedAt", "pulpoManagedLogin" FROM "User" WHERE id IN (${actor.id}, ${parts[1]}) ORDER BY id FOR UPDATE`;
       const current = rows.find((r) => r.id === actor.id);
+      const target = rows.find((r) => r.id === parts[1]);
       demand(
-        current?.role === "OWNER" &&
+        current?.role === actor.role && !current.archivedAt &&
           current.status === "APPROVED" &&
           current.passwordHash === issuer.passwordHash,
-        "La cuenta OWNER cambió. Inicia sesión nuevamente.",
+        "La cuenta cambió. Inicia sesión nuevamente.",
         409,
       );
+      demand(target && !target.archivedAt, "Cuenta no disponible.", 404);
       demand(
-        rows.some((r) => r.id === parts[1]),
-        "Cuenta no encontrada.",
-        404,
+        canSetAccountPassword(current.role, target.role),
+        "Solo el Owner puede cambiar la contraseña de esta cuenta.",
+        403,
+      );
+      demand(
+        !target.pulpoManagedLogin,
+        "Esta contraseña se administra en Pulpo Mensajería.",
+        409,
       );
       await tx.user.update({
         where: { id: parts[1] },
@@ -338,7 +346,7 @@ export async function userManagement(
       await recordActivity(tx, {
         data: {
           actorId: actor.id,
-          action: "CONTRASENA_CAMBIADA_POR_OWNER",
+          action: current.role === "OWNER" ? "CONTRASENA_CAMBIADA_POR_OWNER" : "CONTRASENA_CAMBIADA_POR_SUPERADMIN",
           resourceId: parts[1],
         },
       });

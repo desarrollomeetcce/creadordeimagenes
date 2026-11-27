@@ -91,7 +91,7 @@ const Library = LibraryWorkspace;
 const Presets = dynamic(() => import("./components/productivity").then(m => m.Presets));
 const PresetTools = dynamic(() => import("./components/productivity").then(m => m.PresetTools));
 import type { FormEvent } from "react";
-type User = { menuVisibility?: unknown; coursesShared?: boolean; salesShared?: boolean; inventoryShared?: boolean; advisorsShared?: boolean; messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
+type User = { pulpoManagedLogin?: boolean; menuVisibility?: unknown; coursesShared?: boolean; salesShared?: boolean; inventoryShared?: boolean; advisorsShared?: boolean; messagingLinked?: boolean; fixedCostsShared?:boolean; aiAccessEnabled?:boolean; id: string; name: string; email: string; role: string; advisorLinked?: boolean; metaAdsShared?: boolean; effectivenessShared?:boolean };
 type Settings = {
   count: number;
   textCount: number;
@@ -640,7 +640,7 @@ export default function Home() {
                     </nav>
                   </WorkspaceHeaderNavigation>
                 )}
-                <AccountSecurity onChanged={reloadUser} />
+                <AccountSecurity onChanged={reloadUser} managedByMessaging={user.pulpoManagedLogin} />
                 {user.role === "OWNER" && (
                   <>
                     <OwnerEmergencyKit email={user.email} />

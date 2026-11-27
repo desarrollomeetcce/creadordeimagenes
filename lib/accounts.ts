@@ -19,6 +19,7 @@ export async function changePassword(user: { id: string }, input: unknown) {
     "Elige una contraseña diferente de la actual.",
   );
   const account = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+  demand(!account.pulpoManagedLogin, "Cambia tu contraseña en Pulpo Mensajería.", 409);
   demand(
     await argon2.verify(account.passwordHash, b.currentPassword),
     "La contraseña actual no es correcta.",
@@ -33,6 +34,8 @@ export async function changePassword(user: { id: string }, input: unknown) {
         id: user.id,
         passwordHash: account.passwordHash,
         status: "APPROVED",
+        archivedAt: null,
+        pulpoManagedLogin: false,
       },
       data: { passwordHash },
     });

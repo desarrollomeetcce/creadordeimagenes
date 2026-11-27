@@ -38,6 +38,7 @@ export const roleAbilities: Record<string, string[]> = {
   ],
   SUPERADMIN: [
     "Crear y administrar cuentas de Usuarios, Observadores y Asesores.",
+    "Cambiar contraseñas locales de Usuarios, Observadores, Asesores y Supervisores.",
     "Consultar y trabajar en los espacios habilitados para su cuenta.",
   ],
   ADMIN: [
@@ -65,6 +66,10 @@ export function managesUsers(role: string) {
 }
 export function canCreateUsers(role: string) {
   return role === "OWNER" || role === "SUPERADMIN";
+}
+export function canSetAccountPassword(actor: string, target: string) {
+  return actor === "OWNER" ||
+    (actor === "SUPERADMIN" && ["USER", "OBSERVER", "ADVISOR", "SUPERVISOR"].includes(target));
 }
 export function canManageAccount(actor: string, target: string) {
   return (

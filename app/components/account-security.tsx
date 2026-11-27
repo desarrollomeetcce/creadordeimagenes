@@ -14,11 +14,22 @@ async function post(path: string, data: unknown) {
 }
 export function AccountSecurity({
   onChanged,
+  managedByMessaging = false,
 }: {
   onChanged: () => Promise<void>;
+  managedByMessaging?: boolean;
 }) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  if (managedByMessaging)
+    return (
+      <section className="panel stack">
+        <h1>Mi cuenta</h1>
+        <h2>Cambiar contraseña</h2>
+        <p>La contraseña de esta cuenta se gestiona en Pulpo Mensajería.</p>
+        <a className="button" href="/api/pulpo/open-crm?module=account">Ir a Mi cuenta en Mensajería</a>
+      </section>
+    );
   return (
     <section className="panel stack">
       <h1>Mi cuenta</h1>
